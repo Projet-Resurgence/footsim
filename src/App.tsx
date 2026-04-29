@@ -1,7 +1,12 @@
+import { RouterProvider } from 'react-router-dom';
+import { router } from './router';
+import { ToastViewport } from '@/components/ui/Toast';
+
 export default function App() {
   return (
-    <main className="min-h-screen flex items-center justify-center">
-      <h1 className="font-display text-5xl">FootSim</h1>
-    </main>
+    <>
+      <RouterProvider router={router} />
+      <ToastViewport />
+    </>
   );
 }
