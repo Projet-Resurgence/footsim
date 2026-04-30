@@ -55,6 +55,10 @@ export function eventText(
       return `${minute}' — Dégagement in extremis de ${playerName ?? team}.`;
     case 'crossbar':
       return `⛔ ${minute}' — ${playerName ?? team} touche le poteau !`;
+    case 'substitution':
+      return `🔄 ${minute}' — ${team} : ${playerName ?? 'Remplacement'}.`;
+    case 'extraTime':
+      return `⏱ Prolongations !`;
     case 'halftime':
       return `Mi-temps.`;
     case 'fulltime':
