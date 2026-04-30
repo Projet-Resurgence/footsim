@@ -76,6 +76,23 @@ export async function writeJson(opts: WriteOptions): Promise<{ sha: string }> {
   return { sha: json.content.sha };
 }
 
+export async function deleteFile(
+  path: string,
+  sha: string,
+  token: string,
+  message: string,
+): Promise<void> {
+  const res = await fetch(`${API}/repos/${env.dataRepo}/contents/${path}`, {
+    method: 'DELETE',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, sha, branch: env.dataBranch }),
+  });
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text();
+    throw new Error(`GitHub delete ${path}: ${res.status} ${text}`);
+  }
+}
+
 export async function listDir(path: string, token: string): Promise<string[]> {
   const res = await fetch(
     `${API}/repos/${env.dataRepo}/contents/${path}?ref=${env.dataBranch}`,

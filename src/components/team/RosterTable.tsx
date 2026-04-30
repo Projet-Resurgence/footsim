@@ -4,7 +4,12 @@ import { POSITIONS } from '@/lib/types';
 
 type SortKey = 'overall' | 'age' | 'lastName' | 'position';
 
-export function RosterTable({ players }: { players: Player[] }) {
+type RosterProps = {
+  players: Player[];
+  onSelect?: (id: string) => void;
+};
+
+export function RosterTable({ players, onSelect }: RosterProps) {
   const [filter, setFilter] = useState<Position | 'ALL'>('ALL');
   const [sort, setSort] = useState<SortKey>('overall');
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
@@ -69,7 +74,11 @@ export function RosterTable({ players }: { players: Player[] }) {
           </thead>
           <tbody>
             {rows.map((p) => (
-              <tr key={p.id} className="border-t border-border">
+              <tr
+                key={p.id}
+                className={`border-t border-border ${onSelect ? 'cursor-pointer hover:bg-border/30' : ''}`}
+                onClick={() => onSelect?.(p.id)}
+              >
                 <td className="px-4 py-2">
                   {p.firstName} {p.lastName}
                 </td>

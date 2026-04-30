@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Player, Team } from '@/lib/types';
-import { listTeams, loadTeam, saveTeamWithRoster } from '@/lib/github/store';
+import { listTeams, loadTeam, saveTeamWithRoster, deleteTeam } from '@/lib/github/store';
 
 type State = {
   teams: Team[];
@@ -9,6 +9,7 @@ type State = {
   refresh: (token: string) => Promise<void>;
   saveTeam: (team: Team, players: Player[], token: string) => Promise<void>;
   fetchTeam: (slug: string, token: string) => Promise<{ team: Team; players: Player[] } | null>;
+  removeTeam: (slug: string, token: string) => Promise<void>;
 };
 
 export const useTeams = create<State>((set, get) => ({
@@ -31,5 +32,9 @@ export const useTeams = create<State>((set, get) => ({
   },
   async fetchTeam(slug, token) {
     return loadTeam(slug, token);
+  },
+  async removeTeam(slug, token) {
+    await deleteTeam(slug, token);
+    set({ teams: get().teams.filter((t) => t.slug !== slug) });
   },
 }));

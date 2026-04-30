@@ -1,5 +1,5 @@
 import type { Player, Team } from '@/lib/types';
-import { readJson, writeJson, listDir } from './api';
+import { readJson, writeJson, listDir, deleteFile } from './api';
 
 const TEAM_PATH = (slug: string) => `data/teams/${slug}/team.json`;
 const ROSTER_PATH = (slug: string) => `data/teams/${slug}/players.json`;
@@ -37,6 +37,27 @@ export async function loadTeam(
   if (!team) return null;
   const roster = await readJson<Player[]>(ROSTER_PATH(slug), token);
   return { team: team.data, players: roster?.data ?? [] };
+}
+
+export async function deleteTeam(slug: string, token: string): Promise<void> {
+  const team = await readJson<Team>(TEAM_PATH(slug), token);
+  const roster = await readJson<Player[]>(ROSTER_PATH(slug), token);
+  if (roster) {
+    await deleteFile(
+      ROSTER_PATH(slug),
+      roster.sha,
+      token,
+      `chore(teams/${slug}): delete players.json`,
+    );
+  }
+  if (team) {
+    await deleteFile(
+      TEAM_PATH(slug),
+      team.sha,
+      token,
+      `chore(teams): delete ${slug}`,
+    );
+  }
 }
 
 export async function listTeams(token: string): Promise<Team[]> {
