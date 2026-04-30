@@ -26,7 +26,7 @@ jobs:
       - run: npm ci
       - name: Write production env
         run: |
-          echo "VITE_DISCORD_CLIENT_ID=${{ secrets.DISCORD_CLIENT_ID }}" >> .env.production
+          echo "VITE_DISCORD_CLIENT_ID=1499227649455689859" >> .env.production
           echo "VITE_DISCORD_REDIRECT_URI=https://bjbellum.github.io/footsim/auth/callback" >> .env.production
           echo "VITE_DATA_REPO=BJBellum/footsim-data" >> .env.production
           echo "VITE_DATA_BRANCH=main" >> .env.production
