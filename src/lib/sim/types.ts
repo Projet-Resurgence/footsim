@@ -1,10 +1,11 @@
-import type { Formation, Player, Team } from '@/lib/types';
+import type { Formation, Player, TacticStyle, Team } from '@/lib/types';
 
 export type Speed = 'instant' | '0.5' | '1' | '2' | '5';
 
 export type EventKind =
   | 'kickoff' | 'goal' | 'shot' | 'shotOnTarget' | 'save' | 'foul'
-  | 'yellow' | 'red' | 'corner' | 'offside' | 'halftime' | 'fulltime' | 'keyPass';
+  | 'yellow' | 'red' | 'corner' | 'offside' | 'halftime' | 'fulltime' | 'keyPass'
+  | 'penalty' | 'freeKick' | 'header' | 'dribble' | 'clearance' | 'crossbar';
 
 export type MatchEvent = {
   id: number;
@@ -17,6 +18,13 @@ export type MatchEvent = {
   ballPos?: { x: number; y: number };
 };
 
+export type TacticMods = {
+  shotFreqMult: number;
+  foulRateMult: number;
+  midfieldMult: number;
+  attackMult: number;
+};
+
 export type SideRatings = {
   attack: number;
   midfield: number;
@@ -27,12 +35,13 @@ export type SideRatings = {
   bench: string[];
   yellow: Set<string>;
   red: Set<string>;
+  tacticMods: TacticMods;
 };
 
 export type MatchInput = {
   matchId: string;
-  home: { team: Team; players: Player[]; formation: Formation };
-  away: { team: Team; players: Player[]; formation: Formation };
+  home: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; tacticStyle?: TacticStyle };
+  away: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; tacticStyle?: TacticStyle };
   speed: Speed;
 };
 

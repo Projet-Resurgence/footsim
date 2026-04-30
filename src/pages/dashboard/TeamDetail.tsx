@@ -6,7 +6,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 import { RosterTable } from '@/components/team/RosterTable';
 import { PlayerEdit } from '@/components/team/PlayerEdit';
-import type { Player, Team } from '@/lib/types';
+import { TacticsPanel } from '@/components/team/TacticsPanel';
+import type { Player, Team, TeamTactics } from '@/lib/types';
 import { CULTURE_LABEL } from '@/lib/types';
 import { useCredentials } from '@/stores/credentials';
 import { useTeams } from '@/stores/teams';
@@ -130,7 +131,7 @@ export default function TeamDetail() {
         <img
           src={team.flag}
           alt=""
-          className="h-24 w-24 rounded-lg border border-border object-cover"
+          className="h-24 w-24 object-cover"
         />
         <div className="space-y-1 flex-1">
           <h1 className="font-display text-4xl">{team.name}</h1>

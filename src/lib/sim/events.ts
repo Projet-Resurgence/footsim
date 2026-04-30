@@ -22,7 +22,7 @@ export function eventText(
 ): string {
   switch (type) {
     case 'kickoff':
-      return `${minute}' — Coup d’envoi.`;
+      return `${minute}' — Coup d'envoi.`;
     case 'goal':
       return `⚽ ${minute}' — But pour ${team} ! ${playerName ?? ''} marque.`.trim();
     case 'shot':
@@ -43,6 +43,18 @@ export function eventText(
       return `${minute}' — Hors-jeu signalé contre ${team}.`;
     case 'keyPass':
       return `${minute}' — Passe décisive de ${playerName ?? team}.`;
+    case 'penalty':
+      return `🔴 ${minute}' — Penalty pour ${team} ! ${playerName ?? ''} s'élance.`.trim();
+    case 'freeKick':
+      return `${minute}' — Coup franc dangereux pour ${team}${playerName ? ` (${playerName})` : ''}.`;
+    case 'header':
+      return `${minute}' — Coup de tête de ${playerName ?? team}${playerName ? '' : ''}.`;
+    case 'dribble':
+      return `${minute}' — Dribble réussi de ${playerName ?? team} !`;
+    case 'clearance':
+      return `${minute}' — Dégagement in extremis de ${playerName ?? team}.`;
+    case 'crossbar':
+      return `⛔ ${minute}' — ${playerName ?? team} touche le poteau !`;
     case 'halftime':
       return `Mi-temps.`;
     case 'fulltime':

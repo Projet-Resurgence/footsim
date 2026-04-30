@@ -42,7 +42,7 @@ function Side({ team, score, side }: { team: Team; score: number; side: 'left' |
   return (
     <div className={`flex min-w-0 items-center gap-3 ${side === 'right' ? 'flex-row-reverse text-right' : ''}`}>
       {team.flag ? (
-        <img src={team.flag} alt="" className="h-12 w-12 rounded-md border border-border object-cover" />
+        <img src={team.flag} alt="" className="h-12 w-12 object-cover" />
       ) : (
         <div className="h-12 w-12 rounded-md bg-border" />
       )}

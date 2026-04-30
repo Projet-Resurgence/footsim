@@ -36,12 +36,12 @@ function buildCtx(input: MatchInput): EngineCtx {
   const home = {
     team: input.home.team,
     players: new Map(input.home.players.map((p: Player) => [p.id, p])),
-    ratings: precomputeSide(input.home.players, input.home.formation),
+    ratings: precomputeSide(input.home.players, input.home.formation, input.home.lineup, input.home.tacticStyle),
   };
   const away = {
     team: input.away.team,
     players: new Map(input.away.players.map((p: Player) => [p.id, p])),
-    ratings: precomputeSide(input.away.players, input.away.formation),
+    ratings: precomputeSide(input.away.players, input.away.formation, input.away.lineup, input.away.tacticStyle),
   };
   return { home, away, eventCounter: { v: 0 } };
 }

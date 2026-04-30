@@ -65,6 +65,14 @@ function pickAttacker(side: 'home' | 'away', ctx: EngineCtx, state: MatchState):
   return pick(top);
 }
 
+function pickDefender(side: 'home' | 'away', ctx: EngineCtx, state: MatchState): Player | null {
+  const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+  const players = side === 'home' ? ctx.home.players : ctx.away.players;
+  const candidates = onPitch.map((id) => players.get(id)!).filter((p) => p && ['CB','LB','RB','DM'].includes(p.position));
+  if (candidates.length === 0) return null;
+  return pick(candidates.slice(0, Math.min(4, candidates.length)));
+}
+
 function pickFouler(side: 'home' | 'away', ctx: EngineCtx, state: MatchState): Player | null {
   const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
   const players = side === 'home' ? ctx.home.players : ctx.away.players;
@@ -89,6 +97,45 @@ function teamRatingMultiplier(side: 'home' | 'away', state: MatchState): number 
   return Math.pow(0.93, reds);
 }
 
+function resolveShot(
+  state: MatchState,
+  ctx: EngineCtx,
+  possessing: 'home' | 'away',
+  opp: 'home' | 'away',
+  teamName: string,
+  oppName: string,
+  pGoalMult = 1,
+  zone?: { x: number; y: number },
+): void {
+  state.shots[possessing]++;
+  const shooter = pickAttacker(possessing, ctx, state);
+  const oppGk = gkOf(opp, ctx, state);
+  const fin = shooter?.stats.technical.finishing ?? 10;
+  const com = shooter?.stats.mental.composure ?? 10;
+  const gkVal = oppGk?.overall ?? 50;
+  const pGoal = clamp(sigmoid((fin + com - gkVal * 0.5) / 8) * pGoalMult, 0.04, 0.75);
+  const ballZone = zone ?? (possessing === 'home' ? ZONE.awayBox : ZONE.homeBox);
+  const onTarget = chance(0.55);
+  if (onTarget) {
+    state.shotsOnTarget[possessing]++;
+    if (chance(pGoal)) {
+      state.score[possessing]++;
+      pushEvent(state, ctx, { type: 'goal', side: possessing, playerId: shooter?.id, ballPos: ballZone },
+        teamName, shooter ? `${shooter.firstName} ${shooter.lastName}` : undefined);
+      state.ball = ZONE.centre;
+    } else if (chance(0.10)) {
+      pushEvent(state, ctx, { type: 'crossbar', side: possessing, playerId: shooter?.id, ballPos: ballZone },
+        teamName, shooter ? `${shooter.firstName} ${shooter.lastName}` : undefined);
+    } else {
+      pushEvent(state, ctx, { type: 'save', side: opp, playerId: oppGk?.id, ballPos: ballZone },
+        oppName, oppGk ? `${oppGk.firstName} ${oppGk.lastName}` : undefined);
+    }
+  } else {
+    pushEvent(state, ctx, { type: 'shot', side: possessing, playerId: shooter?.id, ballPos: ballZone },
+      teamName, shooter ? `${shooter.firstName} ${shooter.lastName}` : undefined);
+  }
+}
+
 export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   if (state.status === 'pregame') {
     state.status = 'firstHalf';
@@ -109,13 +156,11 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
 
   state.minute++;
 
-  // Half-time check
   if (state.half === 1 && state.minute > 45 + state.homeAddedTime) {
     state.status = 'halftime';
     pushEvent(state, ctx, { type: 'halftime', side: null, ballPos: ZONE.centre }, ctx.home.team.name);
     return state;
   }
-  // Full-time check
   if (state.half === 2 && state.minute > 90 + state.awayAddedTime) {
     state.status = 'fulltime';
     pushEvent(state, ctx, { type: 'fulltime', side: null, ballPos: ZONE.centre }, ctx.home.team.name);
@@ -133,109 +178,125 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   state.possession.home = Math.round((state.possessionTicks.home / totalTicks) * 100);
   state.possession.away = 100 - state.possession.home;
 
-  // Event roll
   const r = rand();
-  const opp = possessing === 'home' ? 'away' : 'home';
+  const opp: 'home' | 'away' = possessing === 'home' ? 'away' : 'home';
   const oppName = possessing === 'home' ? ctx.away.team.name : ctx.home.team.name;
   const teamName = possessing === 'home' ? ctx.home.team.name : ctx.away.team.name;
   const myAttack = (possessing === 'home' ? ctx.home.ratings.attack : ctx.away.ratings.attack) * teamRatingMultiplier(possessing, state);
   const oppDefense = (possessing === 'home' ? ctx.away.ratings.defense : ctx.home.ratings.defense) * teamRatingMultiplier(opp, state);
   const pAttack = myAttack / (myAttack + oppDefense);
 
-  // weights
-  const wShot = 0.08 * (0.6 + pAttack);
-  const wFoul = 0.08;
-  const wCorner = 0.04;
-  const wOffside = 0.03;
-  const wKeyPass = 0.10;
-  const total = wShot + wFoul + wCorner + wOffside + wKeyPass;
+  const myMods = possessing === 'home' ? ctx.home.ratings.tacticMods : ctx.away.ratings.tacticMods;
+  const oppMods = possessing === 'home' ? ctx.away.ratings.tacticMods : ctx.home.ratings.tacticMods;
+
+  const wShot     = 0.08 * (0.6 + pAttack) * myMods.shotFreqMult;
+  const wFoul     = 0.08 * oppMods.foulRateMult;
+  const wCorner   = 0.04;
+  const wOffside  = 0.03;
+  const wKeyPass  = 0.10;
+  const wFreeKick = 0.03;
+  const wDribble  = 0.04 * pAttack;
+  const wClear    = 0.03 * (1 - pAttack);
+  const total = wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick + wDribble + wClear;
 
   if (r < wShot) {
-    state.shots[possessing]++;
-    const shooter = pickAttacker(possessing, ctx, state);
-    const oppGk = gkOf(opp, ctx, state);
-    const fin = shooter?.stats.technical.finishing ?? 10;
-    const com = shooter?.stats.mental.composure ?? 10;
-    const gkVal = oppGk?.overall ?? 50;
-    const pGoal = clamp(sigmoid((fin + com - gkVal * 0.5) / 8), 0.04, 0.55);
-    const onTarget = chance(0.55);
-    if (onTarget) {
-      state.shotsOnTarget[possessing]++;
-      if (chance(pGoal)) {
-        state.score[possessing]++;
-        pushEvent(state, ctx, {
-          type: 'goal',
-          side: possessing,
-          playerId: shooter?.id,
-          ballPos: possessing === 'home' ? ZONE.awayBox : ZONE.homeBox,
-        }, teamName, shooter ? `${shooter.firstName} ${shooter.lastName}` : undefined);
-        state.ball = ZONE.centre;
-      } else {
-        pushEvent(state, ctx, {
-          type: 'save',
-          side: opp,
-          playerId: oppGk?.id,
-          ballPos: possessing === 'home' ? ZONE.awayBox : ZONE.homeBox,
-        }, oppName, oppGk ? `${oppGk.firstName} ${oppGk.lastName}` : undefined);
-      }
-    } else {
-      pushEvent(state, ctx, {
-        type: 'shot',
-        side: possessing,
-        playerId: shooter?.id,
-        ballPos: possessing === 'home' ? ZONE.awayBox : ZONE.homeBox,
-      }, teamName, shooter ? `${shooter.firstName} ${shooter.lastName}` : undefined);
-    }
+    resolveShot(state, ctx, possessing, opp, teamName, oppName);
+
   } else if (r < wShot + wFoul) {
     state.fouls[opp]++;
     const fouler = pickFouler(opp, ctx, state);
-    pushEvent(state, ctx, {
-      type: 'foul',
-      side: opp,
-      playerId: fouler?.id,
-      ballPos: ZONE.centre,
-    }, oppName, fouler ? `${fouler.firstName} ${fouler.lastName}` : undefined);
-    if (fouler) {
-      const aggressionFactor = (fouler.stats.mental.aggression / 20);
-      const pYellow = 0.13 + 0.06 * aggressionFactor;
-      const pRed = 0.005 + 0.005 * aggressionFactor;
-      if (chance(pRed)) {
-        applyRed(state, ctx, opp, fouler);
-      } else if (chance(pYellow)) {
-        const already = state.cards[opp].yellow.includes(fouler.id);
-        if (already) {
+    const inBox = chance(0.15);
+
+    if (inBox && fouler) {
+      const penaltyZone = possessing === 'home' ? ZONE.awayBox : ZONE.homeBox;
+      const penTaker = pickAttacker(possessing, ctx, state);
+      pushEvent(state, ctx, {
+        type: 'penalty', side: possessing,
+        playerId: penTaker?.id,
+        ballPos: penaltyZone,
+      }, teamName, penTaker ? `${penTaker.firstName} ${penTaker.lastName}` : undefined);
+      resolveShot(state, ctx, possessing, opp, teamName, oppName, 1.4, penaltyZone);
+    } else {
+      pushEvent(state, ctx, {
+        type: 'foul', side: opp, playerId: fouler?.id, ballPos: ZONE.centre,
+      }, oppName, fouler ? `${fouler.firstName} ${fouler.lastName}` : undefined);
+
+      if (fouler) {
+        const aggressionFactor = fouler.stats.mental.aggression / 20;
+        const pYellow = 0.13 + 0.06 * aggressionFactor;
+        const pRed = 0.005 + 0.005 * aggressionFactor;
+        if (chance(pRed)) {
           applyRed(state, ctx, opp, fouler);
-        } else {
-          state.cards[opp].yellow.push(fouler.id);
-          pushEvent(state, ctx, {
-            type: 'yellow',
-            side: opp,
-            playerId: fouler.id,
-            ballPos: ZONE.centre,
-          }, oppName, `${fouler.firstName} ${fouler.lastName}`);
+        } else if (chance(pYellow)) {
+          if (state.cards[opp].yellow.includes(fouler.id)) {
+            applyRed(state, ctx, opp, fouler);
+          } else {
+            state.cards[opp].yellow.push(fouler.id);
+            pushEvent(state, ctx, { type: 'yellow', side: opp, playerId: fouler.id, ballPos: ZONE.centre },
+              oppName, `${fouler.firstName} ${fouler.lastName}`);
+          }
         }
       }
     }
+
   } else if (r < wShot + wFoul + wCorner) {
-    pushEvent(state, ctx, {
-      type: 'corner',
-      side: possessing,
-      ballPos: possessing === 'home' ? ZONE.homeRightCorner : ZONE.awayLeftCorner,
-    }, teamName);
+    const cornerZone = possessing === 'home' ? ZONE.homeRightCorner : ZONE.awayLeftCorner;
+    pushEvent(state, ctx, { type: 'corner', side: possessing, ballPos: cornerZone }, teamName);
+    // Chain: header attempt from corner
+    if (chance(0.45)) {
+      const header = pickAttacker(possessing, ctx, state);
+      if (header) {
+        pushEvent(state, ctx, {
+          type: 'header', side: possessing, playerId: header.id,
+          ballPos: possessing === 'home' ? ZONE.awayBox : ZONE.homeBox,
+        }, teamName, `${header.firstName} ${header.lastName}`);
+        if (chance(0.35)) {
+          resolveShot(state, ctx, possessing, opp, teamName, oppName, 0.85,
+            possessing === 'home' ? ZONE.awayBox : ZONE.homeBox);
+        }
+      }
+    }
+
   } else if (r < wShot + wFoul + wCorner + wOffside) {
     pushEvent(state, ctx, {
-      type: 'offside',
-      side: possessing,
+      type: 'offside', side: possessing,
       ballPos: possessing === 'home' ? ZONE.awayBox : ZONE.homeBox,
     }, teamName);
-  } else if (r < total) {
+
+  } else if (r < wShot + wFoul + wCorner + wOffside + wKeyPass) {
     const passer = pickAttacker(possessing, ctx, state);
     pushEvent(state, ctx, {
-      type: 'keyPass',
-      side: possessing,
-      playerId: passer?.id,
+      type: 'keyPass', side: possessing, playerId: passer?.id,
       ballPos: possessing === 'home' ? ZONE.midfieldAway : ZONE.midfieldHome,
     }, teamName, passer ? `${passer.firstName} ${passer.lastName}` : undefined);
+
+  } else if (r < wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick) {
+    const shooter = pickAttacker(possessing, ctx, state);
+    const fkZone = possessing === 'home' ? ZONE.awayAttack : ZONE.homeAttack;
+    pushEvent(state, ctx, {
+      type: 'freeKick', side: possessing, playerId: shooter?.id, ballPos: fkZone,
+    }, teamName, shooter ? `${shooter.firstName} ${shooter.lastName}` : undefined);
+    if (chance(0.30)) {
+      resolveShot(state, ctx, possessing, opp, teamName, oppName, 0.75, fkZone);
+    }
+
+  } else if (r < wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick + wDribble) {
+    const dribbler = pickAttacker(possessing, ctx, state);
+    pushEvent(state, ctx, {
+      type: 'dribble', side: possessing, playerId: dribbler?.id,
+      ballPos: possessing === 'home' ? ZONE.awayAttack : ZONE.homeAttack,
+    }, teamName, dribbler ? `${dribbler.firstName} ${dribbler.lastName}` : undefined);
+    if (chance(0.40)) {
+      resolveShot(state, ctx, possessing, opp, teamName, oppName, 1.05);
+    }
+
+  } else if (r < total) {
+    const defender = pickDefender(opp, ctx, state);
+    pushEvent(state, ctx, {
+      type: 'clearance', side: opp, playerId: defender?.id,
+      ballPos: ZONE.centre,
+    }, oppName, defender ? `${defender.firstName} ${defender.lastName}` : undefined);
+
   } else {
     state.ball = possessing === 'home' ? ZONE.midfieldAway : ZONE.midfieldHome;
   }
@@ -254,9 +315,7 @@ function applyRed(state: MatchState, ctx: EngineCtx, side: 'home' | 'away', play
     state.awayOnPitch = state.awayOnPitch.filter((id) => id !== player.id);
   }
   pushEvent(state, ctx, {
-    type: 'red',
-    side,
-    playerId: player.id,
-    ballPos: ZONE.centre,
+    type: 'red', side, playerId: player.id, ballPos: ZONE.centre,
   }, side === 'home' ? ctx.home.team.name : ctx.away.team.name, `${player.firstName} ${player.lastName}`);
 }
+

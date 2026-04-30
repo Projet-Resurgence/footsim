@@ -15,7 +15,7 @@ export function TeamCard({ team }: { team: Team }) {
             <img
               src={team.flag}
               alt=""
-              className="h-16 w-16 rounded-md border border-border object-cover"
+              className="h-16 w-16 object-cover"
             />
           ) : (
             <div className="h-16 w-16 rounded-md bg-border" />
