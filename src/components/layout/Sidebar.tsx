@@ -2,9 +2,10 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 
 const items = [
-  { to: '/dashboard', label: 'Vue d’ensemble', end: true },
+  { to: '/dashboard', label: "Vue d'ensemble", end: true },
   { to: '/dashboard/teams', label: 'Équipes' },
   { to: '/match', label: 'Matchs' },
+  { to: '/dashboard/simulation', label: 'Simulation' },
   { to: '/dashboard/settings', label: 'Réglages' },
 ];
 

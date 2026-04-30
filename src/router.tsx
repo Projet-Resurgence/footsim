@@ -7,6 +7,7 @@ import Settings from '@/pages/dashboard/Settings';
 import Teams from '@/pages/dashboard/Teams';
 import TeamNew from '@/pages/dashboard/TeamNew';
 import TeamDetail from '@/pages/dashboard/TeamDetail';
+import Simulation from '@/pages/dashboard/Simulation';
 import MatchSetup from '@/pages/matches/MatchSetup';
 import MatchLive from '@/pages/matches/MatchLive';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -30,6 +31,7 @@ export const router = createBrowserRouter(
         { path: 'teams/new', element: <TeamNew /> },
         { path: 'teams/:slug', element: <TeamDetail /> },
         { path: 'settings', element: <Settings /> },
+        { path: 'simulation', element: <Simulation /> },
       ],
     },
     {
