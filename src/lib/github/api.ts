@@ -10,6 +10,23 @@ function authHeaders(token: string) {
   };
 }
 
+function utf8ToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+function base64ToUtf8(b64: string): string {
+  const bin = atob(b64.replace(/\n/g, ''));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
 export async function validatePat(token: string): Promise<boolean> {
   const res = await fetch(`${API}/user`, { headers: authHeaders(token) });
   return res.ok;
@@ -27,7 +44,7 @@ export async function readJson<T>(
   if (!res.ok) throw new Error(`GitHub read ${path}: ${res.status}`);
   const json = (await res.json()) as { content: string; sha: string; encoding: string };
   if (json.encoding !== 'base64') throw new Error(`Unexpected encoding ${json.encoding}`);
-  const text = atob(json.content.replace(/\n/g, ''));
+  const text = base64ToUtf8(json.content);
   return { data: JSON.parse(text) as T, sha: json.sha };
 }
 
@@ -42,7 +59,7 @@ export type WriteOptions = {
 export async function writeJson(opts: WriteOptions): Promise<{ sha: string }> {
   const body = {
     message: opts.message,
-    content: btoa(JSON.stringify(opts.data, null, 2)),
+    content: utf8ToBase64(JSON.stringify(opts.data, null, 2)),
     branch: env.dataBranch,
     ...(opts.sha ? { sha: opts.sha } : {}),
   };
