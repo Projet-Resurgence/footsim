@@ -2,17 +2,13 @@ export type Culture =
   | 'francais' | 'anglais' | 'allemand' | 'italien' | 'espagnol' | 'portugais'
   | 'grec' | 'hongrois' | 'tcheque' | 'polonais' | 'russe' | 'ukrainien'
   | 'suedois' | 'neerlandais' | 'roumain' | 'serbe' | 'croate' | 'turc'
-  | 'arabe' | 'japonais' | 'coreen' | 'chinois' | 'vietnamien' | 'thai'
-  | 'indonesien' | 'persan' | 'indien' | 'israelien'
-  | 'bresilien' | 'argentin' | 'mexicain' | 'anglo-americain' | 'quebecois';
+  | 'arabe' | 'japonais' | 'coreen';
 
 export const CULTURES: Culture[] = [
   'francais','anglais','allemand','italien','espagnol','portugais',
   'grec','hongrois','tcheque','polonais','russe','ukrainien',
   'suedois','neerlandais','roumain','serbe','croate','turc',
-  'arabe','japonais','coreen','chinois','vietnamien','thai',
-  'indonesien','persan','indien','israelien',
-  'bresilien','argentin','mexicain','anglo-americain','quebecois',
+  'arabe','japonais','coreen',
 ];
 
 export const CULTURE_LABEL: Record<Culture, string> = {
@@ -21,11 +17,7 @@ export const CULTURE_LABEL: Record<Culture, string> = {
   tcheque: 'Tchèque', polonais: 'Polonais', russe: 'Russe', ukrainien: 'Ukrainien',
   suedois: 'Suédois', neerlandais: 'Néerlandais', roumain: 'Roumain', serbe: 'Serbe',
   croate: 'Croate', turc: 'Turc',
-  arabe: 'Arabe', japonais: 'Japonais', coreen: 'Coréen', chinois: 'Chinois',
-  vietnamien: 'Vietnamien', thai: 'Thaï', indonesien: 'Indonésien', persan: 'Persan',
-  indien: 'Indien', israelien: 'Israélien',
-  bresilien: 'Brésilien', argentin: 'Argentin', mexicain: 'Mexicain',
-  'anglo-americain': 'Anglo-américain', quebecois: 'Québécois',
+  arabe: 'Arabe', japonais: 'Japonais', coreen: 'Coréen',
 };
 
 export type Position = 'GK' | 'CB' | 'LB' | 'RB' | 'DM' | 'CM' | 'AM' | 'LM' | 'RM' | 'LW' | 'RW' | 'ST';
