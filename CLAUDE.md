@@ -94,9 +94,96 @@ Access **always** via literal `import.meta.env.VITE_FOO`. Dynamic indexing break
 
 ## Match engine
 
-Pre-compute → ratings (attack, midfield, defense, gk) per side. Live tick = 1 simulated minute. Possession side rolled by midfield ratio (with `0.93^reds` multiplier). Event roll: shot, foul, corner, offside, save, keyPass, none. Goal probability = `sigmoid((finishing + composure − 0.5*gk) / 8)` clamped [0.04, 0.55]. Yellow rolls boosted by aggression. Second yellow → red, removes from `homeOnPitch`/`awayOnPitch`.
+### Pre-computation (`sim/precompute.ts`)
 
-Speeds: 0.5 / 1 / 2 / 5 (ms-driven `setInterval`) or instant (sync loop). Halftime stalls until UI sends `resume`.
+Called once per side before kick-off. Takes `players[]`, `formation`, optional `customLineup` (11 IDs), optional `tacticStyle`.
+
+- **Lineup**: uses `customLineup` if provided and valid (11 resolvable players), else `pickXI` auto-selects best 11 by position fit.
+- **Bench**: top 12 remaining players by `overall` desc. Engine draws from these for auto-subs.
+- **Ratings computed from lineup**:
+  - `attack` = `0.7 × avg(top3 attackers overall) + 0.3 × avg(AM overall)` × `tacticMods.attackMult`
+  - `midfield` = `avg(all mid overall)` × `tacticMods.midfieldMult`
+  - `defense` = `0.8 × avg(defenders overall) + 0.2 × GK overall`
+  - `gk` = GK `overall`
+
+### Tactic styles (`TacticMods`)
+
+| Style | shotFreqMult | midfieldMult | attackMult | foulRateMult |
+|---|---|---|---|---|
+| possession | 0.88 | 1.12 | 1.00 | 1.00 |
+| contre-attaque | 1.08 | 0.92 | 1.10 | 1.00 |
+| direct | 1.18 | 1.00 | 1.00 | 1.00 |
+| pressing | 1.00 | 1.15 | 1.00 | 1.12 |
+
+### Tick loop (`sim/engine.ts → tick()`)
+
+1 tick = 1 simulated minute. Worker calls `tick()` repeatedly at interval set by speed.
+
+**Status machine**:
+```
+pregame → firstHalf (1–45+HT) → halftime → secondHalf (46–90+AT)
+  → [extraTimeFirst (91–105) → extraTimeHalfTime → extraTimeSecond (106–120+)]
+  → [penalties] → fulltime
+```
+Both `halftime` and `extraTimeHalfTime` stall the loop until UI sends `resume`.
+
+**Each tick**:
+1. Advance `minute++`; check end-of-period thresholds (with added time).
+2. **Possession roll**: `P(home) = homeMid / (homeMid + awayMid)` where each side's mid is multiplied by `0.93^(reds)`.
+3. **Event roll** — weighted draw over:
+
+| Event | Base weight |
+|---|---|
+| shot | `0.08 × (0.6 + pAttack) × shotFreqMult` |
+| foul | `0.08 × opp.foulRateMult` |
+| corner | 0.04 |
+| offside | 0.03 (0 if `noOffside` rule) |
+| keyPass | 0.10 |
+| freeKick | 0.03 |
+| dribble | `0.04 × pAttack` |
+| clearance | `0.03 × (1 − pAttack)` |
+| (nothing) | remainder |
+
+where `pAttack = myAttack / (myAttack + oppDefense)`, both multiplied by `0.93^reds`.
+
+### Shot resolution
+
+`resolveShot()` returns `bool` (goal scored):
+- `pGoal = sigmoid((finishing + composure − 0.5 × gkOverall) / 8) × mult` clamped `[0.04, 0.75]`
+- 55% chance on-target; if on-target: roll `pGoal` → goal, else 10% crossbar, else save.
+- After any goal in ET: `tryShot()` calls `checkGoldenGoal()` → fulltime if golden goal rule active.
+
+Special shot chains:
+- **Foul** (15% chance) → penalty → shot with `mult=1.4`
+- **Corner** (45% chance) → header → shot with `mult=0.85`
+- **FreeKick** (30% chance) → shot with `mult=0.75`
+- **Dribble** (40% chance) → shot with `mult=1.05`
+
+### Cards
+
+`yellow` roll: `0.005 + 0.005 × (aggression/20)` for immediate red; `0.13 + 0.06 × (aggression/20)` for yellow. Second yellow on same player → red. Red → player removed from `homeOnPitch`/`awayOnPitch`.
+
+### Auto-substitutions
+
+Triggered at halftime transition (`status: halftime → secondHalf`). Per side: `min(2, maxSubs − subsUsed)` subs. Swaps lowest-overall non-GK starters for best bench player of same position family (CB/LB/RB, DM/CM/AM/LM/RM, LW/RW/ST). Falls back to best available if no family match.
+
+### Penalty shootout (`simulatePenalties()`)
+
+5 kicks each then sudden death (max 20 rounds). `pGoal = sigmoid((finishing + composure − 0.5 × gkOverall) / 8) × 1.5` clamped `[0.50, 0.86]`. Result stored in `state.penaltyScore`.
+
+### Match rules (`MatchRules`)
+
+| Field | Default | Effect |
+|---|---|---|
+| `noOffside` | false | sets `wOffside = 0` |
+| `maxSubs` | 5 | caps auto-subs + manual subs |
+| `extraTime` | false | adds 2×15 min if tied at 90' |
+| `goldenGoal` | false | first ET goal ends match |
+| `penalties` | false | TAB after ET (or after 90' if no ET) |
+
+### Speeds
+
+`0.5` (2000 ms/tick), `1` (1000 ms), `2` (500 ms), `5` (200 ms), `instant` (sync loop, auto-resumes both halftimes).
 
 ## Encoding gotcha
 
