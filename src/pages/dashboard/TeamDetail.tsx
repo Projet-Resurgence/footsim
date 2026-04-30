@@ -26,6 +26,7 @@ export default function TeamDetail() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteCount, setDeleteCount] = useState(1);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState<'roster' | 'tactique'>('roster');
@@ -61,6 +62,21 @@ export default function TeamDetail() {
       toast('error', String(err));
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function deleteWeakest(n: number) {
+    if (!data || !pat || n <= 0) return;
+    const sorted = [...data.players].sort((a, b) => a.overall - b.overall);
+    const toRemove = new Set(sorted.slice(0, Math.min(n, sorted.length)).map((p) => p.id));
+    const merged = data.players.filter((p) => !toRemove.has(p.id));
+    const team = { ...data.team, playerCount: merged.length };
+    try {
+      await saveTeam(team, merged, pat);
+      setData({ team, players: merged });
+      toast('success', `${toRemove.size} joueur(s) supprimé(s).`);
+    } catch (err) {
+      toast('error', String(err));
     }
   }
 
@@ -187,15 +203,33 @@ export default function TeamDetail() {
 
       {tab === 'roster' && (
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-display text-xl">Roster</h2>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {ADD_COUNTS.map((n) => (
                 <Button key={n} variant="ghost" size="sm" onClick={() => addPlayers(n)} disabled={adding}>
                   + {n}
                 </Button>
               ))}
               {adding ? <Spinner /> : null}
+              <div className="flex items-center gap-1 border-l border-border pl-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={players.length}
+                  value={deleteCount}
+                  onChange={(e) => setDeleteCount(Math.max(1, Number(e.target.value)))}
+                  className="h-8 w-16 rounded border border-border bg-surface px-2 text-sm"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => deleteWeakest(deleteCount)}
+                  disabled={adding || players.length === 0}
+                >
+                  Supprimer les plus faibles
+                </Button>
+              </div>
             </div>
           </div>
           <RosterTable players={players} onSelect={setEditingId} />

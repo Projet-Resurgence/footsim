@@ -120,6 +120,8 @@ export function TacticsPanel({ team, players, onSave }: Props) {
   const layout = FORMATION_LAYOUT[formation];
   const playerMap = new Map(players.map((p) => [p.id, p]));
   const filledCount = lineup.filter(Boolean).length;
+  const filledSet = new Set(lineup.filter(Boolean) as string[]);
+  const bench = players.filter((p) => !filledSet.has(p.id)).sort((a, b) => b.overall - a.overall);
 
   return (
     <div className="space-y-6">
@@ -203,6 +205,21 @@ export function TacticsPanel({ team, players, onSave }: Props) {
           </Button>
         </div>
       </div>
+
+      {/* Bench */}
+      {bench.length > 0 && (
+        <div className="space-y-2">
+          <span className="text-sm text-muted">Banc des remplaçants ({bench.length})</span>
+          <div className="max-h-48 overflow-y-auto space-y-0.5 rounded-lg border border-border">
+            {bench.map((p) => (
+              <div key={p.id} className="flex items-center justify-between px-3 py-1.5 text-sm hover:bg-border/40 transition-colors">
+                <span>{p.firstName} {p.lastName}</span>
+                <span className="text-xs text-muted">{p.position} · {p.overall}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Player picker modal */}
       {pickingSlot !== null && (

@@ -6,6 +6,7 @@ import type { Team } from '@/lib/types';
 type Props = { state: MatchState; home: Team; away: Team; onResume: () => void };
 
 export function HalftimeOverlay({ state, home, away, onResume }: Props) {
+  const isET = state.status === 'extraTimeHalfTime';
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -18,7 +19,9 @@ export function HalftimeOverlay({ state, home, away, onResume }: Props) {
         className="w-[min(92vw,520px)] space-y-6 rounded-lg border border-border bg-surface p-8 shadow-subtle-md"
       >
         <div className="text-center">
-          <div className="text-xs uppercase tracking-widest text-muted">Mi-temps</div>
+          <div className="text-xs uppercase tracking-widest text-muted">
+            {isET ? 'Prolongations · Mi-temps' : 'Mi-temps'}
+          </div>
           <div className="mt-2 font-display text-5xl">
             {state.score.home} – {state.score.away}
           </div>
@@ -39,7 +42,7 @@ export function HalftimeOverlay({ state, home, away, onResume }: Props) {
         </div>
 
         <Button onClick={onResume} size="lg" className="w-full">
-          Reprendre la 2ᵉ mi-temps
+          {isET ? 'Reprendre la 2ᵉ prolongation' : 'Reprendre la 2ᵉ mi-temps'}
         </Button>
       </motion.div>
     </motion.div>

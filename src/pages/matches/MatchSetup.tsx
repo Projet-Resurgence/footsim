@@ -5,7 +5,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 import type { Formation, Team, TeamTactics, TacticStyle } from '@/lib/types';
 import { TACTIC_STYLE_LABEL } from '@/lib/types';
-import type { Speed } from '@/lib/sim/types';
+import type { MatchRules, Speed } from '@/lib/sim/types';
+import { DEFAULT_RULES } from '@/lib/sim/types';
 import { useTeams } from '@/stores/teams';
 import { useCredentials } from '@/stores/credentials';
 import { useMatch } from '@/stores/match';
@@ -27,6 +28,7 @@ export default function MatchSetup() {
   const [homeTactics, setHomeTactics] = useState<TeamTactics | null>(null);
   const [awayTactics, setAwayTactics] = useState<TeamTactics | null>(null);
   const [speed, setSpeed] = useState<Speed>('1');
+  const [rules, setRules] = useState<MatchRules>(DEFAULT_RULES);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -85,6 +87,7 @@ export default function MatchSetup() {
           tacticStyle: awayTactics?.style as TacticStyle | undefined,
         },
         speed,
+        rules,
       });
       navigate(`/match/${matchId}`);
     } catch (err) {
@@ -148,6 +151,59 @@ export default function MatchSetup() {
               </Button>
             ))}
           </div>
+        </label>
+      </section>
+
+      <section className="rounded-lg border border-border bg-surface p-5 space-y-4">
+        <div className="text-xs uppercase tracking-widest text-muted">Règles du match</div>
+        <label className="flex items-center gap-3 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={rules.noOffside}
+            onChange={(e) => setRules({ ...rules, noOffside: e.target.checked })}
+            className="h-4 w-4 rounded border-border"
+          />
+          Hors-jeu désactivé
+        </label>
+        <label className="flex items-center gap-3 text-sm">
+          <span className="text-muted">Remplacements max</span>
+          <select
+            value={rules.maxSubs}
+            onChange={(e) => setRules({ ...rules, maxSubs: Number(e.target.value) as 3 | 5 })}
+            className="h-8 rounded border border-border bg-surface px-2 text-sm"
+          >
+            <option value={3}>3</option>
+            <option value={5}>5</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-3 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={rules.extraTime}
+            onChange={(e) => setRules({ ...rules, extraTime: e.target.checked })}
+            className="h-4 w-4 rounded border-border"
+          />
+          Prolongations (2×15 min si égalité à 90')
+        </label>
+        {rules.extraTime && (
+          <label className="flex items-center gap-3 text-sm cursor-pointer pl-6">
+            <input
+              type="checkbox"
+              checked={rules.goldenGoal}
+              onChange={(e) => setRules({ ...rules, goldenGoal: e.target.checked })}
+              className="h-4 w-4 rounded border-border"
+            />
+            But en or
+          </label>
+        )}
+        <label className="flex items-center gap-3 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={rules.penalties}
+            onChange={(e) => setRules({ ...rules, penalties: e.target.checked })}
+            className="h-4 w-4 rounded border-border"
+          />
+          Tirs au but {rules.extraTime ? 'si toujours à égalité après les prolongations' : 'si égalité à 90\''}
         </label>
       </section>
 

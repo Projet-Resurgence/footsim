@@ -46,14 +46,18 @@ function buildCtx(input: MatchInput): EngineCtx {
   return { home, away, eventCounter: { v: 0 } };
 }
 
+function isPauseStatus(s: MatchState['status']): boolean {
+  return s === 'halftime' || s === 'extraTimeHalfTime';
+}
+
 function startLoop() {
   if (!ctx || !state) return;
   if (timer) clearInterval(timer);
   if (state.speed === 'instant') {
     while (state.status !== 'fulltime') {
       tick(state, ctx);
-      if (state.status === 'halftime') {
-        tick(state, ctx);
+      if (isPauseStatus(state.status)) {
+        tick(state, ctx); // auto-resume both halftime stalls in instant mode
       }
     }
     send({ type: 'finished', state });
@@ -62,9 +66,8 @@ function startLoop() {
   const ms = SPEED_MS[state.speed];
   timer = setInterval(() => {
     if (paused || !ctx || !state) return;
-    if (state.status === 'halftime') {
-      // automatic resume after a short pause is handled by UI sending resume; engine just stalls.
-      return;
+    if (isPauseStatus(state.status)) {
+      return; // stall — UI sends resume
     }
     tick(state, ctx);
     send({ type: 'state', state });
@@ -80,7 +83,7 @@ self.onmessage = (ev: MessageEvent<Inbound>) => {
     const msg = ev.data;
     if (msg.type === 'start') {
       ctx = buildCtx(msg.input);
-      state = initialState(msg.input.matchId, msg.input.speed);
+      state = initialState(msg.input.matchId, msg.input.speed, msg.input.rules);
       state.homeOnPitch = [...ctx.home.ratings.lineup];
       state.awayOnPitch = [...ctx.away.ratings.lineup];
       tick(state, ctx); // kickoff
@@ -90,7 +93,7 @@ self.onmessage = (ev: MessageEvent<Inbound>) => {
       paused = true;
     } else if (msg.type === 'resume') {
       paused = false;
-      if (state && state.status === 'halftime') {
+      if (state && isPauseStatus(state.status)) {
         tick(state, ctx!);
         send({ type: 'state', state });
         startLoop();

@@ -7,10 +7,21 @@ type Props = { state: MatchState; home: Team; away: Team };
 function minuteLabel(state: MatchState): string {
   if (state.status === 'pregame') return '0\'';
   if (state.status === 'halftime') return 'MT';
+  if (state.status === 'extraTimeHalfTime') return 'MT Prol.';
   if (state.status === 'fulltime') return 'FT';
+  if (state.status === 'penalties') return 'TAB';
   if (state.half === 1 && state.minute > 45) return `45+${state.minute - 45}'`;
   if (state.half === 2 && state.minute > 90) return `90+${state.minute - 90}'`;
   return `${state.minute}'`;
+}
+
+function periodLabel(state: MatchState): string {
+  const s = state.status;
+  if (s === 'extraTimeFirst' || s === 'extraTimeHalfTime') return ' · Prol. 1';
+  if (s === 'extraTimeSecond') return ' · Prol. 2';
+  if (s === 'penalties' || s === 'fulltime') return '';
+  if (state.half === 1) return ' · 1ʳᵉ MT';
+  return ' · 2ᵉ MT';
 }
 
 export function Scoreboard({ state, home, away }: Props) {
@@ -30,7 +41,7 @@ export function Scoreboard({ state, home, away }: Props) {
           </motion.div>
         </AnimatePresence>
         <div className="mt-1 text-xs uppercase tracking-widest text-muted">
-          {minuteLabel(state)}{state.half === 1 ? ' · 1ʳᵉ MT' : state.half === 2 ? ' · 2ᵉ MT' : ''}
+          {minuteLabel(state)}{periodLabel(state)}
         </div>
       </div>
       <Side team={away} score={state.score.away} side="right" />

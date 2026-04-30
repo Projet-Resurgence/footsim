@@ -51,7 +51,8 @@ export default function MatchLive() {
     );
   }
 
-  const showHalftime = state.status === 'halftime';
+  const showHalftime = state.status === 'halftime' || state.status === 'extraTimeHalfTime';
+  const isET = state.status === 'extraTimeFirst' || state.status === 'extraTimeHalfTime' || state.status === 'extraTimeSecond';
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 space-y-6">
@@ -91,12 +92,23 @@ export default function MatchLive() {
         />
       ) : null}
 
+      {isET && !showHalftime && (
+        <div className="rounded-lg border border-warning/30 bg-warning/5 px-4 py-2 text-center text-sm text-warning">
+          ⏱ Prolongations en cours
+        </div>
+      )}
+
       {finished ? (
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-5 text-center">
           <div className="font-display text-2xl">Fin du match</div>
           <div className="mt-1 text-sm text-muted">
             {input.home.team.name} {state.score.home} — {state.score.away} {input.away.team.name}
           </div>
+          {state.penaltyScore && (
+            <div className="mt-1 text-sm text-muted">
+              Tirs au but : {state.penaltyScore.home} – {state.penaltyScore.away}
+            </div>
+          )}
         </div>
       ) : null}
     </main>
