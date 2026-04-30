@@ -26,12 +26,17 @@ export function precomputeSide(
     const starters = customLineup.map((id) => playerMap.get(id)).filter(Boolean) as Player[];
     if (starters.length === 11) {
       lineup = starters;
-      bench = roster.filter((p) => !customLineup.includes(p.id));
+      bench = roster
+        .filter((p) => !customLineup.includes(p.id))
+        .sort((a, b) => b.overall - a.overall)
+        .slice(0, 12);
     } else {
       ({ lineup, bench } = pickXI(roster, formation));
+      bench = bench.sort((a, b) => b.overall - a.overall).slice(0, 12);
     }
   } else {
     ({ lineup, bench } = pickXI(roster, formation));
+    bench = bench.sort((a, b) => b.overall - a.overall).slice(0, 12);
   }
 
   const gk = lineup.find((p) => p.position === 'GK');

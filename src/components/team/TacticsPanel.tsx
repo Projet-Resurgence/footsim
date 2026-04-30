@@ -121,7 +121,16 @@ export function TacticsPanel({ team, players, onSave }: Props) {
   const playerMap = new Map(players.map((p) => [p.id, p]));
   const filledCount = lineup.filter(Boolean).length;
   const filledSet = new Set(lineup.filter(Boolean) as string[]);
-  const bench = players.filter((p) => !filledSet.has(p.id)).sort((a, b) => b.overall - a.overall);
+  const BENCH_POS_ORDER: Record<string, number> = {
+    GK: 0, CB: 1, LB: 1, RB: 1, DM: 2, CM: 2, LM: 2, RM: 2, AM: 2, LW: 3, RW: 3, ST: 3,
+  };
+  const bench = players
+    .filter((p) => !filledSet.has(p.id))
+    .sort((a, b) => {
+      const po = (BENCH_POS_ORDER[a.position] ?? 4) - (BENCH_POS_ORDER[b.position] ?? 4);
+      return po !== 0 ? po : b.overall - a.overall;
+    })
+    .slice(0, 12);
 
   return (
     <div className="space-y-6">
