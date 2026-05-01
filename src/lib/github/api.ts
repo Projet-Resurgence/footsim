@@ -57,17 +57,29 @@ export type WriteOptions = {
 };
 
 export async function writeJson(opts: WriteOptions): Promise<{ sha: string }> {
-  const body = {
-    message: opts.message,
-    content: utf8ToBase64(JSON.stringify(opts.data, null, 2)),
-    branch: env.dataBranch,
-    ...(opts.sha ? { sha: opts.sha } : {}),
-  };
-  const res = await fetch(`${API}/repos/${env.dataRepo}/contents/${opts.path}`, {
-    method: 'PUT',
-    headers: { ...authHeaders(opts.token), 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const content = utf8ToBase64(JSON.stringify(opts.data, null, 2));
+
+  async function attempt(sha: string | undefined): Promise<Response> {
+    return fetch(`${API}/repos/${env.dataRepo}/contents/${opts.path}`, {
+      method: 'PUT',
+      headers: { ...authHeaders(opts.token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: opts.message,
+        content,
+        branch: env.dataBranch,
+        ...(sha ? { sha } : {}),
+      }),
+    });
+  }
+
+  let res = await attempt(opts.sha);
+
+  // 409 = SHA stale — re-read fresh SHA and retry once
+  if (res.status === 409 || res.status === 422) {
+    const fresh = await readJson<unknown>(opts.path, opts.token);
+    res = await attempt(fresh?.sha);
+  }
+
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GitHub write ${opts.path}: ${res.status} ${text}`);

@@ -27,11 +27,18 @@ export default function CompetitionDetail() {
 
   useEffect(() => {
     if (!pat || !id) return;
-    Promise.all([
-      load(id, pat),
-      teams.length === 0 ? refreshTeams(pat) : Promise.resolve(),
-    ]).finally(() => setLoading(false));
-  }, [id, pat, load, refreshTeams, teams.length]);
+
+    const teamLoad = teams.length === 0 ? refreshTeams(pat) : Promise.resolve();
+
+    // Si la compétition est déjà en mémoire (mise à jour optimiste), on ne recharge pas depuis GitHub
+    if (current?.id === id) {
+      teamLoad.finally(() => setLoading(false));
+      return;
+    }
+
+    Promise.all([load(id, pat), teamLoad]).finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, pat]);
 
   if (loading) {
     return <div className="flex justify-center py-20"><Spinner className="h-6 w-6" /></div>;
