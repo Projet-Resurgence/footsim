@@ -8,6 +8,15 @@ async function readIndex(token: string): Promise<{ data: CompetitionSummary[]; s
   return readJson<CompetitionSummary[]>(INDEX_PATH, token);
 }
 
+// Single global queue — toutes les ops compétition touchent index.json (partagé)
+let globalQueue: Promise<void> = Promise.resolve();
+
+function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+  const result = globalQueue.then(fn);
+  globalQueue = result.then(() => {}, () => {});
+  return result;
+}
+
 export async function listCompetitions(token: string): Promise<CompetitionSummary[]> {
   const res = await readIndex(token);
   return res?.data ?? [];
@@ -18,64 +27,58 @@ export async function loadCompetition(id: string, token: string): Promise<Compet
   return res?.data ?? null;
 }
 
-// Serialize saves per competition id to prevent concurrent SHA conflicts
-const saveQueues = new Map<string, Promise<void>>();
-
 export function saveCompetition(competition: Competition, token: string): Promise<void> {
-  const prev = saveQueues.get(competition.id) ?? Promise.resolve();
-  const next = prev.then(() => doSaveCompetition(competition, token));
-  saveQueues.set(competition.id, next.catch(() => {}));
-  return next;
-}
+  return enqueue(async () => {
+    const existing = await readJson<Competition>(COMP_PATH(competition.id), token);
+    await writeJson({
+      path: COMP_PATH(competition.id),
+      token,
+      data: competition,
+      message: existing
+        ? `chore(competitions): update ${competition.name}`
+        : `feat(competitions): create ${competition.name}`,
+      sha: existing?.sha,
+    });
 
-async function doSaveCompetition(competition: Competition, token: string): Promise<void> {
-  const existing = await readJson<Competition>(COMP_PATH(competition.id), token);
-  await writeJson({
-    path: COMP_PATH(competition.id),
-    token,
-    data: competition,
-    message: existing
-      ? `chore(competitions): update ${competition.name}`
-      : `feat(competitions): create ${competition.name}`,
-    sha: existing?.sha,
-  });
-
-  const idx = await readIndex(token);
-  const summary: CompetitionSummary = {
-    id: competition.id,
-    name: competition.name,
-    format: competition.format,
-    status: competition.status,
-    teamCount: competition.teamIds.length,
-    createdAt: competition.createdAt,
-    winner: competition.winner,
-  };
-  const list = idx?.data ?? [];
-  const next = list.some((c) => c.id === competition.id)
-    ? list.map((c) => (c.id === competition.id ? summary : c))
-    : [summary, ...list];
-  await writeJson({
-    path: INDEX_PATH,
-    token,
-    data: next,
-    message: `chore(competitions): update index`,
-    sha: idx?.sha,
+    const idx = await readIndex(token);
+    const summary: CompetitionSummary = {
+      id: competition.id,
+      name: competition.name,
+      format: competition.format,
+      status: competition.status,
+      teamCount: competition.teamIds.length,
+      createdAt: competition.createdAt,
+      winner: competition.winner,
+    };
+    const list = idx?.data ?? [];
+    const next = list.some((c) => c.id === competition.id)
+      ? list.map((c) => (c.id === competition.id ? summary : c))
+      : [summary, ...list];
+    await writeJson({
+      path: INDEX_PATH,
+      token,
+      data: next,
+      message: `chore(competitions): update index`,
+      sha: idx?.sha,
+    });
   });
 }
 
-export async function deleteCompetition(id: string, token: string): Promise<void> {
-  const existing = await readJson<Competition>(COMP_PATH(id), token);
-  if (existing) {
-    await deleteFile(COMP_PATH(id), existing.sha, token, `chore(competitions): delete ${id}`);
-  }
-  const idx = await readIndex(token);
-  if (!idx) return;
-  const next = idx.data.filter((c) => c.id !== id);
-  await writeJson({
-    path: INDEX_PATH,
-    token,
-    data: next,
-    message: `chore(competitions): remove ${id} from index`,
-    sha: idx.sha,
+export function deleteCompetition(id: string, token: string): Promise<void> {
+  return enqueue(async () => {
+    const existing = await readJson<Competition>(COMP_PATH(id), token);
+    if (existing) {
+      await deleteFile(COMP_PATH(id), existing.sha, token, `chore(competitions): delete ${id}`);
+    }
+    const idx = await readIndex(token);
+    if (!idx) return;
+    const next = idx.data.filter((c) => c.id !== id);
+    await writeJson({
+      path: INDEX_PATH,
+      token,
+      data: next,
+      message: `chore(competitions): remove ${id} from index`,
+      sha: idx.sha,
+    });
   });
 }
