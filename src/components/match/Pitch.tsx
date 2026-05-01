@@ -77,7 +77,9 @@ export function Pitch({ state, homeFormation, awayFormation }: Props) {
   const homePositions = FORMATION_POSITIONS[homeFormation];
   const awayPositions = FORMATION_POSITIONS[awayFormation].map(mirror);
 
-  const ballOffset = (state.ball.x - 50) * 0.12;
+  const ballX = state.ball?.x ?? 50;
+  const ballY = state.ball?.y ?? 25;
+  const ballOffset = (ballX - 50) * 0.12;
 
   return (
     <svg
@@ -135,7 +137,7 @@ export function Pitch({ state, homeFormation, awayFormation }: Props) {
         fill="white"
         stroke="#444"
         strokeWidth="0.16"
-        animate={{ cx: state.ball.x, cy: state.ball.y }}
+        animate={{ cx: ballX, cy: ballY }}
         transition={BALL_TRANSITION}
       />
 
@@ -149,10 +151,10 @@ export function Pitch({ state, homeFormation, awayFormation }: Props) {
             strokeWidth="0.12"
             opacity="0.5"
             animate={{
-              x1: state.ball.x + Math.cos(angle) * BALL_R,
-              y1: state.ball.y + Math.sin(angle) * BALL_R,
-              x2: state.ball.x + Math.cos(next) * BALL_R,
-              y2: state.ball.y + Math.sin(next) * BALL_R,
+              x1: ballX + Math.cos(angle) * BALL_R,
+              y1: ballY + Math.sin(angle) * BALL_R,
+              x2: ballX + Math.cos(next) * BALL_R,
+              y2: ballY + Math.sin(next) * BALL_R,
             }}
             transition={BALL_TRANSITION}
           />

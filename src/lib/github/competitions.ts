@@ -4,8 +4,29 @@ import { readJson, writeJson, deleteFile } from './api';
 const INDEX_PATH = 'data/competitions/index.json';
 const COMP_PATH = (id: string) => `data/competitions/${id}.json`;
 
+// Cache the last known index SHA to avoid GitHub API replication lag (stale reads right after a write)
+let cachedIndexSha: string | undefined;
+let cachedIndexData: CompetitionSummary[] | undefined;
+
 async function readIndex(token: string): Promise<{ data: CompetitionSummary[]; sha: string } | null> {
-  return readJson<CompetitionSummary[]>(INDEX_PATH, token);
+  const res = await readJson<CompetitionSummary[]>(INDEX_PATH, token);
+  if (res) {
+    cachedIndexSha = res.sha;
+    cachedIndexData = res.data;
+  }
+  return res;
+}
+
+async function writeIndex(data: CompetitionSummary[], token: string, message: string): Promise<void> {
+  const result = await writeJson({
+    path: INDEX_PATH,
+    token,
+    data,
+    message,
+    sha: cachedIndexSha,
+  });
+  cachedIndexSha = result.sha;
+  cachedIndexData = data;
 }
 
 // Single global queue — toutes les ops compétition touchent index.json (partagé)
@@ -40,7 +61,10 @@ export function saveCompetition(competition: Competition, token: string): Promis
       sha: existing?.sha,
     });
 
-    const idx = await readIndex(token);
+    // Use cached index data if available to avoid re-reading stale SHA right after a write
+    const idx = cachedIndexData !== undefined && cachedIndexSha !== undefined
+      ? { data: cachedIndexData, sha: cachedIndexSha }
+      : await readIndex(token);
     const summary: CompetitionSummary = {
       id: competition.id,
       name: competition.name,
@@ -54,13 +78,7 @@ export function saveCompetition(competition: Competition, token: string): Promis
     const next = list.some((c) => c.id === competition.id)
       ? list.map((c) => (c.id === competition.id ? summary : c))
       : [summary, ...list];
-    await writeJson({
-      path: INDEX_PATH,
-      token,
-      data: next,
-      message: `chore(competitions): update index`,
-      sha: idx?.sha,
-    });
+    await writeIndex(next, token, `chore(competitions): update index`);
   });
 }
 
@@ -70,15 +88,11 @@ export function deleteCompetition(id: string, token: string): Promise<void> {
     if (existing) {
       await deleteFile(COMP_PATH(id), existing.sha, token, `chore(competitions): delete ${id}`);
     }
-    const idx = await readIndex(token);
+    const idx = cachedIndexData !== undefined && cachedIndexSha !== undefined
+      ? { data: cachedIndexData, sha: cachedIndexSha }
+      : await readIndex(token);
     if (!idx) return;
     const next = idx.data.filter((c) => c.id !== id);
-    await writeJson({
-      path: INDEX_PATH,
-      token,
-      data: next,
-      message: `chore(competitions): remove ${id} from index`,
-      sha: idx.sha,
-    });
+    await writeIndex(next, token, `chore(competitions): remove ${id} from index`);
   });
 }
