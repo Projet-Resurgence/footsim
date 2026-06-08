@@ -117,6 +117,7 @@ export default function CompetitionMatchLive() {
   // Detect goals for celebration
   useEffect(() => {
     if (!matchState || !matchInput) return;
+    if (matchState.matchId !== matchInput.matchId) return;
     const prev = prevScoreRef.current;
     const curr = matchState.score;
     if (curr.home > prev.home) triggerCelebration(matchInput.home.team, curr);
