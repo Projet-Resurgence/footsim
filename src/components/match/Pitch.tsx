@@ -108,6 +108,7 @@ export function Pitch({ state, homeFormation, awayFormation }: Props) {
             stroke="#1A1A1A"
             strokeWidth="0.2"
             opacity="0.95"
+            initial={{ cx: pos.x + shift, cy: pos.y }}
             animate={{ cx: pos.x + shift, cy: pos.y }}
             transition={PLAYER_TRANSITION}
           />
@@ -125,6 +126,7 @@ export function Pitch({ state, homeFormation, awayFormation }: Props) {
             stroke="#1A1A1A"
             strokeWidth="0.2"
             opacity="0.95"
+            initial={{ cx: pos.x + shift, cy: pos.y }}
             animate={{ cx: pos.x + shift, cy: pos.y }}
             transition={PLAYER_TRANSITION}
           />
@@ -137,6 +139,7 @@ export function Pitch({ state, homeFormation, awayFormation }: Props) {
         fill="white"
         stroke="#444"
         strokeWidth="0.16"
+        initial={{ cx: ballX, cy: ballY }}
         animate={{ cx: ballX, cy: ballY }}
         transition={BALL_TRANSITION}
       />
@@ -150,6 +153,12 @@ export function Pitch({ state, homeFormation, awayFormation }: Props) {
             stroke="#444"
             strokeWidth="0.12"
             opacity="0.5"
+            initial={{
+              x1: ballX + Math.cos(angle) * BALL_R,
+              y1: ballY + Math.sin(angle) * BALL_R,
+              x2: ballX + Math.cos(next) * BALL_R,
+              y2: ballY + Math.sin(next) * BALL_R,
+            }}
             animate={{
               x1: ballX + Math.cos(angle) * BALL_R,
               y1: ballY + Math.sin(angle) * BALL_R,
