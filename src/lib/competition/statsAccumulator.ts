@@ -51,6 +51,95 @@ export function computeAvgRating(matchRatings: number[]): number {
   return Math.round((sum / matchRatings.length) * 10) / 10;
 }
 
+export type MotmResult = {
+  playerId: string;
+  playerName: string;
+  teamId: string;
+  teamName: string;
+  rating: number;
+};
+
+export function computeMotm(
+  state: MatchState,
+  home: { team: Team; players: Player[] },
+  away: { team: Team; players: Player[] },
+): MotmResult | null {
+  const homeMap = new Map(home.players.map((p) => [p.id, p]));
+  const awayMap = new Map(away.players.map((p) => [p.id, p]));
+
+  const matchGoals = new Map<string, number>();
+  const matchAssists = new Map<string, number>();
+  const matchYellows = new Map<string, number>();
+  const matchReds = new Map<string, number>();
+  const inc = (map: Map<string, number>, id: string) => map.set(id, (map.get(id) ?? 0) + 1);
+
+  const events = state.events;
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.type === 'goal' && ev.playerId) {
+      inc(matchGoals, ev.playerId);
+      for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+        const prior = events[j];
+        if (prior.type === 'keyPass' && prior.side === ev.side && prior.playerId) {
+          inc(matchAssists, prior.playerId);
+          break;
+        }
+        if (prior.type === 'goal') break;
+      }
+    }
+    if (ev.type === 'yellow' && ev.playerId) inc(matchYellows, ev.playerId);
+    if (ev.type === 'red' && ev.playerId) inc(matchReds, ev.playerId);
+  }
+
+  const subEventIds = new Set(
+    state.events.filter((e) => e.type === 'substitution' && e.playerId).map((e) => e.playerId!),
+  );
+
+  function participatedIds(side: 'home' | 'away'): Set<string> {
+    const initial = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+    const ids = new Set(initial);
+    for (const ev of state.events) {
+      if (ev.type === 'substitution' && ev.side === side && ev.playerId) ids.add(ev.playerId);
+    }
+    return ids;
+  }
+
+  let best: MotmResult | null = null;
+
+  for (const [side, sideData] of [['home', home], ['away', away]] as const) {
+    const sideMap = side === 'home' ? homeMap : awayMap;
+    const ids = participatedIds(side);
+    for (const pid of ids) {
+      const playerData = sideMap.get(pid);
+      if (!playerData) continue;
+      const isSub = subEventIds.has(pid) && !state.homeOnPitch.includes(pid) && !state.awayOnPitch.includes(pid)
+        ? false
+        : subEventIds.has(pid);
+      const rating = computeMatchRating(
+        playerData,
+        side,
+        state,
+        matchGoals.get(pid) ?? 0,
+        matchAssists.get(pid) ?? 0,
+        matchYellows.get(pid) ?? 0,
+        matchReds.get(pid) ?? 0,
+        isSub,
+      );
+      if (!best || rating > best.rating) {
+        best = {
+          playerId: pid,
+          playerName: `${playerData.firstName} ${playerData.lastName}`,
+          teamId: sideData.team.id,
+          teamName: sideData.team.name,
+          rating,
+        };
+      }
+    }
+  }
+
+  return best;
+}
+
 export function accumulateMatchStats(
   prev: Record<string, PlayerCompStats>,
   state: MatchState,

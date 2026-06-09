@@ -19,7 +19,7 @@ import { advanceBracket, applyResultToStandings } from '@/lib/competition/schedu
 
 import type { Team } from '@/lib/types';
 import type { MatchInput } from '@/lib/sim/types';
-import { accumulateMatchStats, computeAwards } from '@/lib/competition/statsAccumulator';
+import { accumulateMatchStats, computeAwards, computeMotm, type MotmResult } from '@/lib/competition/statsAccumulator';
 
 export default function CompetitionMatchLive() {
   const { competitionId, matchId } = useParams<{ competitionId: string; matchId: string }>();
@@ -46,6 +46,7 @@ export default function CompetitionMatchLive() {
   const dirty = useCompetition((s) => s.dirty);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [motm, setMotm] = useState<MotmResult | null>(null);
   const savedRef = useRef(false);
   const prevScoreRef = useRef({ home: 0, away: 0 });
   const [celebration, setCelebration] = useState<{ team: Team; score: { home: number; away: number } } | null>(null);
@@ -56,6 +57,7 @@ export default function CompetitionMatchLive() {
     savedRef.current = false;
     prevScoreRef.current = { home: 0, away: 0 };
     setCelebration(null);
+    setMotm(null);
     if (celebTimerRef.current) clearTimeout(celebTimerRef.current);
     setLoading(true);
   }, [competitionId, matchId]);
@@ -200,6 +202,12 @@ export default function CompetitionMatchLive() {
         { team: matchInput!.away.team, players: matchInput!.away.players },
       );
 
+      setMotm(computeMotm(
+        matchState!,
+        { team: matchInput!.home.team, players: matchInput!.home.players },
+        { team: matchInput!.away.team, players: matchInput!.away.players },
+      ));
+
       const updated = {
         ...current!,
         matches: updatedMatches,
@@ -305,6 +313,14 @@ export default function CompetitionMatchLive() {
           {matchState.penaltyScore && (
             <div className="text-sm text-muted">
               Tirs au but : {matchState.penaltyScore.home} – {matchState.penaltyScore.away}
+            </div>
+          )}
+          {motm && (
+            <div className="inline-flex flex-col items-center gap-1 rounded-md border border-warning/30 bg-warning/5 px-5 py-3">
+              <div className="text-xs uppercase tracking-widest text-muted">🏅 Homme du match</div>
+              <div className="font-display text-lg">{motm.playerName}</div>
+              <div className="text-xs text-muted">{motm.teamName}</div>
+              <div className="text-sm font-medium text-warning">{motm.rating.toFixed(1)} / 10</div>
             </div>
           )}
           {dirty && (

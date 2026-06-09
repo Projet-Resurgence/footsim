@@ -18,15 +18,30 @@ async function readIndex(token: string): Promise<{ data: CompetitionSummary[]; s
 }
 
 async function writeIndex(data: CompetitionSummary[], token: string, message: string): Promise<void> {
-  const result = await writeJson({
-    path: INDEX_PATH,
-    token,
-    data,
-    message,
-    sha: cachedIndexSha,
-  });
-  cachedIndexSha = result.sha;
-  cachedIndexData = data;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const result = await writeJson({
+        path: INDEX_PATH,
+        token,
+        data,
+        message,
+        sha: cachedIndexSha,
+      });
+      cachedIndexSha = result.sha;
+      cachedIndexData = data;
+      return;
+    } catch (err) {
+      const msg = String(err);
+      if ((msg.includes('409') || msg.includes('422')) && attempt < 3) {
+        // SHA stale — re-fetch and retry
+        const fresh = await readJson<CompetitionSummary[]>(INDEX_PATH, token);
+        cachedIndexSha = fresh?.sha;
+        cachedIndexData = fresh?.data;
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 // Single global queue — toutes les ops compétition touchent index.json (partagé)
