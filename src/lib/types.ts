@@ -7,7 +7,12 @@ export type Culture =
   | 'bresilien' | 'argentin' | 'mexicain' | 'anglo-americain' | 'quebecois'
   | 'maghrebin' | 'egyptien' | 'levantin' | 'golfe' | 'soudanais'
   | 'cambodgien' | 'birman' | 'philippin' | 'malaisien'
-  | 'nigerian' | 'ethiopien';
+  | 'nigerian' | 'ethiopien'
+  | 'tanzanien' | 'somalien'
+  | 'kazakh' | 'ouzbek' | 'kirghiz' | 'tadjik' | 'turkmene' | 'azeri'
+  | 'ouighour' | 'mongol' | 'siberien'
+  | 'amerindien' | 'peruvien' | 'chilien'
+  | 'australien' | 'neo-zelandais' | 'caledonien';
 
 export const CULTURES: Culture[] = [
   'francais','anglais','allemand','italien','espagnol','portugais',
@@ -18,7 +23,11 @@ export const CULTURES: Culture[] = [
   'bresilien','argentin','mexicain','anglo-americain','quebecois',
   'maghrebin','egyptien','levantin','golfe','soudanais',
   'cambodgien','birman','philippin','malaisien',
-  'nigerian','ethiopien',
+  'nigerian','ethiopien','tanzanien','somalien',
+  'kazakh','ouzbek','kirghiz','tadjik','turkmene','azeri',
+  'ouighour','mongol','siberien',
+  'amerindien','peruvien','chilien',
+  'australien','neo-zelandais','caledonien',
 ];
 
 export const CULTURE_LABEL: Record<Culture, string> = {
@@ -32,19 +41,28 @@ export const CULTURE_LABEL: Record<Culture, string> = {
   persan: 'Persan', indien: 'Indien', israelien: 'Israélien',
   bresilien: 'Brésilien', argentin: 'Argentin', mexicain: 'Mexicain',
   'anglo-americain': 'Anglo-Américain', quebecois: 'Québécois',
-  maghrebin: 'Maghrébin', egyptien: 'Égyptien', levantin: 'Levantin', golfe: 'Golfe Persique', soudanais: 'Soudanais',
+  maghrebin: 'Maghrébin', egyptien: 'Égyptien', levantin: 'Levantin',
+  golfe: 'Golfe Persique', soudanais: 'Soudanais',
   cambodgien: 'Cambodgien', birman: 'Birman', philippin: 'Philippin', malaisien: 'Malaisien',
-  nigerian: 'Nigérian', ethiopien: 'Éthiopien',
+  nigerian: 'Nigérian', ethiopien: 'Éthiopien', tanzanien: 'Tanzanien', somalien: 'Somalien',
+  kazakh: 'Kazakh', ouzbek: 'Ouzbek', kirghiz: 'Kirghiz', tadjik: 'Tadjik',
+  turkmene: 'Turkmène', azeri: 'Azéri',
+  ouighour: 'Ouïghour', mongol: 'Mongol', siberien: 'Sibérien',
+  amerindien: 'Amérindien', peruvien: 'Péruvien', chilien: 'Chilien',
+  australien: 'Australien', 'neo-zelandais': 'Néo-Zélandais', caledonien: 'Calédonien',
 };
 
-export type Continent = 'europe' | 'asie' | 'amerique' | 'moyenorient' | 'afrique';
+export type Continent = 'europe' | 'asie' | 'asiecentrale' | 'amerique' | 'moyenorient' | 'afrique' | 'afriquenord' | 'oceanie';
 
 export const CONTINENT_LABEL: Record<Continent, string> = {
   europe: 'Europe',
   asie: 'Asie',
+  asiecentrale: 'Asie centrale & Caucase',
   amerique: 'Amérique',
   moyenorient: 'Moyen-Orient',
-  afrique: 'Afrique',
+  afrique: 'Afrique subsaharienne',
+  afriquenord: 'Afrique du Nord',
+  oceanie: 'Océanie',
 };
 
 export const CULTURE_CONTINENT: Record<Culture, Continent> = {
@@ -56,20 +74,28 @@ export const CULTURE_CONTINENT: Record<Culture, Continent> = {
   japonais: 'asie', coreen: 'asie', chinois: 'asie', vietnamien: 'asie',
   thai: 'asie', indonesien: 'asie', indien: 'asie', cambodgien: 'asie',
   birman: 'asie', philippin: 'asie', malaisien: 'asie',
+  ouighour: 'asie', mongol: 'asie', siberien: 'asie',
+  kazakh: 'asiecentrale', ouzbek: 'asiecentrale', kirghiz: 'asiecentrale',
+  tadjik: 'asiecentrale', turkmene: 'asiecentrale', azeri: 'asiecentrale',
   arabe: 'moyenorient', persan: 'moyenorient', israelien: 'moyenorient',
-  maghrebin: 'moyenorient', egyptien: 'moyenorient', levantin: 'moyenorient',
-  golfe: 'moyenorient', soudanais: 'afrique',
+  levantin: 'moyenorient', golfe: 'moyenorient',
+  maghrebin: 'afriquenord', egyptien: 'afriquenord', soudanais: 'afriquenord',
+  nigerian: 'afrique', ethiopien: 'afrique', tanzanien: 'afrique', somalien: 'afrique',
   bresilien: 'amerique', argentin: 'amerique', mexicain: 'amerique',
   'anglo-americain': 'amerique', quebecois: 'amerique',
-  nigerian: 'afrique', ethiopien: 'afrique',
+  amerindien: 'amerique', peruvien: 'amerique', chilien: 'amerique',
+  australien: 'oceanie', 'neo-zelandais': 'oceanie', caledonien: 'oceanie',
 };
 
 export const CULTURES_BY_CONTINENT: Record<Continent, Culture[]> = {
   europe: ['francais','anglais','allemand','italien','espagnol','portugais','grec','hongrois','tcheque','polonais','russe','ukrainien','suedois','neerlandais','roumain','serbe','croate','turc'],
-  asie: ['japonais','coreen','chinois','vietnamien','thai','indonesien','indien','cambodgien','birman','philippin','malaisien'],
-  moyenorient: ['arabe','maghrebin','egyptien','levantin','golfe','persan','israelien'],
-  afrique: ['soudanais','nigerian','ethiopien'],
-  amerique: ['bresilien','argentin','mexicain','anglo-americain','quebecois'],
+  asie: ['japonais','coreen','chinois','vietnamien','thai','indonesien','indien','cambodgien','birman','philippin','malaisien','ouighour','mongol','siberien'],
+  asiecentrale: ['kazakh','ouzbek','kirghiz','tadjik','turkmene','azeri'],
+  moyenorient: ['arabe','levantin','golfe','persan','israelien'],
+  afriquenord: ['maghrebin','egyptien','soudanais'],
+  afrique: ['nigerian','ethiopien','tanzanien','somalien'],
+  amerique: ['bresilien','argentin','mexicain','anglo-americain','quebecois','amerindien','peruvien','chilien'],
+  oceanie: ['australien','neo-zelandais','caledonien'],
 };
 
 export type Position = 'GK' | 'CB' | 'LB' | 'RB' | 'DM' | 'CM' | 'AM' | 'LM' | 'RM' | 'LW' | 'RW' | 'ST';
