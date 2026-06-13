@@ -126,7 +126,7 @@ export const POSITIONS: Position[] = ['GK','CB','LB','RB','DM','CM','AM','LM','R
 
 export const POSITION_LABEL: Record<Position, string> = {
   GK: 'GB', CB: 'DC', LB: 'DG', RB: 'DD',
-  DM: 'MDF', CM: 'MC', AM: 'MAO', LM: 'MG', RM: 'MD',
+  DM: 'MDF', CM: 'MC', AM: 'MO', LM: 'MG', RM: 'MD',
   LW: 'AG', RW: 'AD', ST: 'BU',
 };
 
