@@ -7,8 +7,11 @@ export type Culture =
   | 'bresilien' | 'argentin' | 'mexicain' | 'anglo-americain' | 'quebecois'
   | 'maghrebin' | 'egyptien' | 'levantin' | 'golfe' | 'soudanais'
   | 'cambodgien' | 'birman' | 'philippin' | 'malaisien'
-  | 'nigerian' | 'ethiopien'
-  | 'tanzanien' | 'somalien'
+  | 'nigerian' | 'ethiopien' | 'tanzanien' | 'somalien'
+  | 'senegalais' | 'ivoirien' | 'ghaneen' | 'malien' | 'burkinabe' | 'guineens'
+  | 'congolais' | 'camerounais' | 'angolais'
+  | 'kenyan' | 'ugandais' | 'rwandais'
+  | 'zoulou' | 'mozambicain' | 'zimbabween'
   | 'kazakh' | 'ouzbek' | 'kirghiz' | 'tadjik' | 'turkmene' | 'azeri'
   | 'ouighour' | 'mongol' | 'siberien'
   | 'amerindien' | 'peruvien' | 'chilien'
@@ -24,6 +27,10 @@ export const CULTURES: Culture[] = [
   'maghrebin','egyptien','levantin','golfe','soudanais',
   'cambodgien','birman','philippin','malaisien',
   'nigerian','ethiopien','tanzanien','somalien',
+  'senegalais','ivoirien','ghaneen','malien','burkinabe','guineens',
+  'congolais','camerounais','angolais',
+  'kenyan','ugandais','rwandais',
+  'zoulou','mozambicain','zimbabween',
   'kazakh','ouzbek','kirghiz','tadjik','turkmene','azeri',
   'ouighour','mongol','siberien',
   'amerindien','peruvien','chilien',
@@ -45,6 +52,11 @@ export const CULTURE_LABEL: Record<Culture, string> = {
   golfe: 'Golfe Persique', soudanais: 'Soudanais',
   cambodgien: 'Cambodgien', birman: 'Birman', philippin: 'Philippin', malaisien: 'Malaisien',
   nigerian: 'Nigérian', ethiopien: 'Éthiopien', tanzanien: 'Tanzanien', somalien: 'Somalien',
+  senegalais: 'Sénégalais', ivoirien: 'Ivoirien', ghaneen: 'Ghanéen', malien: 'Malien',
+  burkinabe: 'Burkinabé', guineens: 'Guinéen',
+  congolais: 'Congolais', camerounais: 'Camerounais', angolais: 'Angolais',
+  kenyan: 'Kenyan', ugandais: 'Ougandais', rwandais: 'Rwandais',
+  zoulou: 'Zoulou / Sud-Africain', mozambicain: 'Mozambicain', zimbabween: 'Zimbabwéen',
   kazakh: 'Kazakh', ouzbek: 'Ouzbek', kirghiz: 'Kirghiz', tadjik: 'Tadjik',
   turkmene: 'Turkmène', azeri: 'Azéri',
   ouighour: 'Ouïghour', mongol: 'Mongol', siberien: 'Sibérien',
@@ -81,6 +93,11 @@ export const CULTURE_CONTINENT: Record<Culture, Continent> = {
   levantin: 'moyenorient', golfe: 'moyenorient',
   maghrebin: 'afriquenord', egyptien: 'afriquenord', soudanais: 'afriquenord',
   nigerian: 'afrique', ethiopien: 'afrique', tanzanien: 'afrique', somalien: 'afrique',
+  senegalais: 'afrique', ivoirien: 'afrique', ghaneen: 'afrique', malien: 'afrique',
+  burkinabe: 'afrique', guineens: 'afrique',
+  congolais: 'afrique', camerounais: 'afrique', angolais: 'afrique',
+  kenyan: 'afrique', ugandais: 'afrique', rwandais: 'afrique',
+  zoulou: 'afrique', mozambicain: 'afrique', zimbabween: 'afrique',
   bresilien: 'amerique', argentin: 'amerique', mexicain: 'amerique',
   'anglo-americain': 'amerique', quebecois: 'amerique',
   amerindien: 'amerique', peruvien: 'amerique', chilien: 'amerique',
@@ -93,7 +110,12 @@ export const CULTURES_BY_CONTINENT: Record<Continent, Culture[]> = {
   asiecentrale: ['kazakh','ouzbek','kirghiz','tadjik','turkmene','azeri'],
   moyenorient: ['arabe','levantin','golfe','persan','israelien'],
   afriquenord: ['maghrebin','egyptien','soudanais'],
-  afrique: ['nigerian','ethiopien','tanzanien','somalien'],
+  afrique: [
+    'nigerian','ghaneen','ivoirien','senegalais','malien','burkinabe','guineens',
+    'camerounais','congolais','angolais',
+    'kenyan','ugandais','rwandais','ethiopien','tanzanien','somalien',
+    'zoulou','mozambicain','zimbabween',
+  ],
   amerique: ['bresilien','argentin','mexicain','anglo-americain','quebecois','amerindien','peruvien','chilien'],
   oceanie: ['australien','neo-zelandais','caledonien'],
 };
