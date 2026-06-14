@@ -14,7 +14,7 @@ export class GithubTeamBackend implements ITeamBackend {
   }
 
   saveTeam(team: Team, players: Player[]): Promise<void> {
-    return saveTeamWithRoster(team, players, this.token);
+    return saveTeamWithRoster({ ...team, publishedAt: new Date().toISOString() }, players, this.token);
   }
 
   deleteTeam(slug: string, _ownerId: string): Promise<void> {

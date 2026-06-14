@@ -1,12 +1,13 @@
 import type { Player, Position, Culture } from '@/lib/types';
 import { clamp, gauss, triangular, chance, pick } from '@/lib/rng';
 import { distributePositions, POSITION_BOOSTS } from './positions';
-import { pickName } from './names';
+import { pickName, pickNameMixed, type CultureWeight } from './names';
 import { computeOverall } from './overall';
 
 export type GenerateOptions = {
   count: number;
   culture: Culture;
+  cultures?: CultureWeight[];
   globalStrength: number;
 };
 
@@ -66,7 +67,9 @@ export function generatePlayers(opts: GenerateOptions): Player[] {
   const mean = 6 + opts.globalStrength / 10;
 
   return positions.map((pos) => {
-    const { firstName, lastName } = pickName(opts.culture);
+    const { firstName, lastName } = opts.cultures?.length
+      ? pickNameMixed(opts.cultures)
+      : pickName(opts.culture);
 
     const stats = {
       technical: {

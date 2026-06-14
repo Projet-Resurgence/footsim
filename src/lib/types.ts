@@ -191,6 +191,8 @@ export type Player = {
   preferredFoot: 'left' | 'right' | 'both';
   stats: PlayerStats;
   overall: number;
+  /** set when player is assigned to a league club */
+  clubId?: string;
 };
 
 export type TeamTactics = {
@@ -199,12 +201,21 @@ export type TeamTactics = {
   lineup: string[];
 };
 
+export type TeamKind = 'national' | 'club';
+
 export type Team = {
   id: string;
   slug: string;
   name: string;
   flag: string;
+  /** legacy single culture — kept for backward compat */
   culture: Culture;
+  /** multi-culture mix; if present, used for name generation instead of culture */
+  cultures?: import('@/lib/gen/names').CultureWeight[];
+  continent?: Continent;
+  kind?: TeamKind;
+  /** if kind === 'club', the parent national team slug */
+  leagueId?: string;
   globalStrength: number;
   createdAt: string;
   createdBy: string;
@@ -212,4 +223,77 @@ export type Team = {
   playerCount: number;
   formation: Formation;
   tactics?: TeamTactics;
+  /** set when team has been successfully pushed to GitHub */
+  publishedAt?: string;
+};
+
+export type LeagueClub = {
+  id: string;
+  slug: string;
+  name: string;
+  /** data URL PNG 500×500 */
+  logo: string;
+  culture: Culture;
+  cultures?: import('@/lib/gen/names').CultureWeight[];
+  globalStrength: number;
+  formation: Formation;
+  tactics?: TeamTactics;
+  /** IDs of the 30 players from the national roster assigned to this club */
+  playerIds: string[];
+};
+
+export type Division = {
+  id: string;
+  name: string;
+  clubs: LeagueClub[];
+};
+
+export type MatchSlot = {
+  id: string;
+  homeClubId: string;
+  awayClubId: string;
+  played: boolean;
+};
+
+export type StandingsRow = {
+  clubId: string;
+  pts: number;
+  w: number;
+  d: number;
+  l: number;
+  gf: number;
+  ga: number;
+};
+
+export type MatchResult = {
+  homeGoals: number;
+  awayGoals: number;
+};
+
+export type DivisionSeason = {
+  divisionId: string;
+  /** journées: each array is one match day */
+  schedule: MatchSlot[][];
+  results: Record<string, MatchResult>;
+  table: StandingsRow[];
+};
+
+export type SeasonState = {
+  status: 'scheduled' | 'running' | 'cancelled' | 'finished';
+  /** ISO date — planned start */
+  startDate?: string;
+  currentDay: number;
+  divisionSeasons: DivisionSeason[];
+};
+
+export type League = {
+  id: string;
+  /** slug of the parent national team */
+  nationSlug: string;
+  name: string;
+  divisions: Division[];
+  season?: SeasonState;
+  createdAt: string;
+  createdBy: string;
+  ownerId: string;
 };

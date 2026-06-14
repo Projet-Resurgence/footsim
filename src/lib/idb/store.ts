@@ -2,7 +2,7 @@ import type { Player, Team } from '@/lib/types';
 import type { ITeamBackend } from '@/lib/backend';
 
 const DB_NAME = 'footsim';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -15,6 +15,10 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('players')) {
         db.createObjectStore('players', { keyPath: 'teamSlug' });
+      }
+      if (!db.objectStoreNames.contains('leagues')) {
+        const ls = db.createObjectStore('leagues', { keyPath: 'id' });
+        ls.createIndex('nationSlug', 'nationSlug', { unique: false });
       }
     };
     req.onsuccess = () => resolve(req.result);

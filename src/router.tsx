@@ -12,6 +12,9 @@ import Postes from '@/pages/dashboard/Postes';
 import Competitions from '@/pages/dashboard/Competitions';
 import CompetitionNew from '@/pages/dashboard/CompetitionNew';
 import CompetitionDetail from '@/pages/dashboard/CompetitionDetail';
+import LeagueNew from '@/pages/dashboard/LeagueNew';
+import LeagueDetail from '@/pages/dashboard/LeagueDetail';
+import ClubNew from '@/pages/dashboard/ClubNew';
 import MatchSetup from '@/pages/matches/MatchSetup';
 import MatchLive from '@/pages/matches/MatchLive';
 import CompetitionMatchLive from '@/pages/matches/CompetitionMatchLive';
@@ -36,6 +39,9 @@ export const router = createBrowserRouter(
         { path: 'teams', element: <Teams /> },
         { path: 'teams/new', element: <TeamNew /> },
         { path: 'teams/:slug', element: <TeamDetail /> },
+        { path: 'teams/:slug/leagues/new', element: <LeagueNew /> },
+        { path: 'leagues/:leagueId', element: <LeagueDetail /> },
+        { path: 'leagues/:leagueId/divisions/:divisionId/clubs/new', element: <ClubNew /> },
         { path: 'settings', element: <Settings /> },
         { path: 'simulation', element: <Simulation /> },
         { path: 'competitions', element: <Competitions /> },

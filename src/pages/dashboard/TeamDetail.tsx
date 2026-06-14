@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -10,6 +10,7 @@ import { TacticsPanel } from '@/components/team/TacticsPanel';
 import type { Player, Team, TeamTactics, Culture, Continent } from '@/lib/types';
 import { CULTURE_LABEL, CONTINENT_LABEL, CULTURES_BY_CONTINENT } from '@/lib/types';
 import { useTeams } from '@/stores/teams';
+import { useLeagues as useLeaguesStore } from '@/stores/leagues';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import type { CultureWeight } from '@/lib/gen/names';
 
@@ -32,11 +33,13 @@ export default function TeamDetail() {
   const [deleteCount, setDeleteCount] = useState(1);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [tab, setTab] = useState<'roster' | 'tactique' | 'noms'>('roster');
+  const [tab, setTab] = useState<'roster' | 'tactique' | 'noms' | 'infos' | 'leagues'>('roster');
   const [nameWeights, setNameWeights] = useState<CultureWeight[]>([]);
   const [renamingAll, setRenamingAll] = useState(false);
   const [regenStrength, setRegenStrength] = useState(false);
   const [newStrength, setNewStrength] = useState<number | null>(null);
+  const [editCultures, setEditCultures] = useState<CultureWeight[] | null>(null);
+  const [editContinent, setEditContinent] = useState<Continent | null>(null);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -201,6 +204,22 @@ export default function TeamDetail() {
   const { team, players } = data;
   const editing = editingId ? players.find((p) => p.id === editingId) ?? null : null;
 
+  // initialize culture/continent edit state when switching to infos tab
+  function openInfos() {
+    setEditCultures(team.cultures ?? [{ culture: team.culture, weight: 50 }]);
+    setEditContinent(team.continent ?? null);
+    setTab('infos');
+  }
+
+  function saveInfos() {
+    if (!editCultures || editCultures.length === 0) return;
+    const primary = editCultures[0].culture;
+    mutate({
+      team: { ...team, culture: primary, cultures: editCultures, continent: editContinent ?? team.continent },
+      players,
+    });
+  }
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -209,7 +228,11 @@ export default function TeamDetail() {
         <div className="flex-1 space-y-2">
           <h1 className="font-display text-4xl">{team.name}</h1>
           <p className="text-sm text-muted">
-            {CULTURE_LABEL[team.culture]} · Force {team.globalStrength} ·{' '}
+            {team.cultures && team.cultures.length > 1
+              ? team.cultures.map((cw) => CULTURE_LABEL[cw.culture]).join(', ')
+              : CULTURE_LABEL[team.culture]}
+            {team.continent ? ` · ${CONTINENT_LABEL[team.continent]}` : ''}
+            {' '}· Force {team.globalStrength} ·{' '}
             {team.playerCount} joueurs · Formation {team.formation}
           </p>
           {newStrength === null ? (
@@ -285,13 +308,13 @@ export default function TeamDetail() {
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b border-border">
-        {(['roster', 'noms', 'tactique'] as const).map((t) => (
+        {(['roster', 'noms', 'tactique', 'infos', 'leagues'] as const).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${tab === t ? 'border-b-2 border-accent text-accent' : 'text-muted hover:text-text'}`}
+            onClick={() => t === 'infos' ? openInfos() : setTab(t)}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${tab === t ? 'border-b-2 border-accent text-accent' : 'text-muted hover:text-text'}`}
           >
-            {t === 'roster' ? 'Roster' : t === 'noms' ? 'Noms' : 'Tactique'}
+            {t === 'roster' ? 'Roster' : t === 'noms' ? 'Noms' : t === 'tactique' ? 'Tactique' : t === 'infos' ? 'Cultures' : 'Championnats'}
           </button>
         ))}
       </div>
@@ -348,6 +371,28 @@ export default function TeamDetail() {
         </section>
       )}
 
+      {tab === 'infos' && editCultures !== null && (
+        <CultureEditPanel
+          cultures={editCultures}
+          continent={editContinent}
+          onChange={setEditCultures}
+          onChangeContinent={setEditContinent}
+          onSave={saveInfos}
+        />
+      )}
+
+      {tab === 'leagues' && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-xl">Championnats</h2>
+            <Link to={`/dashboard/teams/${team.slug}/leagues/new`}>
+              <Button size="sm">+ Nouveau championnat</Button>
+            </Link>
+          </div>
+          <LeagueListInline nationSlug={team.slug} pat={effectivePat} />
+        </section>
+      )}
+
       <AnimatePresence>
         {editing ? (
           <PlayerEdit
@@ -360,6 +405,135 @@ export default function TeamDetail() {
         ) : null}
       </AnimatePresence>
     </div>
+  );
+}
+
+function CultureEditPanel({
+  cultures,
+  continent,
+  onChange,
+  onChangeContinent,
+  onSave,
+}: {
+  cultures: CultureWeight[];
+  continent: Continent | null;
+  onChange: (w: CultureWeight[]) => void;
+  onChangeContinent: (c: Continent | null) => void;
+  onSave: () => void;
+}) {
+  const total = cultures.reduce((s, c) => s + c.weight, 0);
+
+  function toggleCulture(c: Culture) {
+    if (cultures.some((w) => w.culture === c)) {
+      if (cultures.length === 1) return;
+      onChange(cultures.filter((w) => w.culture !== c));
+    } else {
+      onChange([...cultures, { culture: c, weight: 50 }]);
+    }
+  }
+
+  function setWeight(c: Culture, value: number) {
+    onChange(cultures.map((w) => (w.culture === c ? { ...w, weight: value } : w)));
+  }
+
+  function distribute() {
+    const equal = Math.round(100 / cultures.length);
+    onChange(cultures.map((w, i) => ({
+      ...w,
+      weight: i === cultures.length - 1 ? 100 - equal * (cultures.length - 1) : equal,
+    })));
+  }
+
+  return (
+    <section className="max-w-2xl space-y-6">
+      <div>
+        <h2 className="mb-1 font-display text-xl">Cultures & Continent</h2>
+        <p className="text-sm text-muted">
+          Modifie les cultures de cette équipe. Les changements n'affectent pas les noms existants — utilise l'onglet Noms pour régénérer.
+        </p>
+      </div>
+
+      {/* Continent */}
+      <label className="block text-sm">
+        <span className="mb-1 block text-muted">Continent</span>
+        <select
+          className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
+          value={continent ?? ''}
+          onChange={(e) => onChangeContinent(e.target.value as Continent || null)}
+        >
+          <option value="">— Non défini —</option>
+          {(Object.keys(CULTURES_BY_CONTINENT) as Continent[]).map((ct) => (
+            <option key={ct} value={ct}>{CONTINENT_LABEL[ct]}</option>
+          ))}
+        </select>
+      </label>
+
+      {/* Culture grid — all continents shown */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs uppercase tracking-widest text-muted">
+            Cultures sélectionnées ({cultures.length})
+          </span>
+          {cultures.length > 1 && (
+            <button onClick={distribute} className="text-xs text-accent transition-colors hover:text-accent/70">
+              Répartir également
+            </button>
+          )}
+        </div>
+        <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+          {(Object.keys(CULTURES_BY_CONTINENT) as Continent[]).map((ct) => (
+            <div key={ct}>
+              <div className="mb-1 px-1 text-xs uppercase tracking-widest text-muted">
+                {CONTINENT_LABEL[ct]}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                {CULTURES_BY_CONTINENT[ct].map((c) => {
+                  const active = cultures.some((w) => w.culture === c);
+                  return (
+                    <button
+                      key={c}
+                      onClick={() => toggleCulture(c)}
+                      className={`rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                        active ? 'border-accent bg-accent/10 text-accent' : 'border-border hover:border-accent/40'
+                      }`}
+                    >
+                      {CULTURE_LABEL[c]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Weight sliders */}
+      {cultures.length > 1 && (
+        <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+          <div className="text-xs uppercase tracking-widest text-muted">Proportions</div>
+          {cultures.map((cw) => {
+            const pct = total > 0 ? Math.round((cw.weight / total) * 100) : 0;
+            return (
+              <div key={cw.culture} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span>{CULTURE_LABEL[cw.culture]}</span>
+                  <span className="font-medium tabular-nums text-accent">{pct}%</span>
+                </div>
+                <input
+                  type="range" min={1} max={200} value={cw.weight}
+                  onChange={(e) => setWeight(cw.culture, Number(e.target.value))}
+                  className="w-full accent-[var(--accent)]"
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <Button onClick={onSave} disabled={cultures.length === 0}>
+        Enregistrer (non publié)
+      </Button>
+    </section>
   );
 }
 
@@ -489,5 +663,33 @@ function NameMixPanel({
         )}
       </div>
     </section>
+  );
+}
+
+function LeagueListInline({ nationSlug, pat }: { nationSlug: string; pat: string | null }) {
+  const fetchLeagues = useLeaguesStore((s) => s.fetchLeagues);
+  const leagues = useLeaguesStore((s) => s.leagues);
+  const loading = useLeaguesStore((s) => s.loading);
+
+  useEffect(() => {
+    fetchLeagues(nationSlug, pat);
+  }, [nationSlug, pat, fetchLeagues]);
+
+  if (loading) return <div className="flex items-center gap-2 text-muted"><Spinner /> Chargement…</div>;
+  if (leagues.length === 0) return <p className="text-muted">Aucun championnat. Crée-en un.</p>;
+
+  return (
+    <div className="space-y-2">
+      {leagues.map((l) => (
+        <Link
+          key={l.id}
+          to={`/dashboard/leagues/${encodeURIComponent(l.nationSlug + '/' + l.id)}`}
+          className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3 text-sm transition-colors hover:border-accent/40"
+        >
+          <span className="font-medium">{l.name}</span>
+          <span className="text-muted">{l.divisions.length} division{l.divisions.length > 1 ? 's' : ''} · {l.divisions.reduce((s, d) => s + d.clubs.length, 0)} clubs</span>
+        </Link>
+      ))}
+    </div>
   );
 }

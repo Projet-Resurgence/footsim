@@ -5,7 +5,11 @@ import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 import { FlagUpload } from '@/components/team/FlagUpload';
-import { CULTURE_LABEL, CONTINENT_LABEL, CULTURES_BY_CONTINENT, type Culture, type Continent, type Player, type Team } from '@/lib/types';
+import {
+  CULTURE_LABEL, CONTINENT_LABEL, CULTURES_BY_CONTINENT,
+  type Culture, type Continent, type Player, type Team,
+} from '@/lib/types';
+import type { CultureWeight } from '@/lib/gen/names';
 import { slugify } from '@/lib/slug';
 import { useSession } from '@/stores/session';
 import { useTeams } from '@/stores/teams';
@@ -21,29 +25,51 @@ export default function TeamNew() {
 
   const [name, setName] = useState('');
   const [flag, setFlag] = useState<string | null>(null);
-  const [culture, setCulture] = useState<Culture>('francais');
+  const [continent, setContinent] = useState<Continent>('europe');
+  const [cultures, setCultures] = useState<CultureWeight[]>([{ culture: 'francais', weight: 50 }]);
   const [strength, setStrength] = useState(60);
   const [count, setCount] = useState(500);
 
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
-
-  // draft generated locally, not yet published
   const [draft, setDraft] = useState<{ team: Team; players: Player[] } | null>(null);
 
-  async function generate() {
-    if (!name.trim() || !flag) {
-      toast('error', 'Nom et drapeau requis.');
-      return;
+  const totalWeight = cultures.reduce((s, c) => s + c.weight, 0);
+
+  function toggleCulture(c: Culture) {
+    if (cultures.some((w) => w.culture === c)) {
+      if (cultures.length === 1) return; // keep at least one
+      setCultures(cultures.filter((w) => w.culture !== c));
+    } else {
+      setCultures([...cultures, { culture: c, weight: 50 }]);
     }
+  }
+
+  function setWeight(c: Culture, value: number) {
+    setCultures(cultures.map((w) => (w.culture === c ? { ...w, weight: value } : w)));
+  }
+
+  function distribute() {
+    const equal = Math.round(100 / cultures.length);
+    setCultures(cultures.map((w, i) => ({
+      ...w,
+      weight: i === cultures.length - 1 ? 100 - equal * (cultures.length - 1) : equal,
+    })));
+  }
+
+  async function generate() {
+    if (!name.trim() || !flag) { toast('error', 'Nom et drapeau requis.'); return; }
+    if (cultures.length === 0) { toast('error', 'Sélectionne au moins une culture.'); return; }
     setGenerating(true);
     setProgress({ done: 0, total: count });
     setDraft(null);
 
     try {
-      const players = await runWorker({ count, culture, globalStrength: strength }, (p) =>
-        setProgress({ done: p.done, total: p.total }),
+      const primaryCulture = cultures[0].culture;
+      const players = await runWorker(
+        { count, culture: primaryCulture, cultures, globalStrength: strength },
+        (p) => setProgress({ done: p.done, total: p.total }),
       );
 
       const slug = slugify(name);
@@ -53,7 +79,10 @@ export default function TeamNew() {
         slug,
         name: name.trim(),
         flag,
-        culture,
+        culture: primaryCulture,
+        cultures,
+        continent,
+        kind: 'national',
         globalStrength: strength,
         createdAt: new Date().toISOString(),
         createdBy: ownerId,
@@ -90,38 +119,92 @@ export default function TeamNew() {
     <div className="max-w-2xl space-y-8">
       <h1 className="font-display text-4xl">Nouvelle équipe</h1>
 
-      <section className="space-y-4 rounded-lg border border-border bg-surface p-6">
+      <section className="space-y-5 rounded-lg border border-border bg-surface p-6">
         <label className="block text-sm">
           <span className="mb-1 block text-muted">Nom du pays</span>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="République du Sud"
-          />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="République du Sud" />
         </label>
 
         <div className="block text-sm">
-          <span className="mb-1 block text-muted">Drapeau</span>
+          <span className="mb-1 block text-muted">Drapeau (150×150)</span>
           <FlagUpload value={flag} onChange={(v) => setFlag(v || null)} />
         </div>
 
+        {/* Continent */}
         <label className="block text-sm">
-          <span className="mb-1 block text-muted">Culture des noms</span>
+          <span className="mb-1 block text-muted">Continent</span>
           <select
             className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
-            value={culture}
-            onChange={(e) => setCulture(e.target.value as Culture)}
+            value={continent}
+            onChange={(e) => {
+              const c = e.target.value as Continent;
+              setContinent(c);
+              // auto-set first culture of new continent if current cultures don't belong to it
+              const continentCultures = CULTURES_BY_CONTINENT[c];
+              if (!cultures.some((w) => continentCultures.includes(w.culture))) {
+                setCultures([{ culture: continentCultures[0], weight: 50 }]);
+              }
+            }}
           >
-            {(Object.keys(CULTURES_BY_CONTINENT) as Continent[]).map((continent) => (
-              <optgroup key={continent} label={CONTINENT_LABEL[continent]}>
-                {CULTURES_BY_CONTINENT[continent].map((c) => (
-                  <option key={c} value={c}>{CULTURE_LABEL[c]}</option>
-                ))}
-              </optgroup>
+            {(Object.keys(CULTURES_BY_CONTINENT) as Continent[]).map((ct) => (
+              <option key={ct} value={ct}>{CONTINENT_LABEL[ct]}</option>
             ))}
           </select>
         </label>
 
+        {/* Multi-culture picker */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted">Cultures ({cultures.length})</span>
+            {cultures.length > 1 && (
+              <button onClick={distribute} className="text-xs text-accent hover:text-accent/70 transition-colors">
+                Répartir également
+              </button>
+            )}
+          </div>
+
+          {/* Culture grid for selected continent */}
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            {CULTURES_BY_CONTINENT[continent].map((c) => {
+              const active = cultures.some((w) => w.culture === c);
+              return (
+                <button
+                  key={c}
+                  onClick={() => toggleCulture(c)}
+                  className={`rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                    active ? 'border-accent bg-accent/10 text-accent' : 'border-border hover:border-accent/40'
+                  }`}
+                >
+                  {CULTURE_LABEL[c]}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Weight sliders for selected cultures */}
+          {cultures.length > 1 && (
+            <div className="space-y-2 rounded-md border border-border bg-bg p-3">
+              {cultures.map((cw) => {
+                const pct = totalWeight > 0 ? Math.round((cw.weight / totalWeight) * 100) : 0;
+                return (
+                  <div key={cw.culture} className="space-y-0.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span>{CULTURE_LABEL[cw.culture]}</span>
+                      <span className="text-accent tabular-nums">{pct}%</span>
+                    </div>
+                    <input
+                      type="range" min={1} max={200} value={cw.weight}
+                      onChange={(e) => setWeight(cw.culture, Number(e.target.value))}
+                      className="w-full accent-[var(--accent)]"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Strength */}
         <label className="block text-sm">
           <span className="mb-1 block text-muted">
             Force globale : <span className="text-text">{strength}</span>
@@ -133,6 +216,7 @@ export default function TeamNew() {
           />
         </label>
 
+        {/* Player count */}
         <label className="block text-sm">
           <span className="mb-1 block text-muted">Nombre de joueurs</span>
           <select
@@ -140,9 +224,7 @@ export default function TeamNew() {
             value={count}
             onChange={(e) => setCount(Number(e.target.value))}
           >
-            {COUNTS.map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
+            {COUNTS.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
       </section>
@@ -184,7 +266,7 @@ export default function TeamNew() {
 }
 
 function runWorker(
-  opts: { count: number; culture: Culture; globalStrength: number },
+  opts: { count: number; culture: Culture; cultures?: CultureWeight[]; globalStrength: number },
   onProgress: (p: { done: number; total: number }) => void,
 ): Promise<Player[]> {
   return new Promise((resolve, reject) => {
