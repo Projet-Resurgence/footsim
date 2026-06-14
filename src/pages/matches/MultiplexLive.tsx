@@ -39,7 +39,8 @@ export default function MultiplexLive() {
 
   const [loading, setLoading] = useState(true);
   const [paused, setPaused] = useState(false);
-  const savedRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<Parameters<typeof save>[0] | null>(null);
 
   useEffect(() => {
     if (!pat || !competitionId) return;
@@ -96,106 +97,100 @@ export default function MultiplexLive() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pat, competitionId, roundNum]);
 
-  // Persist all results when all finished
+  // Compute pending update when all finished — does NOT auto-save
   useEffect(() => {
-    if (!allFinished || !current || !pat || savedRef.current || slots.length === 0) return;
-    savedRef.current = true;
+    if (!allFinished || !current || slots.length === 0 || pendingUpdate) return;
 
-    async function persist() {
-      try {
-        // Save individual match files
-        for (const slot of slots) {
-          if (!slot.state || !slot.state.matchId) continue;
-          const slotInput = slots.find((s) => s.matchId === slot.matchId);
-          if (!slotInput) continue;
-          // We need the full MatchInput — stored in the multiplex slot indirectly via worker
-          // Save via saveMatch needs input; we'll skip file save here and just update competition
-        }
+    let updatedMatches = current.matches;
+    let updatedStandings = current.standings;
+    let updatedPlayerStats = current.playerStats ?? {};
 
-        let updatedMatches = current!.matches;
-        let updatedStandings = current!.standings;
-        let updatedPlayerStats = current!.playerStats ?? {};
+    for (const slot of slots) {
+      if (!slot.state || slot.state.status !== 'fulltime') continue;
+      const compMatch = current.matches.find((m) => m.id === slot.compMatchId);
+      if (!compMatch) continue;
 
-        for (const slot of slots) {
-          if (!slot.state || slot.state.status !== 'fulltime') continue;
-          const compMatch = current!.matches.find((m) => m.id === slot.compMatchId);
-          if (!compMatch) continue;
+      updatedMatches = updatedMatches.map((m) =>
+        m.id === slot.compMatchId
+          ? {
+              ...m,
+              status: 'completed' as const,
+              result: {
+                home: slot.state!.score.home,
+                away: slot.state!.score.away,
+                penalties: slot.state!.penaltyScore,
+              },
+              simulatedAt: new Date().toISOString(),
+            }
+          : m,
+      );
 
-          updatedMatches = updatedMatches.map((m) =>
-            m.id === slot.compMatchId
-              ? {
-                  ...m,
-                  status: 'completed' as const,
-                  result: {
-                    home: slot.state!.score.home,
-                    away: slot.state!.score.away,
-                    penalties: slot.state!.penaltyScore,
-                  },
-                  simulatedAt: new Date().toISOString(),
-                }
-              : m,
-          );
+      updatedPlayerStats = accumulateMatchStats(
+        updatedPlayerStats,
+        slot.state,
+        { team: slot.home, players: slot.homePlayers },
+        { team: slot.away, players: slot.awayPlayers },
+      );
 
-          updatedPlayerStats = accumulateMatchStats(
-            updatedPlayerStats,
-            slot.state,
-            { team: slot.home, players: slot.homePlayers },
-            { team: slot.away, players: slot.awayPlayers },
-          );
-
-          if ((compMatch.phase === 'group' || compMatch.phase === 'league') && compMatch.homeTeamId && compMatch.awayTeamId) {
-            updatedStandings = applyResultToStandings(
-              updatedStandings,
-              compMatch.homeTeamId,
-              compMatch.awayTeamId,
-              slot.state.score.home,
-              slot.state.score.away,
-            );
-          } else if (compMatch.phase !== 'group' && compMatch.phase !== 'league') {
-            updatedMatches = advanceBracket(updatedMatches, slot.compMatchId);
-          }
-        }
-
-        const nextRound = updatedMatches.every(
-          (m) => m.round <= current!.currentRound ? m.status === 'completed' : true,
-        )
-          ? current!.currentRound + 1
-          : current!.currentRound;
-
-        const allDone = updatedMatches.every((m) => m.status === 'completed');
-        let winner: string | undefined;
-        if (allDone) {
-          const finalMatch = updatedMatches.find((m) => m.phase === 'F');
-          if (finalMatch?.result) {
-            winner = finalMatch.result.home > finalMatch.result.away
-              ? finalMatch.homeTeamId ?? undefined
-              : finalMatch.awayTeamId ?? undefined;
-          } else if (current!.format === 'league') {
-            const sorted = Object.values(updatedStandings).sort((a, b) => b.points - a.points);
-            winner = sorted[0]?.teamId;
-          }
-        }
-
-        const updated = {
-          ...current!,
-          matches: updatedMatches,
-          standings: updatedStandings,
-          playerStats: updatedPlayerStats,
-          awards: allDone ? computeAwards(updatedPlayerStats) : current!.awards,
-          currentRound: Math.min(nextRound, Math.max(...updatedMatches.map((m) => m.round))),
-          status: allDone ? ('completed' as const) : ('ongoing' as const),
-          winner,
-        };
-
-        await save(updated, pat!);
-        toast('success', 'Résultats enregistrés.');
-      } catch (err) {
-        toast('error', `Erreur : ${err}`);
+      if ((compMatch.phase === 'group' || compMatch.phase === 'league') && compMatch.homeTeamId && compMatch.awayTeamId) {
+        updatedStandings = applyResultToStandings(
+          updatedStandings,
+          compMatch.homeTeamId,
+          compMatch.awayTeamId,
+          slot.state.score.home,
+          slot.state.score.away,
+        );
+      } else if (compMatch.phase !== 'group' && compMatch.phase !== 'league') {
+        updatedMatches = advanceBracket(updatedMatches, slot.compMatchId);
       }
     }
-    persist();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    const nextRound = updatedMatches.every(
+      (m) => m.round <= current.currentRound ? m.status === 'completed' : true,
+    )
+      ? current.currentRound + 1
+      : current.currentRound;
+
+    const allDone = updatedMatches.every((m) => m.status === 'completed');
+    let winner: string | undefined;
+    if (allDone) {
+      const finalMatch = updatedMatches.find((m) => m.phase === 'F');
+      if (finalMatch?.result) {
+        winner = finalMatch.result.home > finalMatch.result.away
+          ? finalMatch.homeTeamId ?? undefined
+          : finalMatch.awayTeamId ?? undefined;
+      } else if (current.format === 'league') {
+        const sorted = Object.values(updatedStandings).sort((a, b) => b.points - a.points);
+        winner = sorted[0]?.teamId;
+      }
+    }
+
+    setPendingUpdate({
+      ...current,
+      matches: updatedMatches,
+      standings: updatedStandings,
+      playerStats: updatedPlayerStats,
+      awards: allDone ? computeAwards(updatedPlayerStats) : current.awards,
+      currentRound: Math.min(nextRound, Math.max(...updatedMatches.map((m) => m.round))),
+      status: allDone ? ('completed' as const) : ('ongoing' as const),
+      winner,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allFinished]);
+
+  async function handleSave() {
+    if (!pendingUpdate || !pat) return;
+    setSaving(true);
+    try {
+      await save(pendingUpdate, pat);
+      toast('success', 'Résultats enregistrés.');
+      setPendingUpdate(null);
+    } catch (err) {
+      toast('error', `Erreur : ${err}`);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const SPEEDS: Speed[] = ['0.5', '1', '2', '5', 'instant'];
   const SPEED_LABEL: Record<Speed, string> = { '0.5': '×0.5', '1': '×1', '2': '×2', '5': '×5', instant: '⚡' };
@@ -242,11 +237,19 @@ export default function MultiplexLive() {
       </div>
 
       {allFinished && (
-        <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 flex items-center justify-between">
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 flex items-center justify-between gap-3">
           <span className="font-medium">Tous les matchs sont terminés.</span>
-          <Button size="sm" onClick={() => navigate(`/dashboard/competitions/${competitionId}`)}>
-            Retour à la compétition
-          </Button>
+          <div className="flex gap-2">
+            {pendingUpdate && (
+              <Button size="sm" onClick={handleSave} disabled={saving}>
+                {saving ? <Spinner className="mr-1 h-3 w-3" /> : null}
+                Enregistrer les résultats
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => navigate(`/dashboard/competitions/${competitionId}`)}>
+              Retour à la compétition
+            </Button>
+          </div>
         </div>
       )}
 
