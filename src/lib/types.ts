@@ -15,6 +15,8 @@ export type Culture =
   | 'kazakh' | 'ouzbek' | 'kirghiz' | 'tadjik' | 'turkmene' | 'azeri'
   | 'ouighour' | 'mongol' | 'siberien'
   | 'amerindien' | 'peruvien' | 'chilien'
+  | 'cubain' | 'colombien' | 'venezuelien' | 'uruguayen' | 'bolivien' | 'paraguayen'
+  | 'haitien' | 'jamaicain' | 'trinidadien'
   | 'australien' | 'neo-zelandais' | 'caledonien';
 
 export const CULTURES: Culture[] = [
@@ -34,6 +36,8 @@ export const CULTURES: Culture[] = [
   'kazakh','ouzbek','kirghiz','tadjik','turkmene','azeri',
   'ouighour','mongol','siberien',
   'amerindien','peruvien','chilien',
+  'cubain','colombien','venezuelien','uruguayen','bolivien','paraguayen',
+  'haitien','jamaicain','trinidadien',
   'australien','neo-zelandais','caledonien',
 ];
 
@@ -61,6 +65,9 @@ export const CULTURE_LABEL: Record<Culture, string> = {
   turkmene: 'Turkmène', azeri: 'Azéri',
   ouighour: 'Ouïghour', mongol: 'Mongol', siberien: 'Sibérien',
   amerindien: 'Amérindien', peruvien: 'Péruvien', chilien: 'Chilien',
+  cubain: 'Cubain', colombien: 'Colombien', venezuelien: 'Vénézuélien',
+  uruguayen: 'Uruguayen', bolivien: 'Bolivien', paraguayen: 'Paraguayen',
+  haitien: 'Haïtien', jamaicain: 'Jamaïcain', trinidadien: 'Trinidadien',
   australien: 'Australien', 'neo-zelandais': 'Néo-Zélandais', caledonien: 'Calédonien',
 };
 
@@ -101,6 +108,9 @@ export const CULTURE_CONTINENT: Record<Culture, Continent> = {
   bresilien: 'amerique', argentin: 'amerique', mexicain: 'amerique',
   'anglo-americain': 'amerique', quebecois: 'amerique',
   amerindien: 'amerique', peruvien: 'amerique', chilien: 'amerique',
+  cubain: 'amerique', colombien: 'amerique', venezuelien: 'amerique',
+  uruguayen: 'amerique', bolivien: 'amerique', paraguayen: 'amerique',
+  haitien: 'amerique', jamaicain: 'amerique', trinidadien: 'amerique',
   australien: 'oceanie', 'neo-zelandais': 'oceanie', caledonien: 'oceanie',
 };
 
@@ -116,7 +126,7 @@ export const CULTURES_BY_CONTINENT: Record<Continent, Culture[]> = {
     'kenyan','ugandais','rwandais','ethiopien','tanzanien','somalien',
     'zoulou','mozambicain','zimbabween',
   ],
-  amerique: ['bresilien','argentin','mexicain','anglo-americain','quebecois','amerindien','peruvien','chilien'],
+  amerique: ['bresilien','argentin','mexicain','anglo-americain','quebecois','amerindien','peruvien','chilien','cubain','colombien','venezuelien','uruguayen','bolivien','paraguayen','haitien','jamaicain','trinidadien'],
   oceanie: ['australien','neo-zelandais','caledonien'],
 };
 
