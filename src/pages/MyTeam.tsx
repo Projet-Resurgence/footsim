@@ -24,8 +24,10 @@ export default function MyTeam() {
 
     async function load() {
       try {
-        if (teamsStore.length === 0) await refreshTeams(ownerId, pat);
+        await refreshTeams(ownerId, pat);
         const teams = useTeams.getState().teams;
+        console.debug('[MyTeam] teams after refresh:', teams.map(t => ({ slug: t.slug, managerDiscordId: t.managerDiscordId })));
+        console.debug('[MyTeam] session.id:', session!.id);
         const mine = teams.find((t) => t.managerDiscordId === session!.id);
         if (!mine) {
           setData(null);
