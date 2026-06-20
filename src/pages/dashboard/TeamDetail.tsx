@@ -693,7 +693,7 @@ function CultureEditPanel({
                   <span className="font-medium tabular-nums text-accent">{pct}%</span>
                 </div>
                 <input
-                  type="range" min={1} max={100} value={cw.weight}
+                  type="range" min={1} max={100} value={pct}
                   onChange={(e) => setWeight(cw.culture, Number(e.target.value))}
                   className="w-full accent-[var(--accent)]"
                 />
