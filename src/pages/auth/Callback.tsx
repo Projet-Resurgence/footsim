@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchDiscordUser, parseTokenFragment, isAdminId } from '@/lib/auth/discord';
 import { useSession } from '@/stores/session';
-import { useTeams } from '@/stores/teams';
+import { GithubTeamBackend } from '@/lib/github/backend';
 import { Spinner } from '@/components/ui/Spinner';
 
 export default function Callback() {
   const navigate = useNavigate();
   const setSession = useSession((s) => s.setSession);
-  const refreshTeams = useTeams((s) => s.refresh);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,14 +29,14 @@ export default function Callback() {
           navigate('/dashboard', { replace: true });
           return;
         }
-        // Check if user is a team manager
-        await refreshTeams(user.id, null);
-        const teams = useTeams.getState().teams;
+        // Check if user is a team manager — read GitHub public repo, no PAT needed
+        const ghBackend = new GithubTeamBackend(null);
+        const teams = await ghBackend.listTeams(user.id);
         const isManager = teams.some((t) => t.managerDiscordId === user.id);
         navigate(isManager ? '/my-team' : '/no-access', { replace: true });
       })
       .catch((err) => setError(String(err)));
-  }, [navigate, setSession, refreshTeams]);
+  }, [navigate, setSession]);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-3">

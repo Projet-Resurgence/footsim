@@ -31,7 +31,7 @@ export async function saveTeamWithRoster(
 
 export async function loadTeam(
   slug: string,
-  token: string,
+  token: string | null,
 ): Promise<{ team: Team; players: Player[] } | null> {
   const team = await readJson<Team>(TEAM_PATH(slug), token);
   if (!team) return null;
@@ -60,7 +60,7 @@ export async function deleteTeam(slug: string, token: string): Promise<void> {
   }
 }
 
-export async function listTeams(token: string): Promise<Team[]> {
+export async function listTeams(token: string | null): Promise<Team[]> {
   const slugs = await listDir('data/teams', token);
   const out: Team[] = [];
   for (const slug of slugs) {

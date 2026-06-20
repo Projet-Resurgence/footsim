@@ -4,35 +4,31 @@ import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 import { TacticsPanel } from '@/components/team/TacticsPanel';
 import { useSession } from '@/stores/session';
-import { useTeams } from '@/stores/teams';
-import { useBackendArgs } from '@/hooks/useBackendArgs';
+import { GithubTeamBackend } from '@/lib/github/backend';
 import type { Player, Team, TeamTactics } from '@/lib/types';
 import { loadLocalTactics, saveLocalTactics } from '@/lib/localTactics';
 
+const ghPublic = new GithubTeamBackend(null);
+
 export default function MyTeam() {
   const session = useSession((s) => s.session);
-  const refreshTeams = useTeams((s) => s.refresh);
-  const fetchTeam = useTeams((s) => s.fetchTeam);
-  const { ownerId, pat } = useBackendArgs();
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{ team: Team; players: Player[] } | null>(null);
 
   useEffect(() => {
-    if (!session || !ownerId) return;
+    if (!session) return;
 
     async function load() {
       try {
-        await refreshTeams(ownerId, pat);
-        const teams = useTeams.getState().teams;
-        console.debug('[MyTeam] teams after refresh:', teams.map(t => ({ slug: t.slug, managerDiscordId: t.managerDiscordId })));
-        console.debug('[MyTeam] session.id:', session!.id);
+        // Load from GitHub public repo (no PAT needed)
+        const teams = await ghPublic.listTeams(session!.id);
         const mine = teams.find((t) => t.managerDiscordId === session!.id);
         if (!mine) {
           setData(null);
           return;
         }
-        const full = await fetchTeam(mine.slug, ownerId, pat);
+        const full = await ghPublic.loadTeam(mine.slug, session!.id);
         if (!full) { toast('error', 'Équipe introuvable.'); return; }
 
         // Merge local tactics on top
@@ -50,7 +46,7 @@ export default function MyTeam() {
     }
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, ownerId]);
+  }, [session?.id]);
 
   async function saveTactics(tactics: TeamTactics) {
     if (!data) return;

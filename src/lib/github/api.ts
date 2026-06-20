@@ -2,12 +2,13 @@ import { env } from '@/lib/env';
 
 const API = 'https://api.github.com';
 
-function authHeaders(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
+function authHeaders(token: string | null) {
+  const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
   };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
 }
 
 function utf8ToBase64(text: string): string {
@@ -34,7 +35,7 @@ export async function validatePat(token: string): Promise<boolean> {
 
 export async function readJson<T>(
   path: string,
-  token: string,
+  token: string | null,
 ): Promise<{ data: T; sha: string } | null> {
   const res = await fetch(
     `${API}/repos/${env.dataRepo}/contents/${path}?ref=${env.dataBranch}`,
@@ -105,7 +106,7 @@ export async function deleteFile(
   }
 }
 
-export async function listDir(path: string, token: string): Promise<string[]> {
+export async function listDir(path: string, token: string | null): Promise<string[]> {
   const res = await fetch(
     `${API}/repos/${env.dataRepo}/contents/${path}?ref=${env.dataBranch}`,
     { headers: authHeaders(token) },
