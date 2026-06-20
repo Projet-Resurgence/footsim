@@ -13,6 +13,7 @@ import type { Player, Team, TeamTactics } from '@/lib/types';
 import type { CompetitionSummary } from '@/lib/competition/types';
 import { loadLocalTactics, saveLocalTactics } from '@/lib/localTactics';
 import { env } from '@/lib/env';
+import { PlayerView } from '@/components/team/PlayerView';
 
 const ghPublic = new GithubTeamBackend(env.githubReadToken ?? null);
 
@@ -37,6 +38,7 @@ export default function MyTeam() {
   const [tab, setTab] = useState<Tab>('tactique');
   const [summaries, setSummaries] = useState<CompetitionSummary[]>([]);
   const [loadingComps, setLoadingComps] = useState(false);
+  const [viewingPlayer, setViewingPlayer] = useState<Player | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -158,6 +160,7 @@ export default function MyTeam() {
   const { team, players } = data;
 
   return (
+    <>
     <main className="mx-auto max-w-4xl px-6 py-8 space-y-8">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -214,7 +217,11 @@ export default function MyTeam() {
               {[...players]
                 .sort((a, b) => b.overall - a.overall)
                 .map((p) => (
-                  <tr key={p.id} className="border-t border-border">
+                  <tr
+                    key={p.id}
+                    className="border-t border-border cursor-pointer hover:bg-border/20 transition-colors"
+                    onClick={() => setViewingPlayer(p)}
+                  >
                     <td className="px-4 py-2">{p.firstName} {p.lastName}</td>
                     <td className="px-4 py-2">
                       <span className="rounded bg-border/40 px-2 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span>
@@ -291,5 +298,10 @@ export default function MyTeam() {
         </div>
       )}
     </main>
+
+    {viewingPlayer && (
+      <PlayerView player={viewingPlayer} onClose={() => setViewingPlayer(null)} />
+    )}
+    </>
   );
 }
