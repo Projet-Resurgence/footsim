@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
-import { toast } from '@/components/ui/Toast';
+
 import { Pitch } from '@/components/match/Pitch';
 import { Scoreboard } from '@/components/match/Scoreboard';
 import { EventFeed } from '@/components/match/EventFeed';
@@ -11,8 +11,8 @@ import { SpeedControls } from '@/components/match/SpeedControls';
 import { HalftimeOverlay } from '@/components/match/HalftimeOverlay';
 import { GoalCelebration } from '@/components/match/GoalCelebration';
 import { useMatch } from '@/stores/match';
-import { useCredentials } from '@/stores/credentials';
-import { saveMatch } from '@/lib/github/matches';
+
+
 import { computeMotm } from '@/lib/competition/statsAccumulator';
 import { isRevealed } from '@/lib/sim/corruption';
 import type { Team } from '@/lib/types';
@@ -26,7 +26,6 @@ export default function MatchLive() {
   const pause = useMatch((s) => s.pause);
   const resume = useMatch((s) => s.resume);
   const resetMatch = useMatch((s) => s.reset);
-  const pat = useCredentials((s) => s.githubPat);
   const navigate = useNavigate();
   const savedRef = useRef(false);
   const [corruptionRevealed, setCorruptionRevealed] = useState(false);
@@ -64,19 +63,14 @@ export default function MatchLive() {
     celebTimerRef.current = setTimeout(() => setCelebration(null), 3000);
   }
 
-  // Auto-save on finish + corruption reveal check
+  // Corruption reveal check on finish
   useEffect(() => {
     if (!finished || !state || !input || savedRef.current) return;
     savedRef.current = true;
     if (state.corruption?.accepted && isRevealed()) {
       setCorruptionRevealed(true);
     }
-    if (pat) {
-      saveMatch(input, state, pat)
-        .then(() => toast('success', 'Match enregistré.'))
-        .catch((err) => toast('error', `Sauvegarde : ${err}`));
-    }
-  }, [finished, state, input, pat]);
+  }, [finished, state, input]);
 
   // Cleanup on unmount
   useEffect(() => {

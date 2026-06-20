@@ -12,6 +12,7 @@ import { useTeams } from '@/stores/teams';
 import { useCredentials } from '@/stores/credentials';
 import { useMatch } from '@/stores/match';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
+import { loadLocalTactics } from '@/lib/localTactics';
 
 const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1', '4-5-1', '4-4-1-1', '3-4-1-2', '5-4-1', '3-6-1'];
 
@@ -42,23 +43,17 @@ export default function MatchSetup() {
   function handleHomeSlug(slug: string) {
     setHomeSlug(slug);
     const t = teams.find((x) => x.slug === slug);
-    if (t?.tactics) {
-      setHomeFormation(t.tactics.formation);
-      setHomeTactics(t.tactics);
-    } else {
-      setHomeTactics(null);
-    }
+    const tactics = (t ? loadLocalTactics(t.id) : null) ?? t?.tactics ?? null;
+    setHomeTactics(tactics);
+    if (tactics) setHomeFormation(tactics.formation);
   }
 
   function handleAwaySlug(slug: string) {
     setAwaySlug(slug);
     const t = teams.find((x) => x.slug === slug);
-    if (t?.tactics) {
-      setAwayFormation(t.tactics.formation);
-      setAwayTactics(t.tactics);
-    } else {
-      setAwayTactics(null);
-    }
+    const tactics = (t ? loadLocalTactics(t.id) : null) ?? t?.tactics ?? null;
+    setAwayTactics(tactics);
+    if (tactics) setAwayFormation(tactics.formation);
   }
 
   async function launch() {

@@ -163,6 +163,9 @@ export default function MyTeam() {
     <>
     <main className="mx-auto max-w-4xl px-6 py-8 space-y-8">
       {/* Header */}
+      <div>
+        <Link to="/" className="text-sm text-muted hover:text-text">← Retour</Link>
+      </div>
       <div className="flex items-center gap-4">
         <img src={team.flag} alt="" className="h-16 w-16 object-cover rounded" />
         <div className="flex-1">
@@ -198,7 +201,7 @@ export default function MyTeam() {
       {tab === 'tactique' && (
         <div className="rounded-lg border border-border bg-surface p-5 space-y-4">
           <p className="text-xs text-muted">Modifie ta formation, ton 11 et ton style. Sauvegarde locale uniquement.</p>
-          <TacticsPanel team={team} players={players} onSave={saveTactics} />
+          <TacticsPanel key={`${team.id}-${team.tactics?.formation ?? ''}-${team.tactics?.lineup?.join(',') ?? ''}`} team={team} players={players} onSave={saveTactics} />
         </div>
       )}
 
