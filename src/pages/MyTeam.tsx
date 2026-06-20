@@ -169,10 +169,10 @@ export default function MyTeam() {
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={exportTactics}>
-            ↓ Exporter la tactique
+            ↑ Exporter la tactique
           </Button>
           <Button size="sm" variant="ghost" onClick={() => importRef.current?.click()}>
-            ↑ Importer
+            ↓ Importer
           </Button>
           <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
         </div>
