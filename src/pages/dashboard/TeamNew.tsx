@@ -40,14 +40,9 @@ export default function TeamNew() {
   function toggleContinent(ct: Continent) {
     if (selectedContinents.includes(ct)) {
       if (selectedContinents.length === 1) return;
-      const next = selectedContinents.filter((c) => c !== ct);
-      setSelectedContinents(next);
-      // drop cultures no longer in any selected continent
-      const valid = new Set(next.flatMap((c) => CULTURES_BY_CONTINENT[c]));
-      const kept = cultures.filter((w) => valid.has(w.culture));
-      setCultures(kept.length > 0 ? kept : [{ culture: CULTURES_BY_CONTINENT[next[0]][0], weight: 50 }]);
+      setSelectedContinents(selectedContinents.filter((c) => c !== ct));
     } else {
-      if (selectedContinents.length >= 2) return; // max 2
+      if (selectedContinents.length >= 2) return;
       setSelectedContinents([...selectedContinents, ct]);
     }
   }
@@ -186,13 +181,11 @@ export default function TeamNew() {
             )}
           </div>
 
-          {/* Culture grid for selected continents */}
+          {/* Culture grid — all continents, no restriction */}
           <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
-            {selectedContinents.map((ct) => (
+            {(Object.keys(CULTURES_BY_CONTINENT) as Continent[]).map((ct) => (
               <div key={ct}>
-                {selectedContinents.length > 1 && (
-                  <div className="mb-1 px-1 text-xs uppercase tracking-widest text-muted">{CONTINENT_LABEL[ct]}</div>
-                )}
+                <div className="mb-1 px-1 text-xs uppercase tracking-widest text-muted">{CONTINENT_LABEL[ct]}</div>
                 <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                   {CULTURES_BY_CONTINENT[ct].map((c) => {
                     const active = cultures.some((w) => w.culture === c);

@@ -519,11 +519,7 @@ function CultureEditPanel({
   function toggleContinent(ct: Continent) {
     if (continents.includes(ct)) {
       if (continents.length === 1) return;
-      const next = continents.filter((c) => c !== ct);
-      onChangeContinents(next);
-      const valid = new Set(next.flatMap((c) => CULTURES_BY_CONTINENT[c]));
-      const kept = cultures.filter((w) => valid.has(w.culture));
-      onChange(kept.length > 0 ? kept : [{ culture: CULTURES_BY_CONTINENT[next[0]][0], weight: 50 }]);
+      onChangeContinents(continents.filter((c) => c !== ct));
     } else {
       if (continents.length >= 2) return;
       onChangeContinents([...continents, ct]);
@@ -551,7 +547,7 @@ function CultureEditPanel({
     })));
   }
 
-  const displayContinents = continents.length > 0 ? continents : (Object.keys(CULTURES_BY_CONTINENT) as Continent[]);
+  const displayContinents = Object.keys(CULTURES_BY_CONTINENT) as Continent[];
 
   return (
     <section className="max-w-2xl space-y-6">
@@ -627,11 +623,9 @@ function CultureEditPanel({
         <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
           {displayContinents.map((ct) => (
             <div key={ct}>
-              {displayContinents.length > 1 && (
-                <div className="mb-1 px-1 text-xs uppercase tracking-widest text-muted">
-                  {CONTINENT_LABEL[ct]}
-                </div>
-              )}
+              <div className="mb-1 px-1 text-xs uppercase tracking-widest text-muted">
+                {CONTINENT_LABEL[ct]}
+              </div>
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                 {CULTURES_BY_CONTINENT[ct].map((c) => {
                   const active = cultures.some((w) => w.culture === c);
