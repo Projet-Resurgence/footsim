@@ -9,6 +9,11 @@ const SLOTS: Record<Formation, Position[]> = {
   '4-1-4-1': ['GK','LB','CB','CB','RB','DM','LM','CM','CM','RM','ST'],
   '3-4-3':   ['GK','CB','CB','CB','LM','CM','CM','RM','LW','ST','RW'],
   '4-3-2-1': ['GK','LB','CB','CB','RB','CM','CM','CM','AM','AM','ST'],
+  '4-5-1':   ['GK','LB','CB','CB','RB','LM','CM','DM','CM','RM','ST'],
+  '4-4-1-1': ['GK','LB','CB','CB','RB','LM','CM','CM','RM','AM','ST'],
+  '3-4-1-2': ['GK','CB','CB','CB','LM','CM','CM','RM','AM','ST','ST'],
+  '5-4-1':   ['GK','LB','CB','CB','CB','RB','LM','CM','CM','RM','ST'],
+  '3-6-1':   ['GK','CB','CB','CB','LM','DM','CM','CM','DM','RM','ST'],
 };
 
 export function pickXI(roster: Player[], formation: Formation): { lineup: Player[]; bench: Player[] } {

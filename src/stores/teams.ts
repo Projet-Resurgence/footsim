@@ -38,7 +38,9 @@ export const useTeams = create<State>((set, get) => ({
         const ghSlugs = new Set(ghTeams.map((t) => t.slug));
         // IDB teams not yet on GitHub → keep as unpublished
         const localOnly = idbTeams.filter((t) => !ghSlugs.has(t.slug)).map((t) => ({ ...t, publishedAt: undefined }));
-        set({ teams: [...ghTeams, ...localOnly], loading: false });
+        // GitHub teams are published by definition — inject fallback if field missing in stored JSON
+        const published = ghTeams.map((t) => t.publishedAt ? t : { ...t, publishedAt: new Date(0).toISOString() });
+        set({ teams: [...published, ...localOnly], loading: false });
       } else {
         const teams = await idbBackend.listTeams(ownerId);
         set({ teams, loading: false });

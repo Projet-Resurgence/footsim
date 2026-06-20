@@ -145,15 +145,24 @@ export const POSITION_FULL: Record<Position, string> = {
   ST: 'Buteur',
 };
 
-export type Formation = '4-3-3' | '4-4-2' | '3-5-2' | '4-2-3-1' | '5-3-2' | '4-1-4-1' | '3-4-3' | '4-3-2-1';
+export type Formation =
+  | '4-3-3' | '4-4-2' | '3-5-2' | '4-2-3-1' | '5-3-2' | '4-1-4-1' | '3-4-3' | '4-3-2-1'
+  | '4-5-1' | '4-4-1-1' | '3-4-1-2' | '5-4-1' | '3-6-1';
 
-export type TacticStyle = 'possession' | 'contre-attaque' | 'direct' | 'pressing';
+export type TacticStyle =
+  | 'possession' | 'contre-attaque' | 'direct' | 'pressing'
+  | 'ultra-defensif' | 'gegenpressing' | 'tiki-taka' | 'long-ball' | 'chaos';
 
 export const TACTIC_STYLE_LABEL: Record<TacticStyle, string> = {
   possession: 'Possession',
   'contre-attaque': 'Contre-attaque',
   direct: 'Jeu direct',
   pressing: 'Pressing haut',
+  'ultra-defensif': 'Ultra-défensif',
+  gegenpressing: 'Gegenpressing',
+  'tiki-taka': 'Tiki-taka',
+  'long-ball': 'Long ball',
+  chaos: 'Chaos',
 };
 
 export type TechnicalStats = {

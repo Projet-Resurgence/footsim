@@ -12,7 +12,7 @@ import { useCredentials } from '@/stores/credentials';
 import { useMatch } from '@/stores/match';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 
-const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1'];
+const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1', '4-5-1', '4-4-1-1', '3-4-1-2', '5-4-1', '3-6-1'];
 
 export default function MatchSetup() {
   const teams = useTeams((s) => s.teams);

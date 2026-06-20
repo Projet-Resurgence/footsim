@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { pickXI } from '@/lib/sim/lineup';
 
-const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1'];
-const TACTIC_STYLES: TacticStyle[] = ['possession', 'contre-attaque', 'direct', 'pressing'];
+const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1', '4-5-1', '4-4-1-1', '3-4-1-2', '5-4-1', '3-6-1'];
+const TACTIC_STYLES: TacticStyle[] = ['possession', 'contre-attaque', 'direct', 'pressing', 'ultra-defensif', 'gegenpressing', 'tiki-taka', 'long-ball', 'chaos'];
 
 type SlotDef = { pos: string; x: number; y: number };
 
@@ -61,6 +61,38 @@ const FORMATION_LAYOUT: Record<Formation, SlotDef[]> = {
     { pos: 'LB', x: 12, y: 70 }, { pos: 'CB', x: 34, y: 72 }, { pos: 'CB', x: 66, y: 72 }, { pos: 'RB', x: 88, y: 70 },
     { pos: 'CM', x: 22, y: 57 }, { pos: 'CM', x: 50, y: 55 }, { pos: 'CM', x: 78, y: 57 },
     { pos: 'AM', x: 34, y: 38 }, { pos: 'AM', x: 66, y: 38 },
+    { pos: 'ST', x: 50, y: 18 },
+  ],
+  '4-5-1': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'LB', x: 12, y: 70 }, { pos: 'CB', x: 34, y: 72 }, { pos: 'CB', x: 66, y: 72 }, { pos: 'RB', x: 88, y: 70 },
+    { pos: 'LM', x: 8, y: 48 }, { pos: 'CM', x: 28, y: 46 }, { pos: 'DM', x: 50, y: 50 }, { pos: 'CM', x: 72, y: 46 }, { pos: 'RM', x: 92, y: 48 },
+    { pos: 'ST', x: 50, y: 18 },
+  ],
+  '4-4-1-1': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'LB', x: 12, y: 70 }, { pos: 'CB', x: 34, y: 72 }, { pos: 'CB', x: 66, y: 72 }, { pos: 'RB', x: 88, y: 70 },
+    { pos: 'LM', x: 8, y: 51 }, { pos: 'CM', x: 34, y: 50 }, { pos: 'CM', x: 66, y: 50 }, { pos: 'RM', x: 92, y: 51 },
+    { pos: 'AM', x: 50, y: 30 },
+    { pos: 'ST', x: 50, y: 16 },
+  ],
+  '3-4-1-2': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'CB', x: 24, y: 72 }, { pos: 'CB', x: 50, y: 73 }, { pos: 'CB', x: 76, y: 72 },
+    { pos: 'LM', x: 8, y: 52 }, { pos: 'CM', x: 34, y: 50 }, { pos: 'CM', x: 66, y: 50 }, { pos: 'RM', x: 92, y: 52 },
+    { pos: 'AM', x: 50, y: 34 },
+    { pos: 'ST', x: 34, y: 18 }, { pos: 'ST', x: 66, y: 18 },
+  ],
+  '5-4-1': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'LB', x: 6, y: 70 }, { pos: 'CB', x: 24, y: 72 }, { pos: 'CB', x: 50, y: 73 }, { pos: 'CB', x: 76, y: 72 }, { pos: 'RB', x: 94, y: 70 },
+    { pos: 'LM', x: 8, y: 48 }, { pos: 'CM', x: 34, y: 46 }, { pos: 'CM', x: 66, y: 46 }, { pos: 'RM', x: 92, y: 48 },
+    { pos: 'ST', x: 50, y: 18 },
+  ],
+  '3-6-1': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'CB', x: 24, y: 72 }, { pos: 'CB', x: 50, y: 73 }, { pos: 'CB', x: 76, y: 72 },
+    { pos: 'LM', x: 6, y: 50 }, { pos: 'DM', x: 24, y: 52 }, { pos: 'CM', x: 38, y: 47 }, { pos: 'CM', x: 62, y: 47 }, { pos: 'DM', x: 76, y: 52 }, { pos: 'RM', x: 94, y: 50 },
     { pos: 'ST', x: 50, y: 18 },
   ],
 };
@@ -205,6 +237,11 @@ export function TacticsPanel({ team, players, onSave }: Props) {
               {style === 'contre-attaque' && 'Attaque boostée (+10%), moins de possession.'}
               {style === 'direct' && 'Fréquence de tirs maximale (+18%).'}
               {style === 'pressing' && 'Pressing intense — milieu (+15%), fautes adverses.'}
+              {style === 'ultra-defensif' && 'Bloc bas — tirs très rares (−35%), attaque minimale.'}
+              {style === 'gegenpressing' && 'Récupération haute intensité — milieu (+18%), fautes élevées.'}
+              {style === 'tiki-taka' && 'Passes courtes — possession maximale (+20%), peu de tirs.'}
+              {style === 'long-ball' && 'Ballons longs — attaque boostée (+15%), milieu réduit.'}
+              {style === 'chaos' && 'Tous azimuts — tirs (+30%) et fautes (+35%) extrêmes.'}
             </p>
           </div>
 

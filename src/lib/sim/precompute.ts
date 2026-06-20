@@ -8,6 +8,11 @@ function getTacticMods(style?: TacticStyle): TacticMods {
     case 'contre-attaque':  return { shotFreqMult: 1.08, foulRateMult: 1.00, midfieldMult: 0.92, attackMult: 1.10 };
     case 'direct':          return { shotFreqMult: 1.18, foulRateMult: 1.00, midfieldMult: 1.00, attackMult: 1.00 };
     case 'pressing':        return { shotFreqMult: 1.00, foulRateMult: 1.12, midfieldMult: 1.15, attackMult: 1.00 };
+    case 'ultra-defensif':  return { shotFreqMult: 0.65, foulRateMult: 1.05, midfieldMult: 0.85, attackMult: 0.75 };
+    case 'gegenpressing':   return { shotFreqMult: 1.10, foulRateMult: 1.20, midfieldMult: 1.18, attackMult: 1.05 };
+    case 'tiki-taka':       return { shotFreqMult: 0.82, foulRateMult: 0.90, midfieldMult: 1.20, attackMult: 0.95 };
+    case 'long-ball':       return { shotFreqMult: 1.15, foulRateMult: 1.05, midfieldMult: 0.80, attackMult: 1.15 };
+    case 'chaos':           return { shotFreqMult: 1.30, foulRateMult: 1.35, midfieldMult: 0.95, attackMult: 1.10 };
     default:                return { shotFreqMult: 1.00, foulRateMult: 1.00, midfieldMult: 1.00, attackMult: 1.00 };
   }
 }

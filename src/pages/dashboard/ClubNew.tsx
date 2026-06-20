@@ -178,7 +178,7 @@ export default function ClubNew() {
             value={formation}
             onChange={(e) => setFormation(e.target.value as Formation)}
           >
-            {(['4-3-3','4-4-2','3-5-2','4-2-3-1','5-3-2','4-1-4-1','3-4-3','4-3-2-1'] as Formation[]).map((f) => (
+            {(['4-3-3','4-4-2','3-5-2','4-2-3-1','5-3-2','4-1-4-1','3-4-3','4-3-2-1','4-5-1','4-4-1-1','3-4-1-2','5-4-1','3-6-1'] as Formation[]).map((f) => (
               <option key={f} value={f}>{f}</option>
             ))}
           </select>
