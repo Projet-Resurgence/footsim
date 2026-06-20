@@ -31,8 +31,10 @@ export function TeamCard({ team }: { team: Team }) {
           <div className="min-w-0">
             <div className="truncate font-display text-xl">{team.name}</div>
             <div className="mt-0.5 line-clamp-2 text-xs text-muted">{cultureDisplay}</div>
-            {team.continent && (
-              <div className="mt-1 text-xs text-muted/60">{CONTINENT_LABEL[team.continent]}</div>
+            {(team.continents ?? (team.continent ? [team.continent] : [])).length > 0 && (
+              <div className="mt-1 text-xs text-muted/60">
+                {(team.continents ?? [team.continent!]).map((c) => CONTINENT_LABEL[c]).join(' · ')}
+              </div>
             )}
           </div>
         </div>

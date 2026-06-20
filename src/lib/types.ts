@@ -221,7 +221,10 @@ export type Team = {
   culture: Culture;
   /** multi-culture mix; if present, used for name generation instead of culture */
   cultures?: import('@/lib/gen/names').CultureWeight[];
+  /** @deprecated use continents */
   continent?: Continent;
+  /** up to 2 continents this team belongs to */
+  continents?: Continent[];
   kind?: TeamKind;
   /** if kind === 'club', the parent national team slug */
   leagueId?: string;

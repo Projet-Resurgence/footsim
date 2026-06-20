@@ -25,7 +25,7 @@ export default function TeamNew() {
 
   const [name, setName] = useState('');
   const [flag, setFlag] = useState<string | null>(null);
-  const [continent, setContinent] = useState<Continent>('europe');
+  const [selectedContinents, setSelectedContinents] = useState<Continent[]>(['europe']);
   const [cultures, setCultures] = useState<CultureWeight[]>([{ culture: 'francais', weight: 50 }]);
   const [strength, setStrength] = useState(60);
   const [count, setCount] = useState(500);
@@ -36,6 +36,21 @@ export default function TeamNew() {
   const [draft, setDraft] = useState<{ team: Team; players: Player[] } | null>(null);
 
   const totalWeight = cultures.reduce((s, c) => s + c.weight, 0);
+
+  function toggleContinent(ct: Continent) {
+    if (selectedContinents.includes(ct)) {
+      if (selectedContinents.length === 1) return;
+      const next = selectedContinents.filter((c) => c !== ct);
+      setSelectedContinents(next);
+      // drop cultures no longer in any selected continent
+      const valid = new Set(next.flatMap((c) => CULTURES_BY_CONTINENT[c]));
+      const kept = cultures.filter((w) => valid.has(w.culture));
+      setCultures(kept.length > 0 ? kept : [{ culture: CULTURES_BY_CONTINENT[next[0]][0], weight: 50 }]);
+    } else {
+      if (selectedContinents.length >= 2) return; // max 2
+      setSelectedContinents([...selectedContinents, ct]);
+    }
+  }
 
   function toggleCulture(c: Culture) {
     if (cultures.some((w) => w.culture === c)) {
@@ -81,7 +96,8 @@ export default function TeamNew() {
         flag,
         culture: primaryCulture,
         cultures,
-        continent,
+        continent: selectedContinents[0],
+        continents: selectedContinents,
         kind: 'national',
         globalStrength: strength,
         createdAt: new Date().toISOString(),
@@ -130,27 +146,34 @@ export default function TeamNew() {
           <FlagUpload value={flag} onChange={(v) => setFlag(v || null)} />
         </div>
 
-        {/* Continent */}
-        <label className="block text-sm">
-          <span className="mb-1 block text-muted">Continent</span>
-          <select
-            className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
-            value={continent}
-            onChange={(e) => {
-              const c = e.target.value as Continent;
-              setContinent(c);
-              // auto-set first culture of new continent if current cultures don't belong to it
-              const continentCultures = CULTURES_BY_CONTINENT[c];
-              if (!cultures.some((w) => continentCultures.includes(w.culture))) {
-                setCultures([{ culture: continentCultures[0], weight: 50 }]);
-              }
-            }}
-          >
-            {(Object.keys(CULTURES_BY_CONTINENT) as Continent[]).map((ct) => (
-              <option key={ct} value={ct}>{CONTINENT_LABEL[ct]}</option>
-            ))}
-          </select>
-        </label>
+        {/* Continents (max 2) */}
+        <div className="block text-sm">
+          <span className="mb-1 block text-muted">
+            Continents <span className="text-xs opacity-60">(1 ou 2)</span>
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(CULTURES_BY_CONTINENT) as Continent[]).map((ct) => {
+              const active = selectedContinents.includes(ct);
+              const disabled = !active && selectedContinents.length >= 2;
+              return (
+                <button
+                  key={ct}
+                  onClick={() => toggleContinent(ct)}
+                  disabled={disabled}
+                  className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+                    active
+                      ? 'border-accent bg-accent/10 text-accent'
+                      : disabled
+                      ? 'cursor-not-allowed border-border opacity-40'
+                      : 'border-border hover:border-accent/40'
+                  }`}
+                >
+                  {CONTINENT_LABEL[ct]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Multi-culture picker */}
         <div className="space-y-3">
@@ -163,22 +186,31 @@ export default function TeamNew() {
             )}
           </div>
 
-          {/* Culture grid for selected continent */}
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-            {CULTURES_BY_CONTINENT[continent].map((c) => {
-              const active = cultures.some((w) => w.culture === c);
-              return (
-                <button
-                  key={c}
-                  onClick={() => toggleCulture(c)}
-                  className={`rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-                    active ? 'border-accent bg-accent/10 text-accent' : 'border-border hover:border-accent/40'
-                  }`}
-                >
-                  {CULTURE_LABEL[c]}
-                </button>
-              );
-            })}
+          {/* Culture grid for selected continents */}
+          <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+            {selectedContinents.map((ct) => (
+              <div key={ct}>
+                {selectedContinents.length > 1 && (
+                  <div className="mb-1 px-1 text-xs uppercase tracking-widest text-muted">{CONTINENT_LABEL[ct]}</div>
+                )}
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                  {CULTURES_BY_CONTINENT[ct].map((c) => {
+                    const active = cultures.some((w) => w.culture === c);
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => toggleCulture(c)}
+                        className={`rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                          active ? 'border-accent bg-accent/10 text-accent' : 'border-border hover:border-accent/40'
+                        }`}
+                      >
+                        {CULTURE_LABEL[c]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* Weight sliders for selected cultures */}

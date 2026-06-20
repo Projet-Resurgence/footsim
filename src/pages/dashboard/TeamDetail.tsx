@@ -39,7 +39,7 @@ export default function TeamDetail() {
   const [regenStrength, setRegenStrength] = useState(false);
   const [newStrength, setNewStrength] = useState<number | null>(null);
   const [editCultures, setEditCultures] = useState<CultureWeight[] | null>(null);
-  const [editContinent, setEditContinent] = useState<Continent | null>(null);
+  const [editContinent, setEditContinent] = useState<Continent[]>([]);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -207,7 +207,7 @@ export default function TeamDetail() {
   // initialize culture/continent edit state when switching to infos tab
   function openInfos() {
     setEditCultures(team.cultures ?? [{ culture: team.culture, weight: 50 }]);
-    setEditContinent(team.continent ?? null);
+    setEditContinent(team.continents ?? (team.continent ? [team.continent] : []));
     setTab('infos');
   }
 
@@ -215,7 +215,7 @@ export default function TeamDetail() {
     if (!editCultures || editCultures.length === 0) return;
     const primary = editCultures[0].culture;
     mutate({
-      team: { ...team, culture: primary, cultures: editCultures, continent: editContinent ?? team.continent },
+      team: { ...team, culture: primary, cultures: editCultures, continent: editContinent[0] ?? team.continent, continents: editContinent.length > 0 ? editContinent : undefined },
       players,
     });
   }
@@ -231,7 +231,9 @@ export default function TeamDetail() {
             {team.cultures && team.cultures.length > 1
               ? team.cultures.map((cw) => CULTURE_LABEL[cw.culture]).join(', ')
               : CULTURE_LABEL[team.culture]}
-            {team.continent ? ` · ${CONTINENT_LABEL[team.continent]}` : ''}
+            {(team.continents ?? (team.continent ? [team.continent] : [])).map((c) => CONTINENT_LABEL[c]).join(' · ')
+              ? ` · ${(team.continents ?? (team.continent ? [team.continent] : [])).map((c) => CONTINENT_LABEL[c]).join(' · ')}`
+              : ''}
             {' '}· Force {team.globalStrength} ·{' '}
             {team.playerCount} joueurs · Formation {team.formation}
           </p>
@@ -374,9 +376,9 @@ export default function TeamDetail() {
       {tab === 'infos' && editCultures !== null && (
         <CultureEditPanel
           cultures={editCultures}
-          continent={editContinent}
+          continents={editContinent}
           onChange={setEditCultures}
-          onChangeContinent={setEditContinent}
+          onChangeContinents={setEditContinent}
           onSave={saveInfos}
         />
       )}
@@ -410,18 +412,32 @@ export default function TeamDetail() {
 
 function CultureEditPanel({
   cultures,
-  continent,
+  continents,
   onChange,
-  onChangeContinent,
+  onChangeContinents,
   onSave,
 }: {
   cultures: CultureWeight[];
-  continent: Continent | null;
+  continents: Continent[];
   onChange: (w: CultureWeight[]) => void;
-  onChangeContinent: (c: Continent | null) => void;
+  onChangeContinents: (c: Continent[]) => void;
   onSave: () => void;
 }) {
   const total = cultures.reduce((s, c) => s + c.weight, 0);
+
+  function toggleContinent(ct: Continent) {
+    if (continents.includes(ct)) {
+      if (continents.length === 1) return;
+      const next = continents.filter((c) => c !== ct);
+      onChangeContinents(next);
+      const valid = new Set(next.flatMap((c) => CULTURES_BY_CONTINENT[c]));
+      const kept = cultures.filter((w) => valid.has(w.culture));
+      onChange(kept.length > 0 ? kept : [{ culture: CULTURES_BY_CONTINENT[next[0]][0], weight: 50 }]);
+    } else {
+      if (continents.length >= 2) return;
+      onChangeContinents([...continents, ct]);
+    }
+  }
 
   function toggleCulture(c: Culture) {
     if (cultures.some((w) => w.culture === c)) {
@@ -444,45 +460,49 @@ function CultureEditPanel({
     })));
   }
 
+  const displayContinents = continents.length > 0 ? continents : (Object.keys(CULTURES_BY_CONTINENT) as Continent[]);
+
   return (
     <section className="max-w-2xl space-y-6">
       <div>
-        <h2 className="mb-1 font-display text-xl">Cultures & Continent</h2>
+        <h2 className="mb-1 font-display text-xl">Cultures & Continents</h2>
         <p className="text-sm text-muted">
           Modifie les cultures de cette équipe. Les changements n'affectent pas les noms existants — utilise l'onglet Noms pour régénérer.
         </p>
       </div>
 
-      {/* Continent */}
-      <label className="block text-sm">
-        <span className="mb-1 block text-muted">Continent</span>
-        <select
-          className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
-          value={continent ?? ''}
-          onChange={(e) => {
-            const c = e.target.value as Continent || null;
-            onChangeContinent(c);
-            // if new continent selected, drop cultures not belonging to it
-            if (c) {
-              const valid = CULTURES_BY_CONTINENT[c];
-              const kept = cultures.filter((w) => valid.includes(w.culture));
-              onChange(kept.length > 0 ? kept : [{ culture: valid[0], weight: 50 }]);
-            }
-          }}
-        >
-          <option value="">— Non défini —</option>
-          {(Object.keys(CULTURES_BY_CONTINENT) as Continent[]).map((ct) => (
-            <option key={ct} value={ct}>{CONTINENT_LABEL[ct]}</option>
-          ))}
-        </select>
-      </label>
+      {/* Continents (max 2) */}
+      <div className="block text-sm">
+        <span className="mb-1 block text-muted">Continents <span className="text-xs opacity-60">(1 ou 2)</span></span>
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(CULTURES_BY_CONTINENT) as Continent[]).map((ct) => {
+            const active = continents.includes(ct);
+            const disabled = !active && continents.length >= 2;
+            return (
+              <button
+                key={ct}
+                onClick={() => toggleContinent(ct)}
+                disabled={disabled}
+                className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+                  active
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : disabled
+                    ? 'cursor-not-allowed border-border opacity-40'
+                    : 'border-border hover:border-accent/40'
+                }`}
+              >
+                {CONTINENT_LABEL[ct]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-      {/* Culture grid — filtered by selected continent, all continents fallback */}
+      {/* Culture grid */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs uppercase tracking-widest text-muted">
             Cultures sélectionnées ({cultures.length})
-            {continent && ` · ${CONTINENT_LABEL[continent]}`}
           </span>
           {cultures.length > 1 && (
             <button onClick={distribute} className="text-xs text-accent transition-colors hover:text-accent/70">
@@ -491,12 +511,9 @@ function CultureEditPanel({
           )}
         </div>
         <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
-          {(continent
-            ? [continent]
-            : (Object.keys(CULTURES_BY_CONTINENT) as Continent[])
-          ).map((ct) => (
+          {displayContinents.map((ct) => (
             <div key={ct}>
-              {!continent && (
+              {displayContinents.length > 1 && (
                 <div className="mb-1 px-1 text-xs uppercase tracking-widest text-muted">
                   {CONTINENT_LABEL[ct]}
                 </div>
