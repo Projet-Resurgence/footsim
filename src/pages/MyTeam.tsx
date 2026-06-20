@@ -365,7 +365,9 @@ function NomExportPanel({
       if (weights.length === 1) return;
       onChange(weights.filter((w) => w.culture !== culture));
     } else {
-      onChange([...weights, { culture, weight: 50 }]);
+      const n = weights.length + 1;
+      const eq = Math.round(100 / n);
+      onChange([...weights.map((w) => ({ ...w, weight: eq })), { culture, weight: 100 - eq * (n - 1) }]);
     }
   }
 
@@ -432,7 +434,7 @@ function NomExportPanel({
                   <span className="font-medium tabular-nums text-accent">{pct}%</span>
                 </div>
                 <input
-                  type="range" min={1} max={100} value={pct}
+                  type="range" min={1} max={100} value={cw.weight}
                   onChange={(e) => setWeight(cw.culture, Number(e.target.value))}
                   className="w-full accent-[var(--accent)]"
                 />

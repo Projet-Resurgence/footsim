@@ -52,7 +52,9 @@ export default function TeamNew() {
       if (cultures.length === 1) return; // keep at least one
       setCultures(cultures.filter((w) => w.culture !== c));
     } else {
-      setCultures([...cultures, { culture: c, weight: 50 }]);
+      const n = cultures.length + 1;
+    const eq = Math.round(100 / n);
+    setCultures([...cultures.map((w) => ({ ...w, weight: eq })), { culture: c, weight: 100 - eq * (n - 1) }]);
     }
   }
 
@@ -218,7 +220,7 @@ export default function TeamNew() {
                       <span className="text-accent tabular-nums">{pct}%</span>
                     </div>
                     <input
-                      type="range" min={1} max={200} value={cw.weight}
+                      type="range" min={1} max={100} value={cw.weight}
                       onChange={(e) => setWeight(cw.culture, Number(e.target.value))}
                       className="w-full accent-[var(--accent)]"
                     />

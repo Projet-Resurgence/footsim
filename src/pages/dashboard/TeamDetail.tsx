@@ -564,7 +564,9 @@ function CultureEditPanel({
       if (cultures.length === 1) return;
       onChange(cultures.filter((w) => w.culture !== c));
     } else {
-      onChange([...cultures, { culture: c, weight: 50 }]);
+    const n = cultures.length + 1;
+      const eq = Math.round(100 / n);
+      onChange([...cultures.map((w) => ({ ...w, weight: eq })), { culture: c, weight: 100 - eq * (n - 1) }]);
     }
   }
 
@@ -693,7 +695,7 @@ function CultureEditPanel({
                   <span className="font-medium tabular-nums text-accent">{pct}%</span>
                 </div>
                 <input
-                  type="range" min={1} max={100} value={pct}
+                  type="range" min={1} max={100} value={cw.weight}
                   onChange={(e) => setWeight(cw.culture, Number(e.target.value))}
                   className="w-full accent-[var(--accent)]"
                 />
