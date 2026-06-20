@@ -11,7 +11,6 @@ import { loadLocalTactics, saveLocalTactics } from '@/lib/localTactics';
 
 export default function MyTeam() {
   const session = useSession((s) => s.session);
-  const teamsStore = useTeams((s) => s.teams);
   const refreshTeams = useTeams((s) => s.refresh);
   const fetchTeam = useTeams((s) => s.fetchTeam);
   const { ownerId, pat } = useBackendArgs();
