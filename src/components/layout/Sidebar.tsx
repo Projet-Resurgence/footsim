@@ -11,6 +11,7 @@ const items: NavItem[] = [
   { to: '/dashboard/competitions', label: 'Compétitions' },
   { to: '/match', label: 'Matchs' },
   { to: '/dashboard/simulation', label: 'Simulation' },
+  { to: '/dashboard/notes-joueurs', label: 'Notes joueurs' },
   { to: '/dashboard/postes', label: 'Postes' },
   { to: '/dashboard/settings', label: 'Réglages' },
 ];

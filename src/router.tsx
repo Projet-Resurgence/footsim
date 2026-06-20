@@ -10,6 +10,7 @@ import TeamNew from '@/pages/dashboard/TeamNew';
 import TeamDetail from '@/pages/dashboard/TeamDetail';
 import Simulation from '@/pages/dashboard/Simulation';
 import Postes from '@/pages/dashboard/Postes';
+import NotesJoueurs from '@/pages/dashboard/NotesJoueurs';
 import Competitions from '@/pages/dashboard/Competitions';
 import CompetitionNew from '@/pages/dashboard/CompetitionNew';
 import CompetitionDetail from '@/pages/dashboard/CompetitionDetail';
@@ -50,6 +51,7 @@ export const router = createBrowserRouter(
         { path: 'competitions/new', element: <CompetitionNew /> },
         { path: 'competitions/:id', element: <CompetitionDetail /> },
         { path: 'postes', element: <Postes /> },
+        { path: 'notes-joueurs', element: <NotesJoueurs /> },
       ],
     },
     {
