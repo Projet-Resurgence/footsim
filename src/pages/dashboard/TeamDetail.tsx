@@ -47,15 +47,38 @@ const [regenStrength, setRegenStrength] = useState(false);
   useEffect(() => {
     if (!ownerId) return;
     setLoading(true);
-    fetchTeam(slug, ownerId, effectivePat)
-      .then((res) => {
+    (async () => {
+      try {
+        // IDB first (has unsaved local edits), fallback to GitHub
+        const local = await fetchTeam(slug, ownerId, null);
+        if (local) {
+          // If GitHub version exists too, merge: prefer local data but keep publishedAt from GH
+          if (effectivePat) {
+            const remote = await fetchTeam(slug, ownerId, effectivePat).catch(() => null);
+            if (remote && remote.team.publishedAt) {
+              setData({ ...local, team: { ...local.team, publishedAt: remote.team.publishedAt } });
+            } else {
+              setData(local);
+            }
+          } else {
+            setData(local);
+          }
+          setDirty(false);
+          return;
+        }
+        // No local copy — fetch from GitHub
+        const res = await fetchTeam(slug, ownerId, effectivePat);
         if (!res) toast('error', 'Équipe introuvable.');
         setData(res);
         setDirty(false);
-      })
-      .catch((err) => toast('error', String(err)))
-      .finally(() => setLoading(false));
-  }, [slug, ownerId, effectivePat, fetchTeam]);
+      } catch (err) {
+        toast('error', String(err));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, ownerId, effectivePat]);
 
   function mutate(next: { team: Team; players: Player[] }) {
     setData(next);
@@ -66,7 +89,7 @@ const [regenStrength, setRegenStrength] = useState(false);
     if (!data) return;
     setPublishing(true);
     try {
-      await saveTeam(data.team, data.players, null);
+      await saveTeam({ ...data.team, ownerId }, data.players, null);
       setDirty(false);
       toast('success', 'Enregistré localement.');
     } catch (err) {
@@ -288,7 +311,7 @@ async function applyNewStrength(strength: number) {
       <button
         className="text-sm text-muted hover:text-text"
         onClick={async () => {
-          if (dirty && data) await saveTeam(data.team, data.players, null);
+          if (dirty && data) await saveTeam({ ...data.team, ownerId }, data.players, null);
           navigate('/dashboard/teams');
         }}
       >
