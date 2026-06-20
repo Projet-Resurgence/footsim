@@ -263,8 +263,8 @@ async function applyNewStrength(strength: number) {
     <div className="space-y-8">
       <button
         className="text-sm text-muted hover:text-text"
-        onClick={() => {
-          if (dirty && !window.confirm('Modifications non enregistrées. Quitter quand même ?')) return;
+        onClick={async () => {
+          if (dirty && data) await saveTeam(data.team, data.players, null);
           navigate('/dashboard/teams');
         }}
       >
