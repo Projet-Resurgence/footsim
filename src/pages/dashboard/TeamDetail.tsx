@@ -164,6 +164,30 @@ async function applyNewStrength(strength: number) {
   }
 
   const tacticsImportRef = useRef<HTMLInputElement>(null);
+  const namesImportRef = useRef<HTMLInputElement>(null);
+
+  function importNames(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !data) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const json = JSON.parse(ev.target?.result as string) as { id: string; firstName: string; lastName: string }[];
+        const byId = new Map(json.map((r) => [r.id, r]));
+        const players = data.players.map((p) => {
+          const r = byId.get(p.id);
+          return r ? { ...p, firstName: r.firstName, lastName: r.lastName } : p;
+        });
+        const patched = json.filter((r) => byId.has(r.id) && data.players.some((p) => p.id === r.id)).length;
+        mutate({ team: data.team, players });
+        toast('success', `${patched} noms appliqués.`);
+      } catch {
+        toast('error', 'Fichier JSON invalide.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
 
   async function saveTactics(tactics: TeamTactics) {
     if (!data) return;
@@ -422,6 +446,12 @@ async function applyNewStrength(strength: number) {
                 </Button>
               </div>
             </div>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Button size="sm" variant="ghost" onClick={() => namesImportRef.current?.click()}>
+              ↓ Importer noms (JSON)
+            </Button>
+            <input ref={namesImportRef} type="file" accept=".json" className="hidden" onChange={importNames} />
           </div>
           <RosterTable players={players} onSelect={setEditingId} />
         </section>
