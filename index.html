@@ -10,11 +10,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:ital,wght@1,500;1,600;1,700&display=swap" rel="stylesheet" />
     <title>FootSim</title>
     <script>
-      // Restore path encoded by 404.html redirect
+      // Restore path+hash encoded by 404.html redirect
       (function() {
-        var p = new URLSearchParams(window.location.search).get('p');
+        var qs = new URLSearchParams(window.location.search);
+        var p = qs.get('p');
+        var h = qs.get('h');
         if (p) {
-          window.history.replaceState(null, '', '/footsim' + p);
+          window.history.replaceState(null, '', '/footsim' + p + (h ? h : ''));
         }
       })();
     </script>
