@@ -219,7 +219,7 @@ export default function MyTeam() {
                 .map((p) => (
                   <tr
                     key={p.id}
-                    className="border-t border-border cursor-pointer hover:bg-border/20 transition-colors"
+                    className="border-t border-border cursor-pointer hover:bg-accent/10 hover:text-accent transition-colors"
                     onClick={() => setViewingPlayer(p)}
                   >
                     <td className="px-4 py-2">{p.firstName} {p.lastName}</td>
