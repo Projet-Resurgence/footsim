@@ -69,6 +69,22 @@ export default function CompetitionDetail() {
       <div className="space-y-4">
         <Link to="/dashboard/competitions" className="text-sm text-muted hover:text-text">← Compétitions</Link>
         <p className="text-muted">Compétition introuvable.</p>
+        {isAdmin && pat && id && (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={async () => {
+              try {
+                await remove(id, pat);
+                navigate('/dashboard/competitions');
+              } catch (err) {
+                toast('error', String(err));
+              }
+            }}
+          >
+            Retirer de l'index
+          </Button>
+        )}
       </div>
     );
   }
