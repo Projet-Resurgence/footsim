@@ -25,6 +25,7 @@ export function precomputeSide(
   customLineup?: string[],
   tacticStyle?: TacticStyle,
   coach?: Coach,
+  matchSeed?: number,
 ): SideRatings {
   let lineup: Player[];
   let bench: Player[];
@@ -59,7 +60,7 @@ export function precomputeSide(
   const meanAm = am.length ? avg(am.map((p) => p.overall)) : meanAtt;
 
   const tacticMods = getTacticMods(tacticStyle);
-  const coachB = coach ? computeCoachBonuses(coach) : null;
+  const coachB = coach ? computeCoachBonuses(coach, matchSeed) : null;
 
   const attack = (0.7 * meanAtt + 0.3 * meanAm) * tacticMods.attackMult * (coachB?.attackMult ?? 1);
   const midfield = (mid.length ? avg(mid.map((p) => p.overall)) : 50) * tacticMods.midfieldMult * (coachB?.midfieldMult ?? 1);

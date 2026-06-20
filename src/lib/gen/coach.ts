@@ -22,7 +22,9 @@ export type NegativeTrait =
   | 'imprevoyant'    // -6% defense
   | 'rigide'         // -5% midfield, -4% attack
   | 'passif'         // -10% shot freq
-  | 'impatient';     // +20% foul rate, -4% defense
+  | 'impatient'      // +20% foul rate, -4% defense
+  | 'alcoolique'     // annule 1 trait positif aléatoire en match + -10% all
+  | 'drogue';        // annule 1 trait positif aléatoire en match + +25% foul rate
 
 export type CoachTrait = PositiveTrait | NegativeTrait;
 
@@ -35,7 +37,11 @@ export const POSITIVE_TRAITS: PositiveTrait[] = [
 export const NEGATIVE_TRAITS: NegativeTrait[] = [
   'impulsif', 'conservateur', 'desorganise', 'conflictuel',
   'imprevoyant', 'rigide', 'passif', 'impatient',
+  'alcoolique', 'drogue',
 ];
+
+/** Traits that cancel a random positive trait each match before computing bonuses */
+export const CANCELLING_TRAITS = new Set<NegativeTrait>(['alcoolique', 'drogue']);
 
 export const COACH_TRAIT_LABEL: Record<CoachTrait, string> = {
   // positive
@@ -58,6 +64,8 @@ export const COACH_TRAIT_LABEL: Record<CoachTrait, string> = {
   rigide: 'Rigide',
   passif: 'Passif',
   impatient: 'Impatient',
+  alcoolique: 'Alcoolique',
+  drogue: 'Drogué',
 };
 
 export const COACH_TRAIT_DESCRIPTION: Record<CoachTrait, string> = {
@@ -79,6 +87,8 @@ export const COACH_TRAIT_DESCRIPTION: Record<CoachTrait, string> = {
   rigide: '-5% milieu, -4% attaque — incapable de s\'adapter.',
   passif: '-10% fréquence de tirs — équipe trop attentiste.',
   impatient: '+20% fautes, -4% défense — perd ses nerfs en cours de match.',
+  alcoolique: 'Annule 1 trait positif aléatoire par match, -10% sur tout — performances imprévisibles.',
+  drogue: 'Annule 1 trait positif aléatoire par match, +25% fautes — instabilité comportementale.',
 };
 
 export type CoachStats = {
@@ -183,9 +193,12 @@ const TRAIT_MODS: Record<CoachTrait, Partial<CoachBonuses>> = {
   rigide:        { midfieldMult: 0.95, attackMult: 0.96 },
   passif:        { shotFreqMult: 0.90 },
   impatient:     { foulRateMult: 1.20, defenseMult: 0.96 },
+  // cancelling traits — base malus only, positive cancellation handled in computeCoachBonuses
+  alcoolique:    { attackMult: 0.90, midfieldMult: 0.90, defenseMult: 0.90 },
+  drogue:        { foulRateMult: 1.25 },
 };
 
-export function computeCoachBonuses(coach: Coach): CoachBonuses {
+export function computeCoachBonuses(coach: Coach, seed?: number): CoachBonuses {
   const s = coach.stats;
   // Base from stats
   let b: CoachBonuses = {
@@ -196,11 +209,24 @@ export function computeCoachBonuses(coach: Coach): CoachBonuses {
     foulRateMult: 1 - (s.mentalite / 20) * 0.10,
   };
 
-  // Handle legacy single trait
-  const allTraits: CoachTrait[] = [
-    ...(coach.positiveTraits ?? (coach.trait ? [coach.trait] : [])),
-    ...(coach.negativeTraits ?? []),
-  ];
+  // Determine effective positive traits after cancellation
+  let positiveTraits: PositiveTrait[] = coach.positiveTraits ?? (coach.trait ? [coach.trait as PositiveTrait] : []);
+  const negativeTraits: NegativeTrait[] = coach.negativeTraits ?? [];
+
+  // Each cancelling negative trait removes one random positive trait
+  const cancelCount = negativeTraits.filter((t) => CANCELLING_TRAITS.has(t)).length;
+  if (cancelCount > 0 && positiveTraits.length > 0) {
+    // Use seed for reproducibility within a match (passed from match engine)
+    const rng = seed !== undefined ? () => { seed = (seed! * 1664525 + 1013904223) & 0xffffffff; return Math.abs(seed) / 0xffffffff; } : Math.random;
+    const remaining = [...positiveTraits];
+    for (let i = 0; i < cancelCount && remaining.length > 0; i++) {
+      const idx = Math.floor(rng() * remaining.length);
+      remaining.splice(idx, 1);
+    }
+    positiveTraits = remaining;
+  }
+
+  const allTraits: CoachTrait[] = [...positiveTraits, ...negativeTraits];
 
   for (const trait of allTraits) {
     const mods = TRAIT_MODS[trait];

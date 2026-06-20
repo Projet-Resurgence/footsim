@@ -32,16 +32,25 @@ function send(msg: Outbound) {
   (self as unknown as Worker).postMessage(msg);
 }
 
+function matchSeedFromId(matchId: string): number {
+  let h = 0;
+  for (let i = 0; i < matchId.length; i++) {
+    h = (Math.imul(31, h) + matchId.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
 function buildCtx(input: MatchInput): EngineCtx {
+  const seed = matchSeedFromId(input.matchId);
   const home = {
     team: input.home.team,
     players: new Map(input.home.players.map((p: Player) => [p.id, p])),
-    ratings: precomputeSide(input.home.players, input.home.formation, input.home.lineup, input.home.tacticStyle, input.home.team.coach),
+    ratings: precomputeSide(input.home.players, input.home.formation, input.home.lineup, input.home.tacticStyle, input.home.team.coach, seed),
   };
   const away = {
     team: input.away.team,
     players: new Map(input.away.players.map((p: Player) => [p.id, p])),
-    ratings: precomputeSide(input.away.players, input.away.formation, input.away.lineup, input.away.tacticStyle, input.away.team.coach),
+    ratings: precomputeSide(input.away.players, input.away.formation, input.away.lineup, input.away.tacticStyle, input.away.team.coach, seed + 1),
   };
   return { home, away, eventCounter: { v: 0 } };
 }
