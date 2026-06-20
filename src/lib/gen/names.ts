@@ -1,7 +1,7 @@
 import type { Culture } from '@/lib/types';
 import { pick } from '@/lib/rng';
 
-const modules = import.meta.glob<{ default: { first: string[]; last: string[] } }>(
+const modules = import.meta.glob<{ default: Record<string, string[]> }>(
   '@/data/names/*.json',
   { eager: true },
 );
@@ -9,7 +9,11 @@ const modules = import.meta.glob<{ default: { first: string[]; last: string[] } 
 const byCulture = new Map<Culture, { first: string[]; last: string[] }>();
 for (const [path, mod] of Object.entries(modules)) {
   const culture = path.split('/').pop()!.replace('.json', '') as Culture;
-  byCulture.set(culture, mod.default);
+  const d = mod.default;
+  byCulture.set(culture, {
+    first: d.first ?? d.firstNames ?? [],
+    last: d.last ?? d.lastNames ?? [],
+  });
 }
 
 export function pickName(culture: Culture): { firstName: string; lastName: string } {

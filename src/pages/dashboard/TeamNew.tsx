@@ -29,6 +29,7 @@ export default function TeamNew() {
   const [cultures, setCultures] = useState<CultureWeight[]>([{ culture: 'francais', weight: 50 }]);
   const [strength, setStrength] = useState(60);
   const [count, setCount] = useState(500);
+  const [managerId, setManagerId] = useState('');
 
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -110,6 +111,7 @@ export default function TeamNew() {
         ownerId,
         playerCount: players.length,
         formation: '4-3-3',
+        managerDiscordId: managerId.trim() || undefined,
       };
 
       setDraft({ team, players });
@@ -238,6 +240,12 @@ export default function TeamNew() {
             </div>
           )}
         </div>
+
+        {/* Manager Discord ID */}
+        <label className="block text-sm">
+          <span className="mb-1 block text-muted">ID Discord du manager <span className="text-xs opacity-60">(optionnel)</span></span>
+          <Input value={managerId} onChange={(e) => setManagerId(e.target.value)} placeholder="772821169664426025" />
+        </label>
 
         {/* Strength */}
         <label className="block text-sm">
