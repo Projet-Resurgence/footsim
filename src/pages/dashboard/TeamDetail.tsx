@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -280,6 +280,7 @@ export default function TeamDetail() {
 
   return (
     <div className="space-y-8">
+      <Link to="/dashboard/teams" className="text-sm text-muted hover:text-text">← Équipes</Link>
       {/* Header */}
       <div className="flex items-start gap-6">
         <img src={team.flag} alt="" className="h-24 w-24 object-cover" />
