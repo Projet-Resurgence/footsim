@@ -13,9 +13,12 @@ export type DrawResult = {
   groups: Record<string, string[]>;
 };
 
-/** Assign teams to up to 4 pots by globalStrength (descending). */
+/** Assign teams to up to 4 pots by globalStrength (descending). Ties broken randomly. */
 export function buildPots(teams: Team[]): Pot[] {
-  const sorted = [...teams].sort((a, b) => b.globalStrength - a.globalStrength);
+  const sorted = [...teams]
+    .map((t) => ({ t, r: Math.random() }))
+    .sort((a, b) => b.t.globalStrength - a.t.globalStrength || a.r - b.r)
+    .map(({ t }) => t);
   const total = sorted.length;
   // distribute as evenly as possible across min(4, ...) pots
   const potCount = Math.min(4, total);

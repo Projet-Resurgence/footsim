@@ -19,6 +19,7 @@ export function DrawCeremony({ result, teams, groupCount, onConfirm, knockoutMod
   const teamMap = new Map(teams.map((t) => [t.id, t]));
   const groupKeys = Object.keys(result.groups).sort();
 
+  const [phase, setPhase] = useState<'pots' | 'draw'>('pots');
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [current, setCurrent] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
@@ -47,6 +48,37 @@ export function DrawCeremony({ result, teams, groupCount, onConfirm, knockoutMod
 
   const groupOfTeam = (teamId: string): number =>
     groupKeys.findIndex((k) => result.groups[k].includes(teamId));
+
+  if (phase === 'pots') {
+    return (
+      <div className="space-y-6">
+        <p className="text-sm text-muted">Répartition des chapeaux selon la force globale. Les égalités sont tirées aléatoirement.</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {result.pots.map((p) => (
+            <div key={p.number} className="rounded-lg border border-border bg-surface p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full shrink-0" style={{ background: POT_COLORS[p.number] }} />
+                <span className="font-semibold text-sm">Chapeau {p.number}</span>
+              </div>
+              <div className="space-y-1.5">
+                {p.teamIds.map((tid) => {
+                  const t = teamMap.get(tid);
+                  return (
+                    <div key={tid} className="flex items-center gap-2 text-sm">
+                      {t?.flag && <img src={t.flag} alt="" className="h-5 w-5 rounded-sm object-cover shrink-0" />}
+                      <span className="truncate">{t?.name ?? tid}</span>
+                      <span className="ml-auto text-xs text-muted tabular-nums">{t?.globalStrength}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <Button onClick={() => setPhase('draw')} size="lg">Lancer le tirage au sort</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
