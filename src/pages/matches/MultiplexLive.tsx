@@ -47,13 +47,18 @@ export default function MultiplexLive() {
   const [pendingUpdate, setPendingUpdate] = useState<Parameters<typeof save>[0] | null>(null);
 
   // Pre-launch corruption state
-  type PendingSlot = { compMatchId: string; input: MatchInput; corruption: CorruptionDeal | null };
+  type PendingSlot = {
+    compMatchId: string;
+    input: MatchInput;
+    corruption: CorruptionDeal | null;
+    refContacted: boolean;   // true once any contact attempt made for this match
+    refOffer: CorruptionOffer | null; // null = refused
+  };
   const [pendingInputs, setPendingInputs] = useState<PendingSlot[] | null>(null);
   const [corruptionModal, setCorruptionModal] = useState<{
     slotIdx: number;
     side: 'home' | 'away';
     offer: CorruptionOffer | null;
-    contacted: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -110,7 +115,7 @@ export default function MultiplexLive() {
         }
 
         if (inputs.length === 0) { toast('error', 'Données équipes introuvables.'); return; }
-        setPendingInputs(inputs.map((i) => ({ ...i, corruption: null })));
+        setPendingInputs(inputs.map((i) => ({ ...i, corruption: null, refContacted: false, refOffer: null })));
       } catch (err) {
         toast('error', String(err));
       } finally {
@@ -237,7 +242,11 @@ export default function MultiplexLive() {
 
   function contactRef(slotIdx: number, side: 'home' | 'away') {
     const offer = generateRefOffer();
-    setCorruptionModal({ slotIdx, side, offer, contacted: true });
+    // Mark this match as contacted regardless of outcome
+    setPendingInputs((prev) =>
+      prev ? prev.map((s, i) => i === slotIdx ? { ...s, refContacted: true, refOffer: offer } : s) : prev,
+    );
+    setCorruptionModal({ slotIdx, side, offer });
   }
 
   function acceptCorruption() {
@@ -302,13 +311,17 @@ export default function MultiplexLive() {
                     <span>🤝 Corruption active — {deal.side === 'home' ? home.name : away.name} ({deal.bribe}M€)</span>
                     <button
                       className="underline opacity-70 hover:opacity-100"
-                      onClick={() => setPendingInputs((prev) => prev ? prev.map((s, si) => si === i ? { ...s, corruption: null } : s) : prev)}
+                      onClick={() => setPendingInputs((prev) => prev ? prev.map((s, si) => si === i ? { ...s, corruption: null, refContacted: false, refOffer: null } : s) : prev)}
                     >
                       Annuler
                     </button>
                   </div>
+                ) : slot.refContacted ? (
+                  <div className="text-xs rounded-md bg-surface border border-border px-3 py-2 text-muted">
+                    🚫 L'arbitre n'est pas intéressé pour ce match.
+                  </div>
                 ) : (
-                  <div className="flex gap-2">
+                  <div className="flex justify-between">
                     <Button size="sm" variant="ghost" className="text-xs" onClick={() => contactRef(i, 'home')}>
                       🤫 Corrompre via {home.name}
                     </Button>
