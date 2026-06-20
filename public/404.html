@@ -5,11 +5,11 @@
     <script>
       // SPA redirect: encode path+hash into query param, redirect to base
       var l = window.location;
-      var path = l.pathname.replace('/footsim', '') || '/';
+      var path = l.pathname || '/';
       var hash = l.hash || '';
       l.replace(
         l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-        '/footsim/?p=' + encodeURIComponent(path + l.search) +
+        '/?p=' + encodeURIComponent(path + l.search) +
         (hash ? '&h=' + encodeURIComponent(hash) : '')
       );
     </script>

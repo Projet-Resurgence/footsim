@@ -27,7 +27,7 @@ jobs:
       - name: Write production env
         run: |
           echo "VITE_DISCORD_CLIENT_ID=1499227649455689859" >> .env.production
-          echo "VITE_DISCORD_REDIRECT_URI=https://bjbellum.github.io/footsim/auth/callback" >> .env.production
+          echo "VITE_DISCORD_REDIRECT_URI=https://footsim.projet-resurgence.fr/auth/callback" >> .env.production
           echo "VITE_DATA_REPO=BJBellum/footsim-data" >> .env.production
           echo "VITE_DATA_BRANCH=main" >> .env.production
           echo "VITE_ADMIN_DISCORD_ID=772821169664426025" >> .env.production

@@ -2,8 +2,8 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/footsim/logo.png" />
-    <link rel="apple-touch-icon" href="/footsim/logo.png" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -16,7 +16,7 @@
         var p = qs.get('p');
         var h = qs.get('h');
         if (p) {
-          window.history.replaceState(null, '', '/footsim' + p + (h ? h : ''));
+          window.history.replaceState(null, '', p + (h ? h : ''));
         }
       })();
     </script>
