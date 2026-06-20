@@ -107,10 +107,10 @@ function StatGroup({ title, children }: { title: string; children: React.ReactNo
 
 function StatBar({ label, value }: { label: string; value: number }) {
   const tone =
-    value >= 16 ? 'bg-accent'
-    : value >= 12 ? 'bg-accent/60'
-    : value >= 8 ? 'bg-muted/60'
-    : 'bg-danger/60';
+    value >= 16 ? 'bg-green-500'
+    : value >= 12 ? 'bg-green-500/50'
+    : value >= 8 ? 'bg-slate-400'
+    : 'bg-red-500';
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
       <span className="text-muted">{label}</span>
