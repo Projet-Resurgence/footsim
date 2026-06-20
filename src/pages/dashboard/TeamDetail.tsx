@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
@@ -182,10 +182,34 @@ export default function TeamDetail() {
     }
   }
 
+  const tacticsImportRef = useRef<HTMLInputElement>(null);
+
   async function saveTactics(tactics: TeamTactics) {
     if (!data) return;
     mutate({ team: { ...data.team, tactics }, players: data.players });
     toast('success', 'Tactique enregistrée.');
+  }
+
+  function importTactics(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !data) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const json = JSON.parse(ev.target?.result as string);
+        const tactics: TeamTactics = {
+          formation: json.formation,
+          style: json.style,
+          lineup: json.lineup.map((p: { id: string }) => p.id),
+        };
+        mutate({ team: { ...data.team, tactics }, players: data.players });
+        toast('success', 'Tactique importée (non publiée).');
+      } catch {
+        toast('error', 'Fichier tactique invalide.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   }
 
   async function deleteTeamHandler() {
@@ -425,7 +449,15 @@ export default function TeamDetail() {
 
       {tab === 'tactique' && (
         <section className="space-y-4">
-          <h2 className="font-display text-xl">Tactique</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-xl">Tactique</h2>
+            <div>
+              <Button size="sm" variant="ghost" onClick={() => tacticsImportRef.current?.click()}>
+                ↑ Importer tactique manager
+              </Button>
+              <input ref={tacticsImportRef} type="file" accept=".json" className="hidden" onChange={importTactics} />
+            </div>
+          </div>
           <TacticsPanel team={team} players={players} onSave={saveTactics} />
         </section>
       )}

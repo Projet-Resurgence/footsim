@@ -8,7 +8,7 @@ const COMP_PATH = (id: string) => `data/competitions/${id}.json`;
 let cachedIndexSha: string | undefined;
 let cachedIndexData: CompetitionSummary[] | undefined;
 
-async function readIndex(token: string): Promise<{ data: CompetitionSummary[]; sha: string } | null> {
+async function readIndex(token: string | null): Promise<{ data: CompetitionSummary[]; sha: string } | null> {
   const res = await readJson<CompetitionSummary[]>(INDEX_PATH, token);
   if (res) {
     cachedIndexSha = res.sha;
@@ -53,7 +53,7 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
   return result;
 }
 
-export async function listCompetitions(token: string): Promise<CompetitionSummary[]> {
+export async function listCompetitions(token: string | null): Promise<CompetitionSummary[]> {
   const res = await readIndex(token);
   return res?.data ?? [];
 }
