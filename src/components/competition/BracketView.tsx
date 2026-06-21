@@ -18,10 +18,19 @@ export function LPMBracketView({
     return ha.localeCompare(hb);
   });
 
-  const pairs: LPMPair[] = leg1s.map((leg1) => ({
-    leg1,
-    leg2: matches.find((m) => m.leg === 2 && m.homeFromMatch === leg1.id),
-  }));
+  const leg2s = matches.filter((m) => m.leg === 2);
+
+  const pairs: LPMPair[] = leg1s.map((leg1) => {
+    // Try homeFromMatch first (pre-seed state), then match by teams (post-seed)
+    const leg2 = leg2s.find((m) => m.homeFromMatch === leg1.id)
+      ?? leg2s.find((m) =>
+        m.homeTeamId && m.awayTeamId &&
+        leg1.homeTeamId && leg1.awayTeamId &&
+        ((m.homeTeamId === leg1.awayTeamId && m.awayTeamId === leg1.homeTeamId) ||
+         (m.homeTeamId === leg1.homeTeamId && m.awayTeamId === leg1.awayTeamId))
+      );
+    return { leg1, leg2 };
+  });
 
   return (
     <div className="space-y-3">

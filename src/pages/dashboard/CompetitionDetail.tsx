@@ -985,7 +985,14 @@ function LPMStandingsView({
   const playoffQualifiedIds = new Set<string>();
   const leg1s = playoffMatches.filter((m) => m.leg === 1 && m.status === 'completed');
   for (const leg1 of leg1s) {
-    const leg2 = playoffMatches.find((m) => m.leg === 2 && m.homeFromMatch === leg1.id && m.status === 'completed');
+    const leg2 = playoffMatches.find((m) =>
+      m.leg === 2 && m.status === 'completed' && (
+        m.homeFromMatch === leg1.id ||
+        (m.homeTeamId && m.awayTeamId && leg1.homeTeamId && leg1.awayTeamId &&
+          ((m.homeTeamId === leg1.awayTeamId && m.awayTeamId === leg1.homeTeamId) ||
+           (m.homeTeamId === leg1.homeTeamId && m.awayTeamId === leg1.awayTeamId)))
+      )
+    );
     if (!leg2) continue;
     const l1h = leg1.result?.home ?? 0;
     const l1a = leg1.result?.away ?? 0;
