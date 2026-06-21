@@ -341,6 +341,8 @@ export default function CompetitionMatchLive() {
       ] as [string, number, number][]) {
         if (!tid) continue;
         const tname = nameFor(tid);
+        const teamPlayers = tid === homeTeamId ? matchInput!.home.players : matchInput!.away.players;
+        const teamCoach = tid === homeTeamId ? matchInput!.home.team.coach : matchInput!.away.team.coach;
         const { item, dopingSuspension, teamDisqualified } = generateMatchPressItem({
           round,
           teamId: tid,
@@ -354,6 +356,8 @@ export default function CompetitionMatchLive() {
           standing: snap!.standings[tid],
           totalTeams: snap!.teamIds.length,
           dopingBannedTeamIds,
+          players: teamPlayers,
+          coach: teamCoach,
         });
         newPressItems.push(item);
         if (dopingSuspension) {

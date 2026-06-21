@@ -281,6 +281,8 @@ export default function MultiplexLive() {
         [homeId, slot.state.score.home, slot.state.score.away],
         [awayId, slot.state.score.away, slot.state.score.home],
       ] as [string, number, number][]) {
+        const teamPlayers = tid === homeId ? slot.homePlayers : slot.awayPlayers;
+        const teamCoach = tid === homeId ? slot.home.coach : slot.away.coach;
         const { item: matchPress, dopingSuspension, teamDisqualified } = generateMatchPressItem({
           seed: `${baseSeed}-${tid}`,
           round: current.currentRound,
@@ -294,6 +296,8 @@ export default function MultiplexLive() {
           standing: current.standings[tid],
           totalTeams: current.teamIds.length,
           dopingBannedTeamIds,
+          players: teamPlayers,
+          coach: teamCoach,
         });
         updatedPressItems = [...updatedPressItems, matchPress];
         if (dopingSuspension) {

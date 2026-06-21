@@ -3,8 +3,41 @@
 import type { Suspension } from './injuries';
 import { createSuspension } from './injuries';
 import type { Standing } from './types';
+import type { Player } from '@/lib/types';
+import type { Coach } from '@/lib/gen/coach';
 
 export type PressCategory = 'victoire' | 'defaite' | 'scandale' | 'forme' | 'crise' | 'neutralite' | 'exploit';
+
+export type PressMentionPlayer = {
+  type: 'player';
+  name: string;
+  overall: number;
+  position: string;
+  stats: {
+    technical: Record<string, number>;
+    mental: Record<string, number>;
+    physical: Record<string, number>;
+    goalkeeping?: Record<string, number>;
+  };
+};
+
+export type PressMentionCoach = {
+  type: 'coach';
+  name: string;
+  overall: number;
+  stats: {
+    motivation: number;
+    tactique: number;
+    offensive: number;
+    defensif: number;
+    mentalite: number;
+    gestion: number;
+  };
+  positiveTraits: string[];
+  negativeTraits: string[];
+};
+
+export type PressMention = PressMentionPlayer | PressMentionCoach;
 
 export type PressItem = {
   id: string;
@@ -16,6 +49,8 @@ export type PressItem = {
   moraleBefore?: number;
   moraleAfter?: number;
   createdAt: string;
+  /** Named persons mentioned in headline/body — used for clickable pop-ups */
+  mentions?: PressMention[];
 };
 
 function rng(seed: string): () => number {
@@ -552,6 +587,10 @@ export function generateMatchPressItem(opts: {
   totalTeams?: number;
   /** teamIds already banned for doping this competition — prevents re-roll */
   dopingBannedTeamIds?: string[];
+  /** Roster of this team — used to mention a player by name in press body */
+  players?: Player[];
+  /** Head coach of this team — mentioned in body with overall */
+  coach?: Coach;
 }): MatchPressResult {
   const r = rng(opts.seed);
   const diff = opts.goalsFor - opts.goalsAgainst;
@@ -565,6 +604,16 @@ export function generateMatchPressItem(opts: {
   let body: string;
   let dopingSuspension: Suspension | null = null;
   let teamDisqualified = false;
+
+  // Pick a notable player to mention in body (non-GK preferred)
+  const nonGK = opts.players?.filter((p) => p.position !== 'GK') ?? [];
+  const pool = nonGK.length > 0 ? nonGK : (opts.players ?? []);
+  // Sort by overall desc, pick from top 5 so it's a key player, weighted by seed
+  const top5 = pool.slice().sort((a, b) => b.overall - a.overall).slice(0, 5);
+  const featuredPlayer = top5.length > 0 ? pick(top5, r) : null;
+  const playerMention = featuredPlayer
+    ? `${featuredPlayer.firstName} ${featuredPlayer.lastName} (${featuredPlayer.overall})`
+    : null;
 
   const alreadyDisqualified = opts.dopingBannedTeamIds?.includes(opts.teamId) ?? false;
   // Jamais si déjà disqualifié ou phase finale
@@ -686,6 +735,102 @@ export function generateMatchPressItem(opts: {
     }
   }
 
+  const mentions: PressMention[] = [];
+
+  // Coach mention (40% chance, performance categories only)
+  const coach = opts.coach;
+  if (coach && r() < 0.4 && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite', 'scandale'].includes(category)) {
+    const coachLabel = `${coach.firstName} ${coach.lastName} (${coach.overall})`;
+    const coachSuffixes: Record<string, string[]> = {
+      victoire: [
+        `Le sélectionneur ${coachLabel} a su trouver les bons réglages tactiques.`,
+        `${coachLabel} peut savourer — ses choix ont payé ce soir.`,
+        `Le plan de jeu de ${coachLabel} a parfaitement fonctionné.`,
+      ],
+      exploit: [
+        `${coachLabel} entre dans la légende de ce tournoi avec cette victoire magistrale.`,
+        `La préparation méticuleuse de ${coachLabel} se voit dans chaque action de son équipe.`,
+        `${coachLabel} a livré un chef-d'œuvre tactique ce soir.`,
+      ],
+      defaite: [
+        `${coachLabel} devra trouver des réponses rapidement.`,
+        `Les choix de ${coachLabel} sont remis en question après cette contre-performance.`,
+        `${coachLabel} n'a pas su trouver les mots pour relancer les siens.`,
+      ],
+      crise: [
+        `L'avenir de ${coachLabel} à la tête du groupe est sérieusement en question.`,
+        `${coachLabel} est sous pression maximale après ce naufrage collectif.`,
+        `${coachLabel} a reconnu ses erreurs — trop tard pour changer le cours du match.`,
+      ],
+      neutralite: [
+        `${coachLabel} repart frustré — ses plans n'ont pas suffi à débloquer la situation.`,
+        `${coachLabel} a multiplié les changements tactiques sans succès.`,
+      ],
+      scandale: [
+        `${coachLabel} dit n'avoir "rien su" de l'affaire. La presse reste sceptique.`,
+        `La position de ${coachLabel} est désormais très délicate après ces révélations.`,
+      ],
+    };
+    const s = coachSuffixes[category];
+    if (s) {
+      body += ' ' + pick(s, r);
+      mentions.push({
+        type: 'coach',
+        name: `${coach.firstName} ${coach.lastName}`,
+        overall: coach.overall,
+        stats: coach.stats,
+        positiveTraits: coach.positiveTraits,
+        negativeTraits: coach.negativeTraits,
+      });
+    }
+  }
+
+  // Player mention (50% chance, perf categories only)
+  if (playerMention && featuredPlayer && r() < 0.5 && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite'].includes(category)) {
+    const suffixes: Record<string, string[]> = {
+      victoire: [
+        `En grande forme, ${playerMention} a été l'un des artisans de ce succès.`,
+        `${playerMention} s'est particulièrement distingué ce soir.`,
+        `Le niveau affiché par ${playerMention} donne de l'espoir pour la suite.`,
+      ],
+      exploit: [
+        `${playerMention} a éclaboussé ce match de son talent.`,
+        `On retiendra la prestation XXL de ${playerMention} dans cette démonstration collective.`,
+        `${playerMention} a été omniprésent — ses adversaires n'ont pas trouvé la parade.`,
+      ],
+      defaite: [
+        `Même ${playerMention} n'a pas pu renverser la tendance.`,
+        `Les efforts de ${playerMention} n'ont pas suffi à éviter la défaite.`,
+        `On attendait plus de ${playerMention} dans les moments décisifs.`,
+      ],
+      crise: [
+        `${playerMention} n'a pas pu limiter les dégâts malgré ses efforts.`,
+        `Même les meilleurs éléments comme ${playerMention} ont été dépassés.`,
+        `Le match de ${playerMention} illustre les difficultés traversées par l'ensemble du groupe.`,
+      ],
+      neutralite: [
+        `${playerMention} a tenté de faire la différence, sans succès.`,
+        `L'activité de ${playerMention} n'a pas suffi pour débloquer la situation.`,
+      ],
+    };
+    const s = suffixes[category];
+    if (s) {
+      body += ' ' + pick(s, r);
+      mentions.push({
+        type: 'player',
+        name: `${featuredPlayer.firstName} ${featuredPlayer.lastName}`,
+        overall: featuredPlayer.overall,
+        position: featuredPlayer.position,
+        stats: {
+          technical: featuredPlayer.stats.technical as unknown as Record<string, number>,
+          mental: featuredPlayer.stats.mental as unknown as Record<string, number>,
+          physical: featuredPlayer.stats.physical as unknown as Record<string, number>,
+          ...(featuredPlayer.stats.goalkeeping ? { goalkeeping: featuredPlayer.stats.goalkeeping as unknown as Record<string, number> } : {}),
+        },
+      });
+    }
+  }
+
   return {
     item: {
       id: crypto.randomUUID(),
@@ -697,6 +842,7 @@ export function generateMatchPressItem(opts: {
       moraleBefore: opts.moraleBefore,
       moraleAfter: opts.moraleAfter,
       createdAt: new Date().toISOString(),
+      mentions: mentions.length > 0 ? mentions : undefined,
     },
     dopingSuspension,
     teamDisqualified,

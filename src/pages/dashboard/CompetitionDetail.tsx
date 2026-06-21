@@ -23,8 +23,9 @@ import type { CorruptionDeal } from '@/lib/sim/types';
 import type { Team } from '@/lib/types';
 import { env } from '@/lib/env';
 import { moraleLabel, MORALE_DEFAULT } from '@/lib/competition/morale';
-import type { PressItem } from '@/lib/competition/press';
+import type { PressItem, PressMention, PressMentionPlayer, PressMentionCoach } from '@/lib/competition/press';
 import { PRESS_CATEGORY_COLOR, PRESS_CATEGORY_LABEL } from '@/lib/competition/press';
+import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
 import type { Injury, Suspension } from '@/lib/competition/injuries';
 import { SEVERITY_COLOR, CAUSE_LABEL } from '@/lib/competition/injuries';
 
@@ -777,6 +778,169 @@ function AwardCard({ emoji, label, stats, showRating }: {
   );
 }
 
+const PLAYER_STAT_LABELS: Record<string, string> = {
+  // technical
+  passing: 'Passe', crossing: 'Centre', dribbling: 'Dribble', finishing: 'Finition',
+  firstTouch: '1er contact', heading: 'Jeu de tête', longShots: 'Frappes lointaines',
+  tackling: 'Tacle', technique: 'Technique',
+  // mental
+  vision: 'Vision', decisions: 'Décisions', composure: 'Sang-froid', anticipation: 'Anticipation',
+  offTheBall: 'Démarquage', aggression: 'Agressivité', workRate: 'Activité',
+  // physical
+  pace: 'Vitesse', acceleration: 'Accélération', strength: 'Force', stamina: 'Endurance',
+  jumping: 'Détente', balance: 'Équilibre', agility: 'Agilité',
+  // goalkeeping
+  reflexes: 'Réflexes', handling: 'Jeu de mains', aerial: 'Sorties aériennes',
+  oneOnOne: 'Face-à-face', kicking: 'Relances pieds', throwing: 'Relances mains',
+};
+
+const COACH_STAT_LABELS: Record<string, string> = {
+  motivation: 'Motivation', tactique: 'Tactique', offensive: 'Offensive',
+  defensif: 'Défensif', mentalite: 'Mentalité', gestion: 'Gestion',
+};
+
+function StatBar({ label, value }: { label: string; value: number }) {
+  const pct = Math.round((value / 20) * 100);
+  const color = value >= 15 ? '#4ade80' : value >= 10 ? '#facc15' : '#ef4444';
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-muted w-24 shrink-0 truncate">{label}</span>
+      <div className="flex-1 h-1.5 rounded-full bg-border overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+      </div>
+      <span className="text-[10px] tabular-nums w-4 text-right shrink-0">{value}</span>
+    </div>
+  );
+}
+
+function MentionPopup({ mention, onClose }: { mention: PressMention; onClose: () => void }) {
+  const isPlayer = mention.type === 'player';
+  const isCoach = mention.type === 'coach';
+  const p = isPlayer ? (mention as PressMentionPlayer) : null;
+  const c = isCoach ? (mention as PressMentionCoach) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60" />
+      <div
+        className="relative z-10 rounded-xl border border-border bg-surface shadow-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div>
+            <div className="font-display text-lg">{mention.name}</div>
+            <div className="text-xs text-muted mt-0.5 flex items-center gap-2">
+              {isPlayer && <span>{(mention as PressMentionPlayer).position}</span>}
+              {isCoach && <span>Entraîneur</span>}
+              <span className="font-medium text-accent">Overall {mention.overall}</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-muted hover:text-text transition-colors text-lg leading-none">×</button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* Player stats */}
+          {p && (
+            <>
+              <div className="space-y-1.5">
+                <div className="text-[10px] uppercase tracking-widest text-muted mb-1">Technique</div>
+                {Object.entries(p.stats.technical).map(([k, v]) => (
+                  <StatBar key={k} label={PLAYER_STAT_LABELS[k] ?? k} value={v as number} />
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <div className="text-[10px] uppercase tracking-widest text-muted mb-1">Mental</div>
+                {Object.entries(p.stats.mental).map(([k, v]) => (
+                  <StatBar key={k} label={PLAYER_STAT_LABELS[k] ?? k} value={v as number} />
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <div className="text-[10px] uppercase tracking-widest text-muted mb-1">Physique</div>
+                {Object.entries(p.stats.physical).map(([k, v]) => (
+                  <StatBar key={k} label={PLAYER_STAT_LABELS[k] ?? k} value={v as number} />
+                ))}
+              </div>
+              {p.stats.goalkeeping && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] uppercase tracking-widest text-muted mb-1">Gardien</div>
+                  {Object.entries(p.stats.goalkeeping).map(([k, v]) => (
+                    <StatBar key={k} label={PLAYER_STAT_LABELS[k] ?? k} value={v as number} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Coach stats + traits */}
+          {c && (
+            <>
+              <div className="space-y-1.5">
+                <div className="text-[10px] uppercase tracking-widest text-muted mb-1">Attributs</div>
+                {Object.entries(c.stats).map(([k, v]) => (
+                  <StatBar key={k} label={COACH_STAT_LABELS[k] ?? k} value={v as number} />
+                ))}
+              </div>
+              {c.positiveTraits.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] uppercase tracking-widest text-muted mb-1">Traits positifs</div>
+                  {c.positiveTraits.map((t) => (
+                    <div key={t} className="rounded border border-green-800/40 bg-green-950/30 px-2.5 py-1.5">
+                      <div className="text-xs font-medium text-green-400">{COACH_TRAIT_LABEL[t as keyof typeof COACH_TRAIT_LABEL]}</div>
+                      <div className="text-[10px] text-muted mt-0.5">{COACH_TRAIT_DESCRIPTION[t as keyof typeof COACH_TRAIT_DESCRIPTION]}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {c.negativeTraits.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] uppercase tracking-widest text-muted mb-1">Traits négatifs</div>
+                  {c.negativeTraits.map((t) => (
+                    <div key={t} className="rounded border border-danger/30 bg-danger/5 px-2.5 py-1.5">
+                      <div className="text-xs font-medium text-danger">{COACH_TRAIT_LABEL[t as keyof typeof COACH_TRAIT_LABEL]}</div>
+                      <div className="text-[10px] text-muted mt-0.5">{COACH_TRAIT_DESCRIPTION[t as keyof typeof COACH_TRAIT_DESCRIPTION]}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Replace mention names in text with clickable spans */
+function renderBodyWithMentions(body: string, mentions: PressMention[] | undefined, onMention: (m: PressMention) => void) {
+  if (!mentions?.length) return <>{body}</>;
+
+  // Build a regex that matches any mention name (longest first to avoid partial matches)
+  const names = [...mentions].sort((a, b) => b.name.length - a.name.length);
+  const pattern = new RegExp(`(${names.map((m) => m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
+
+  const parts = body.split(pattern);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const mention = mentions.find((m) => m.name === part);
+        if (mention) {
+          return (
+            <button
+              key={i}
+              onClick={() => onMention(mention)}
+              className="font-medium text-accent underline decoration-dotted hover:text-accent/70 transition-colors cursor-pointer"
+            >
+              {part} ({mention.overall})
+            </button>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
 function PressTab({
   pressItems,
   morale,
@@ -790,6 +954,7 @@ function PressTab({
 }) {
   const [filter, setFilter] = useState<string>('all');
   const [catFilter, setCatFilter] = useState<string>('all');
+  const [activeMention, setActiveMention] = useState<PressMention | null>(null);
   const sorted = [...pressItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const filtered = sorted
     .filter((p) => filter === 'all' || p.teamId === filter)
@@ -797,6 +962,7 @@ function PressTab({
 
   return (
     <div className="space-y-6">
+      {activeMention && <MentionPopup mention={activeMention} onClose={() => setActiveMention(null)} />}
       {/* Moral board */}
       <div className="space-y-3">
         <h3 className="text-xs uppercase tracking-widest text-muted">Moral des équipes</h3>
@@ -878,7 +1044,9 @@ function PressTab({
                         )}
                       </div>
                       <h4 className="font-medium text-sm leading-snug">{item.headline}</h4>
-                      <p className="text-xs text-muted mt-1 leading-relaxed">{item.body}</p>
+                      <p className="text-xs text-muted mt-1 leading-relaxed">
+                        {renderBodyWithMentions(item.body, item.mentions, setActiveMention)}
+                      </p>
                     </div>
                   </div>
                 </article>
