@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -359,72 +360,82 @@ export default function CompetitionDetail() {
         ))}
       </div>
 
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          {isLeague && (
-            <StandingsTable standings={allStandings} teams={teamMap} />
-          )}
-          {isGroupsKO && current.groups && (
-            <div className="grid gap-6 md:grid-cols-2">
-              {current.groups.map((group) => {
-                const groupStandings = group.teamIds.map((id) => current.standings[id]).filter(Boolean);
-                return (
-                  <StandingsTable
-                    key={group.id}
-                    standings={groupStandings}
-                    teams={teamMap}
-                    title={group.name}
-                    highlightCount={current.config.qualifyPerGroup}
-                  />
-                );
-              })}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.15 }}
+        >
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {isLeague && (
+                <StandingsTable standings={allStandings} teams={teamMap} />
+              )}
+              {isGroupsKO && current.groups && (
+                <div className="grid gap-6 md:grid-cols-2">
+                  {current.groups.map((group) => {
+                    const groupStandings = group.teamIds.map((id) => current.standings[id]).filter(Boolean);
+                    return (
+                      <StandingsTable
+                        key={group.id}
+                        standings={groupStandings}
+                        teams={teamMap}
+                        title={group.name}
+                        highlightCount={current.config.qualifyPerGroup}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+              {!isLeague && !isGroupsKO && (
+                <p className="text-muted text-sm">Format coupe — pas de classement général.</p>
+              )}
             </div>
           )}
-          {!isLeague && !isGroupsKO && (
-            <p className="text-muted text-sm">Format coupe — pas de classement général.</p>
-          )}
-        </div>
-      )}
 
-      {activeTab === 'bracket' && (
-        <div className="space-y-4">
-          {isLeague ? (
-            <p className="text-muted text-sm">Format ligue — utilise l'onglet Journées.</p>
-          ) : (
-            <BracketView
-              matches={current.matches.filter((m) => m.phase !== 'group')}
-              teams={teamMap}
-              onSimulate={isAdmin ? openMatchModal : undefined}
+          {activeTab === 'bracket' && (
+            <div className="space-y-4">
+              {isLeague ? (
+                <p className="text-muted text-sm">Format ligue — utilise l'onglet Journées.</p>
+              ) : (
+                <BracketView
+                  matches={current.matches.filter((m) => m.phase !== 'group')}
+                  teams={teamMap}
+                  onSimulate={isAdmin ? openMatchModal : undefined}
+                />
+              )}
+            </div>
+          )}
+
+          {activeTab === 'rounds' && (
+            <RoundsView
+              competition={current}
+              teamMap={teamMap}
+              canSimulate={isAdmin}
+              onSimulateRound={simulateRound}
+              onSimulateMatch={openMatchModal}
             />
           )}
-        </div>
-      )}
 
-      {activeTab === 'rounds' && (
-        <RoundsView
-          competition={current}
-          teamMap={teamMap}
-          canSimulate={isAdmin}
-          onSimulateRound={simulateRound}
-          onSimulateMatch={openMatchModal}
-        />
-      )}
+          {activeTab === 'stats' && (
+            <CompetitionStats
+              playerStats={current.playerStats ?? {}}
+              teams={teamMap}
+            />
+          )}
 
-      {activeTab === 'stats' && (
-        <CompetitionStats
-          playerStats={current.playerStats ?? {}}
-          teams={teamMap}
-        />
-      )}
-
-      {activeTab === 'presse' && (
-        <PressTab
-          pressItems={current.pressItems ?? []}
-          morale={current.morale ?? {}}
-          teamMap={teamMap}
-          teamIds={current.teamIds}
-        />
-      )}
+          {activeTab === 'presse' && (
+            <PressTab
+              pressItems={current.pressItems ?? []}
+              morale={current.morale ?? {}}
+              teamMap={teamMap}
+              teamIds={current.teamIds}
+            />
+          )}
+        </motion.div>
+      </AnimatePresence>
 
       {preMatchModal && (
         <PreMatchModal

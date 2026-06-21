@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/Input';
 import { useTeams } from '@/stores/teams';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import type { CultureWeight } from '@/lib/gen/names';
+import { pickName, pickNameMixed } from '@/lib/gen/names';
 import { generateCoach, COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION, type Coach } from '@/lib/gen/coach';
 
 const ADD_COUNTS = [100, 200, 500, 1000];
@@ -397,6 +398,23 @@ async function applyNewStrength(strength: number) {
     if (!editCultures || editCultures.length === 0) return;
     if (!editName.trim()) { toast('error', 'Nom requis.'); return; }
     const primary = editCultures[0].culture;
+
+    // Detect culture change — regen names if cultures differ
+    const prevCultureKey = JSON.stringify((team.cultures ?? [{ culture: team.culture, weight: 50 }]).map((c) => c.culture).sort());
+    const nextCultureKey = JSON.stringify(editCultures.map((c) => c.culture).sort());
+    const culturesChanged = prevCultureKey !== nextCultureKey;
+
+    const updatedPlayers = culturesChanged
+      ? players.map((p) => {
+          const { firstName, lastName } = editCultures.length > 1
+            ? pickNameMixed(editCultures)
+            : pickName(primary);
+          return { ...p, firstName, lastName };
+        })
+      : players;
+
+    if (culturesChanged) toast('success', `Noms régénérés pour ${updatedPlayers.length} joueurs.`);
+
     mutate({
       team: {
         ...team,
@@ -410,7 +428,7 @@ async function applyNewStrength(strength: number) {
         managerDiscordId: editManagerId.trim() || undefined,
         jerseyColor: editJerseyColor,
       },
-      players,
+      players: updatedPlayers,
     });
   }
 

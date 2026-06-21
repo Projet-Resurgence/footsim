@@ -41,6 +41,14 @@ export function DrawCeremony({ result, teams, groupCount, onConfirm, knockoutMod
     }, 1400);
   }
 
+  function revealAll() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setRevealed(new Set(result.order));
+    setCurrent(null);
+    setIdx(result.order.length);
+    setDone(true);
+  }
+
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   const potOfTeam = (teamId: string): Pot | undefined =>
@@ -180,11 +188,16 @@ export function DrawCeremony({ result, teams, groupCount, onConfirm, knockoutMod
       </div>
 
       {/* Controls */}
-      <div className="flex gap-3">
+      <div className="flex gap-3 flex-wrap">
         {!done && (
-          <Button onClick={revealNext} disabled={!!current} size="lg">
-            {idx === 0 ? 'Commencer le tirage' : `Tirer (${idx}/${result.order.length})`}
-          </Button>
+          <>
+            <Button onClick={revealNext} disabled={!!current} size="lg">
+              {idx === 0 ? 'Commencer le tirage' : `Tirer (${idx}/${result.order.length})`}
+            </Button>
+            <Button onClick={revealAll} variant="ghost" size="lg" disabled={!!current}>
+              ⚡ Tirage automatique
+            </Button>
+          </>
         )}
         {done && (
           <Button onClick={() => onConfirm(result.groups)} size="lg">
