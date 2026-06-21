@@ -148,7 +148,9 @@ export default function MultiplexLive() {
                 unavailablePlayerIds: [...awayUnavail].filter((id) => id !== 'coach'),
               },
               speed: globalSpeed,
-              rules: rulesForPhase(comp.config, m.phase),
+              rules: (m.phase === 'lpm_playoff' && m.leg === 1)
+                ? { ...rulesForPhase(comp.config, m.phase), extraTime: false, penalties: false }
+                : rulesForPhase(comp.config, m.phase),
               leg1Score,
             },
           });

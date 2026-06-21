@@ -115,7 +115,11 @@ export default function CompetitionMatchLive() {
         const homeUnavail = unavailableIds(compMatch.homeTeamId!, compInjuries, compSuspensions);
         const awayUnavail = unavailableIds(compMatch.awayTeamId!, compInjuries, compSuspensions);
 
-        const matchRules = rulesForPhase(comp.config, compMatch.phase);
+        const baseRules = rulesForPhase(comp.config, compMatch.phase);
+        // Leg 1 of two-legged ties: no ET, no penalties — settled on aggregate via leg 2
+        const matchRules = (compMatch.phase === 'lpm_playoff' && compMatch.leg === 1)
+          ? { ...baseRules, extraTime: false, penalties: false }
+          : baseRules;
 
         // For two-legged ties (leg 2): find leg 1 score for aggregate-aware ET
         let leg1Score: { home: number; away: number } | undefined;

@@ -350,7 +350,7 @@ const SCANDAL_PAIRS: [string, string][] = [
   ],
   [
     'Altercation entre un joueur de {team} et un fan après le match',
-    'En quittant le stade, un joueur de {team} aurait répondu de façon virulente à des provocations de supporters adverses. La scène aurait dégénéré. Des images circulent sur les réseaux. Le joueur "regrette" — selon le communiqué officiel.',
+    'En quittant le stade, un joueur de {team} aurait répondu de façon virulente à des provocations de supporters adverses. La scène aurait dégénéré. Des témoins ont parlé à la presse. Le joueur "regrette" — selon le communiqué officiel.',
   ],
 ];
 
@@ -791,7 +791,7 @@ export function generateMatchPressItem(opts: {
   // Presse hostile : uniquement sur défaite, jamais si autre événement spécial
   const isHumiliation = diff <= -4;
   const isBrutalLoss = diff <= -3 && diff > -4;
-  const critiqueable = !isPlayerDoping && !isTeamDoping && !scandalize && diff < 0;
+  const critiqueable = !isPlayerDoping && !isTeamDoping && !scandalize && !opts.isEliminated && diff < 0;
   const critiqueChance = critiqueable
     ? (isHumiliation ? 0.40 : isBrutalLoss ? 0.22 : 0.10)
     : 0;
@@ -1143,7 +1143,7 @@ const DESTITUTION_HEADLINES = [
 
 const DESTITUTION_BODIES = [
   'C\'est officiel : le comité de la fédération de {team} a remis sa démission ce matin, sous la pression des supporters et des instances. Une décision qui intervient après les scènes de chaos devant le siège fédéral. Un intérim est mis en place. L\'espoir renaît timidement dans les rangs des supporters — et dans le vestiaire.',
-  'Sous la pression populaire, il a craqué. Le comité de la fédération de {team} a quitté son poste dans la nuit. Les réseaux s\'enflamment, les supporters crient victoire. L\'intérimaire nommé dans l\'urgence a promis "un nouveau souffle" et "un soutien total au groupe". Les joueurs ont été informés ce matin. L\'air dans le vestiaire semble différent.',
+  'Sous la pression populaire, il a craqué. Le comité de la fédération de {team} a quitté son poste dans la nuit. Les supporters crient victoire dans les rues. L\'intérimaire nommé dans l\'urgence a promis "un nouveau souffle" et "un soutien total au groupe". Les joueurs ont été informés ce matin. L\'air dans le vestiaire semble différent.',
   'Ils sont partis. Le comité de la fédération de {team} a rendu son tablier après la pression des événements. Une cellule de transition prend les rênes. Premier message envoyé au vestiaire : "Vous avez notre confiance totale. Redressez la tête." Simple. Mais parfois, les mots suffisent.',
   'Départ précipité du comité directeur de la fédération {team}. La révolution des tribunes a fonctionné. De nouveaux visages arrivent à la tête de l\'institution, avec une promesse : remettre le football au centre, pas la politique. Le groupe y croit. Il faudra le prouver sur le terrain.',
 ];
