@@ -9,6 +9,7 @@ export type MultiplexSlot = {
   away: Team;
   homePlayers: Player[];
   awayPlayers: Player[];
+  leg1Score?: { home: number; away: number };
   state: MatchState | null;
   finished: boolean;
   worker: Worker | null;
@@ -43,6 +44,7 @@ export const useMultiplex = create<State>((set, get) => ({
         away: input.away.team,
         homePlayers: input.home.players,
         awayPlayers: input.away.players,
+        leg1Score: input.leg1Score,
         state: null,
         finished: false,
         worker,

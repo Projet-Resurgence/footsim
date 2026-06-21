@@ -285,7 +285,37 @@ function simulatePenalties(state: MatchState, ctx: EngineCtx): void {
     });
   }
 
-  for (let i = 0; i < 5; i++) { takePenalty('home'); takePenalty('away'); }
+  // IRL logic: stop as soon as one side cannot catch up
+  // kicks[i] = kicks taken by side after round i (0-indexed)
+  for (let i = 0; i < 5; i++) {
+    // home kicks (round i, kick i+1)
+    takePenalty('home');
+    {
+      const homeKicksDone = i + 1;
+      const awayKicksDone = i;
+      const homeLeft = 5 - homeKicksDone;
+      const awayLeft = 5 - awayKicksDone;
+      // home already won: away can't catch even scoring all remaining
+      if (penScore.home > penScore.away + awayLeft) break;
+      // away already lost: home can't be caught even if away scores all remaining
+      // (not possible to determine here, away hasn't kicked round i yet)
+      void homeLeft;
+    }
+    // away kicks (round i, kick i+1)
+    takePenalty('away');
+    {
+      const homeKicksDone = i + 1;
+      const awayKicksDone = i + 1;
+      const homeLeft = 5 - homeKicksDone;
+      const awayLeft = 5 - awayKicksDone;
+      // away already won
+      if (penScore.away > penScore.home + homeLeft) break;
+      // home already won
+      if (penScore.home > penScore.away + awayLeft) break;
+      // all kicks done with equal score → go to sudden death
+      if (homeLeft === 0 && awayLeft === 0 && penScore.home === penScore.away) break;
+    }
+  }
   let sd = 0;
   while (penScore.home === penScore.away && sd++ < 20) {
     takePenalty('home');
@@ -359,7 +389,9 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   }
 
   if (state.status === 'extraTimeSecond' && state.minute > 123) {
-    const tied = state.score.home === state.score.away;
+    const tied = state.leg1Score
+      ? (state.score.home + state.leg1Score.away) === (state.score.away + state.leg1Score.home)
+      : state.score.home === state.score.away;
     if (tied && state.rules.penalties) { state.status = 'penalties'; return state; }
     state.status = 'fulltime';
     pushEvent(state, ctx, { type: 'fulltime', side: null, ballPos: ZONE.centre }, ctx.home.team.name);

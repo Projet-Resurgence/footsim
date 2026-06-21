@@ -462,7 +462,7 @@ export default function CompetitionMatchLive() {
         )}
       </div>
 
-      <Scoreboard state={matchState} home={matchInput.home.team} away={matchInput.away.team} />
+      <Scoreboard state={matchState} home={matchInput.home.team} away={matchInput.away.team} leg1Score={matchInput.leg1Score} />
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-4">

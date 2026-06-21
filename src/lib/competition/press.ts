@@ -183,8 +183,8 @@ export function generateMatchPressItem(opts: {
   let headline: string;
   let body: string;
 
-  // 10% chance of scandal on a loss, 3% anytime
-  const scandalize = r() < (diff < 0 ? 0.10 : 0.03);
+  // 4% chance of scandal on a loss, 1% anytime
+  const scandalize = r() < (diff < 0 ? 0.04 : 0.01);
 
   if (scandalize) {
     category = 'scandale';

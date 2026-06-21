@@ -761,8 +761,11 @@ function PressTab({
   teamIds: string[];
 }) {
   const [filter, setFilter] = useState<string>('all');
+  const [catFilter, setCatFilter] = useState<string>('all');
   const sorted = [...pressItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  const filtered = filter === 'all' ? sorted : sorted.filter((p) => p.teamId === filter);
+  const filtered = sorted
+    .filter((p) => filter === 'all' || p.teamId === filter)
+    .filter((p) => catFilter === 'all' || p.category === catFilter);
 
   return (
     <div className="space-y-6">
@@ -800,12 +803,22 @@ function PressTab({
 
       {/* Press articles */}
       <div className="space-y-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <h3 className="text-xs uppercase tracking-widest text-muted">Articles</h3>
+          <select
+            value={catFilter}
+            onChange={(e) => setCatFilter(e.target.value)}
+            className="ml-auto h-7 rounded border border-border bg-surface px-2 text-xs"
+          >
+            <option value="all">Tous les types</option>
+            {(['victoire', 'exploit', 'defaite', 'crise', 'scandale', 'neutralite', 'forme'] as const).map((c) => (
+              <option key={c} value={c}>{PRESS_CATEGORY_LABEL[c]}</option>
+            ))}
+          </select>
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="ml-auto h-7 rounded border border-border bg-surface px-2 text-xs"
+            className="h-7 rounded border border-border bg-surface px-2 text-xs"
           >
             <option value="all">Toutes les équipes</option>
             {teamIds.map((tid) => (

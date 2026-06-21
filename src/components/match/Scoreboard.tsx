@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import type { MatchState } from '@/lib/sim/types';
 import type { Team } from '@/lib/types';
 
-type Props = { state: MatchState; home: Team; away: Team };
+type Props = { state: MatchState; home: Team; away: Team; leg1Score?: { home: number; away: number } };
 
 function minuteLabel(state: MatchState): string {
   if (state.status === 'pregame') return '0\'';
@@ -24,7 +24,10 @@ function periodLabel(state: MatchState): string {
   return ' · 2ᵉ MT';
 }
 
-export function Scoreboard({ state, home, away }: Props) {
+export function Scoreboard({ state, home, away, leg1Score }: Props) {
+  const aggHome = leg1Score ? state.score.home + leg1Score.away : null;
+  const aggAway = leg1Score ? state.score.away + leg1Score.home : null;
+
   return (
     <div className="flex items-center justify-between gap-6 rounded-lg border border-border bg-surface p-5 shadow-subtle-sm">
       <Side team={home} score={state.score.home} side="left" />
@@ -43,6 +46,16 @@ export function Scoreboard({ state, home, away }: Props) {
         <div className="mt-1 text-xs uppercase tracking-widest text-muted">
           {minuteLabel(state)}{periodLabel(state)}
         </div>
+        {leg1Score && (
+          <div className="mt-2 flex flex-col items-center gap-0.5">
+            <div className="text-xs text-muted">
+              Aller : {leg1Score.home} – {leg1Score.away}
+            </div>
+            <div className="text-xs font-medium text-accent">
+              Cumul : {aggHome} – {aggAway}
+            </div>
+          </div>
+        )}
       </div>
       <Side team={away} score={state.score.away} side="right" />
     </div>

@@ -43,15 +43,16 @@ export async function readJson<T>(
   );
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GitHub read ${path}: ${res.status}`);
-  const json = (await res.json()) as { content: string; sha: string; encoding: string; download_url?: string };
-  if (json.encoding === 'none' && json.download_url) {
-    // File too large for inline base64 — fetch raw content via download_url
-    // Use only Authorization header; custom Accept/X-GitHub headers cause CORS issues on raw.githubusercontent.com
-    const rawHeaders: Record<string, string> = {};
-    if (token) rawHeaders['Authorization'] = `Bearer ${token}`;
-    const raw = await fetch(json.download_url, { headers: rawHeaders });
-    if (!raw.ok) throw new Error(`GitHub read ${path} (raw): ${raw.status}`);
-    const text = await raw.text();
+  const json = (await res.json()) as { content: string; sha: string; encoding: string };
+  if (json.encoding === 'none') {
+    // File too large for inline base64 — use Git Blobs API (always returns base64)
+    const blobRes = await fetch(
+      `${API}/repos/${env.dataRepo}/git/blobs/${json.sha}`,
+      { headers: authHeaders(token) },
+    );
+    if (!blobRes.ok) throw new Error(`GitHub blob ${path}: ${blobRes.status}`);
+    const blob = (await blobRes.json()) as { content: string; encoding: string };
+    const text = base64ToUtf8(blob.content);
     return { data: JSON.parse(text) as T, sha: json.sha };
   }
   if (json.encoding !== 'base64') throw new Error(`Unexpected encoding ${json.encoding}`);

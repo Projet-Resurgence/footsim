@@ -713,6 +713,16 @@ function MatchCard({ slot }: { slot: import('@/stores/multiplex').MultiplexSlot 
           <div className={`font-display text-3xl tabular-nums ${flash ? 'text-accent' : ''}`}>
             {state?.score.home ?? 0} – {state?.score.away ?? 0}
           </div>
+          {slot.leg1Score && (
+            <div className="text-[10px] text-muted">
+              aller {slot.leg1Score.home}–{slot.leg1Score.away}
+              {state && (
+                <span className="ml-1 text-accent font-medium">
+                  · cumul {state.score.home + slot.leg1Score.away}–{state.score.away + slot.leg1Score.home}
+                </span>
+              )}
+            </div>
+          )}
           {state?.penaltyScore && (
             <div className="text-xs text-muted">tab {state.penaltyScore.home}–{state.penaltyScore.away}</div>
           )}
