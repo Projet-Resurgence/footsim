@@ -109,6 +109,22 @@ export default function MultiplexLive() {
           const compSuspensions = comp.suspensions ?? [];
           const homeUnavail = unavailableIds(m.homeTeamId!, compInjuries, compSuspensions);
           const awayUnavail = unavailableIds(m.awayTeamId!, compInjuries, compSuspensions);
+          let leg1Score: { home: number; away: number } | undefined;
+          if (m.leg === 2) {
+            const leg1 = comp.matches.find(
+              (x) => x.leg === 1 && (
+                (x.homeTeamId === m.homeTeamId && x.awayTeamId === m.awayTeamId) ||
+                (x.homeTeamId === m.awayTeamId && x.awayTeamId === m.homeTeamId)
+              ) && x.status === 'completed' && x.result,
+            );
+            if (leg1?.result) {
+              if (leg1.homeTeamId === m.awayTeamId) {
+                leg1Score = { home: leg1.result.away, away: leg1.result.home };
+              } else {
+                leg1Score = { home: leg1.result.home, away: leg1.result.away };
+              }
+            }
+          }
           inputs.push({
             compMatchId: m.id,
             input: {
@@ -133,6 +149,7 @@ export default function MultiplexLive() {
               },
               speed: globalSpeed,
               rules: rulesForPhase(comp.config, m.phase),
+              leg1Score,
             },
           });
         }

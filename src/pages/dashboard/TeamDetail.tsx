@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 import { RosterTable } from '@/components/team/RosterTable';
+import { StartingXI } from '@/components/team/StartingXI';
 import { PlayerEdit } from '@/components/team/PlayerEdit';
 import { TacticsPanel } from '@/components/team/TacticsPanel';
 import { TacticsSummary } from '@/components/team/TacticsSummary';
@@ -606,6 +607,11 @@ async function applyNewStrength(strength: number) {
             </Button>
             <input ref={namesImportRef} type="file" accept=".json" className="hidden" onChange={importNames} />
           </div>
+          <StartingXI
+            players={players}
+            formation={team.tactics?.formation ?? team.formation}
+            lineup={team.tactics?.lineup}
+          />
           <RosterTable players={players} onSelect={setEditingId} />
         </section>
       )}

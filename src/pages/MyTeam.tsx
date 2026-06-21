@@ -6,6 +6,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { TacticsPanel } from '@/components/team/TacticsPanel';
+import { StartingXI } from '@/components/team/StartingXI';
 import { TacticsSummary } from '@/components/team/TacticsSummary';
 import { useSession } from '@/stores/session';
 import { GithubTeamBackend } from '@/lib/github/backend';
@@ -400,6 +401,12 @@ export default function MyTeam() {
 
       {/* Joueurs */}
       {tab === 'joueurs' && (
+        <div className="space-y-6">
+        <StartingXI
+          players={players}
+          formation={(savedTactics.find((t) => t.id === activeTacticId) ?? savedTactics[0])?.formation ?? team.formation}
+          lineup={(savedTactics.find((t) => t.id === activeTacticId) ?? savedTactics[0])?.lineup}
+        />
         <div className="overflow-hidden rounded-lg border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="bg-bg text-left text-muted">
@@ -427,6 +434,7 @@ export default function MyTeam() {
                 ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
 
@@ -522,7 +530,7 @@ export default function MyTeam() {
                     <th className="px-4 py-2">Joueur</th>
                     <th className="px-4 py-2">Poste</th>
                     <th className="px-4 py-2">Nationalité</th>
-                    <th className="px-4 py-2">Équipe</th>
+                    <th className="px-4 py-2">Culture</th>
                     <th className="px-3 py-2 text-right font-bold">OVR</th>
                   </tr>
                 </thead>
@@ -541,13 +549,13 @@ export default function MyTeam() {
                         <td className="px-4 py-2.5">
                           <span className="rounded bg-border/40 px-2 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span>
                         </td>
-                        <td className="px-4 py-2.5 text-xs text-muted">{CULTURE_LABEL[t.culture] ?? t.culture}</td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2">
                             {t.flag && <img src={t.flag} alt="" className="h-5 w-5 rounded-sm object-cover shrink-0" />}
                             <span className="text-sm truncate max-w-[100px]">{t.name}</span>
                           </div>
                         </td>
+                        <td className="px-4 py-2.5 text-xs text-muted">{CULTURE_LABEL[t.culture] ?? t.culture}</td>
                         <td className="px-3 py-2.5 text-right font-bold tabular-nums text-accent">{p.overall}</td>
                       </tr>
                     );

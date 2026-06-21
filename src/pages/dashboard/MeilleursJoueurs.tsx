@@ -93,7 +93,7 @@ export default function MeilleursJoueurs() {
               <th className="px-4 py-2">Joueur</th>
               <th className="px-4 py-2">Poste</th>
               <th className="px-4 py-2">Nationalité</th>
-              <th className="px-4 py-2">Équipe</th>
+              <th className="px-4 py-2">Culture</th>
               <th className="px-3 py-2 text-right font-bold">OVR</th>
             </tr>
           </thead>
@@ -117,9 +117,6 @@ export default function MeilleursJoueurs() {
                       {POSITION_LABEL[player.position as Position]}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-muted text-xs">
-                    {CULTURE_LABEL[team.culture] ?? team.culture}
-                  </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2 min-w-0">
                       {team.flag && (
@@ -127,6 +124,9 @@ export default function MeilleursJoueurs() {
                       )}
                       <span className="truncate max-w-[120px] text-sm">{team.name}</span>
                     </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-muted text-xs">
+                    {CULTURE_LABEL[team.culture] ?? team.culture}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums font-bold text-accent">{player.overall}</td>
                 </tr>
