@@ -46,6 +46,8 @@ export default function MultiplexLive() {
   const resumeAll = useMultiplex((s) => s.resumeAll);
   const stopAll = useMultiplex((s) => s.stop);
 
+  const autoSimulate = sessionStorage.getItem('footsim.autoSimulate') === '1';
+
   const [loading, setLoading] = useState(true);
   const [paused, setPaused] = useState(false);
   const [savingGh, setSavingGh] = useState(false);
@@ -136,7 +138,17 @@ export default function MultiplexLive() {
         }
 
         if (inputs.length === 0) { toast('error', 'Données équipes introuvables.'); return; }
-        setPendingInputs(inputs.map((i) => ({ ...i, corruption: null, refContacted: false, refOffer: null })));
+
+        if (autoSimulate) {
+          // Skip corruption page — force instant speed, launch immediately
+          const launchInputs = inputs.map(({ compMatchId, input }) => ({
+            compMatchId,
+            input: { ...input, speed: 'instant' as const },
+          }));
+          start(launchInputs);
+        } else {
+          setPendingInputs(inputs.map((i) => ({ ...i, corruption: null, refContacted: false, refOffer: null })));
+        }
       } catch (err) {
         toast('error', String(err));
       } finally {
@@ -346,6 +358,38 @@ export default function MultiplexLive() {
       setSavingGh(false);
     }
   }
+
+  // Auto-simulate: save and jump to next round (or back to competition if done)
+  useEffect(() => {
+    if (!autoSimulate || !pendingUpdate || !pat) return;
+    let cancelled = false;
+    async function autoSave() {
+      setSavingGh(true);
+      try {
+        await save(pendingUpdate!, pat!);
+        if (cancelled) return;
+        setPendingUpdate(null);
+        const nextRound = pendingUpdate!.currentRound;
+        const hasMore = pendingUpdate!.matches.some(
+          (m) => m.round === nextRound && m.status === 'pending' && m.homeTeamId && m.awayTeamId,
+        );
+        if (hasMore && pendingUpdate!.status !== 'completed') {
+          navigate(`/competition/${competitionId}/round/${nextRound}`, { replace: true });
+        } else {
+          sessionStorage.removeItem('footsim.autoSimulate');
+          navigate(`/dashboard/competitions/${competitionId}`, { replace: true });
+        }
+      } catch (err) {
+        toast('error', `Auto-simulation : erreur sauvegarde — ${err}`);
+        sessionStorage.removeItem('footsim.autoSimulate');
+      } finally {
+        if (!cancelled) setSavingGh(false);
+      }
+    }
+    autoSave();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingUpdate]);
 
   function launchAll() {
     if (!pendingInputs) return;

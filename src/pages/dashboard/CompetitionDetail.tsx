@@ -297,6 +297,18 @@ export default function CompetitionDetail() {
                 ▶ Journée {currentRound}
               </Button>
             )}
+            {current.status !== 'completed' && isLeague && current.matches.some((m) => m.status === 'pending') && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  sessionStorage.setItem('footsim.autoSimulate', '1');
+                  navigate(`/competition/${current.id}/round/${currentRound}`);
+                }}
+              >
+                ⚡ Simuler tout
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={handleDelete} disabled={deleting}>
               {deleting ? <Spinner className="h-4 w-4" /> : 'Supprimer'}
             </Button>
