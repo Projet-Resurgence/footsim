@@ -1,4 +1,5 @@
 import type { MatchRules } from '@/lib/sim/types';
+import type { PressItem } from './press';
 
 export type CompetitionFormat = 'league' | 'cup' | 'groups_knockout';
 export type CompetitionStatus = 'setup' | 'ongoing' | 'completed';
@@ -91,6 +92,10 @@ export type Competition = {
   disqualifiedTeamIds?: string[];
   /** Name + flag snapshot so non-admin viewers can display team info without GitHub PAT. */
   teamSnapshot?: Record<string, { name: string; flag: string }>;
+  /** Morale per teamId — 1 to 100, starts at 50 */
+  morale?: Record<string, number>;
+  /** Press articles generated after each match */
+  pressItems?: PressItem[];
 };
 
 export type CompetitionSummary = {

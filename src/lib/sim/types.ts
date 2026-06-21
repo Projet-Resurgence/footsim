@@ -69,8 +69,8 @@ export type CorruptionDeal = {
 
 export type MatchInput = {
   matchId: string;
-  home: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle };
-  away: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle };
+  home: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number };
+  away: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number };
   speed: Speed;
   rules: MatchRules;
   corruption?: CorruptionDeal;

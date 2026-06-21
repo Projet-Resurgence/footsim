@@ -20,6 +20,9 @@ import type { Competition, CompMatch, PlayerCompStats } from '@/lib/competition/
 import type { CorruptionDeal } from '@/lib/sim/types';
 import type { Team } from '@/lib/types';
 import { env } from '@/lib/env';
+import { moraleLabel, MORALE_DEFAULT } from '@/lib/competition/morale';
+import type { PressItem } from '@/lib/competition/press';
+import { PRESS_CATEGORY_COLOR, PRESS_CATEGORY_LABEL } from '@/lib/competition/press';
 
 export default function CompetitionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -43,7 +46,7 @@ export default function CompetitionDetail() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'bracket' | 'rounds' | 'stats'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'bracket' | 'rounds' | 'stats' | 'presse'>('overview');
   const [knockoutDraw, setKnockoutDraw] = useState<DrawResult | null>(null);
   const [preMatchModal, setPreMatchModal] = useState<{ matchId: string; home: Team; away: Team } | null>(null);
 
@@ -337,18 +340,21 @@ export default function CompetitionDetail() {
         </div>
       )}
 
-      <div className="flex gap-1 border-b border-border">
-        {(['overview', 'bracket', 'rounds', 'stats'] as const).map((tab) => (
+      <div className="flex gap-1 border-b border-border overflow-x-auto">
+        {(['overview', 'bracket', 'rounds', 'stats', 'presse'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm transition-colors border-b-2 -mb-px ${
+            className={`shrink-0 px-4 py-2 text-sm transition-colors border-b-2 -mb-px ${
               activeTab === tab
                 ? 'border-accent text-accent'
                 : 'border-transparent text-muted hover:text-text'
             }`}
           >
-            {tab === 'overview' ? 'Classement' : tab === 'bracket' ? 'Tableau' : tab === 'rounds' ? 'Journées' : 'Statistiques'}
+            {tab === 'overview' ? 'Classement' : tab === 'bracket' ? 'Tableau' : tab === 'rounds' ? 'Journées' : tab === 'stats' ? 'Statistiques' : '📰 Presse'}
+            {tab === 'presse' && (current.pressItems?.length ?? 0) > 0 && (
+              <span className="ml-1.5 rounded-full bg-accent/20 px-1.5 text-[10px] text-accent">{current.pressItems!.length}</span>
+            )}
           </button>
         ))}
       </div>
@@ -408,6 +414,15 @@ export default function CompetitionDetail() {
         <CompetitionStats
           playerStats={current.playerStats ?? {}}
           teams={teamMap}
+        />
+      )}
+
+      {activeTab === 'presse' && (
+        <PressTab
+          pressItems={current.pressItems ?? []}
+          morale={current.morale ?? {}}
+          teamMap={teamMap}
+          teamIds={current.teamIds}
         />
       )}
 
@@ -563,6 +578,107 @@ function AwardCard({ emoji, label, stats, showRating }: {
       <div className="text-sm font-medium truncate">{stats.playerName}</div>
       <div className="text-xs text-muted">{stats.teamName}</div>
       <div className="text-xs text-accent font-medium">{sub}</div>
+    </div>
+  );
+}
+
+function PressTab({
+  pressItems,
+  morale,
+  teamMap,
+  teamIds,
+}: {
+  pressItems: PressItem[];
+  morale: Record<string, number>;
+  teamMap: Record<string, Team>;
+  teamIds: string[];
+}) {
+  const [filter, setFilter] = useState<string>('all');
+  const sorted = [...pressItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const filtered = filter === 'all' ? sorted : sorted.filter((p) => p.teamId === filter);
+
+  return (
+    <div className="space-y-6">
+      {/* Moral board */}
+      <div className="space-y-3">
+        <h3 className="text-xs uppercase tracking-widest text-muted">Moral des équipes</h3>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {teamIds.map((tid) => {
+            const team = teamMap[tid];
+            const m = morale[tid] ?? MORALE_DEFAULT;
+            const { text, color } = moraleLabel(m);
+            return (
+              <div key={tid} className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+                {team?.flag && <img src={team.flag} alt="" className="h-7 w-7 object-cover rounded-sm shrink-0" />}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{team?.name ?? tid}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <div className="h-1.5 flex-1 rounded-full bg-border overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${m}%`,
+                          background: m >= 70 ? '#4ade80' : m >= 40 ? '#facc15' : '#ef4444',
+                        }}
+                      />
+                    </div>
+                    <span className={`text-[10px] font-medium shrink-0 ${color}`}>{text} ({m})</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Press articles */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <h3 className="text-xs uppercase tracking-widest text-muted">Articles</h3>
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="ml-auto h-7 rounded border border-border bg-surface px-2 text-xs"
+          >
+            <option value="all">Toutes les équipes</option>
+            {teamIds.map((tid) => (
+              <option key={tid} value={tid}>{teamMap[tid]?.name ?? tid}</option>
+            ))}
+          </select>
+        </div>
+        {filtered.length === 0 ? (
+          <p className="text-muted text-sm">Aucun article pour l'instant — jouez des matchs !</p>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((item) => {
+              const team = item.teamId ? teamMap[item.teamId] : null;
+              const colorCls = PRESS_CATEGORY_COLOR[item.category];
+              return (
+                <article key={item.id} className="rounded-lg border border-border bg-surface p-4 space-y-2">
+                  <div className="flex items-start gap-3">
+                    {team?.flag && <img src={team.flag} alt="" className="h-7 w-7 object-cover rounded-sm shrink-0 mt-0.5" />}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${colorCls}`}>
+                          {PRESS_CATEGORY_LABEL[item.category]}
+                        </span>
+                        <span className="text-[10px] text-muted">J{item.round}</span>
+                        {item.moraleBefore !== undefined && item.moraleAfter !== undefined && (
+                          <span className="text-[10px] text-muted">
+                            Moral {item.moraleBefore} → {item.moraleAfter}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-medium text-sm leading-snug">{item.headline}</h4>
+                      <p className="text-xs text-muted mt-1 leading-relaxed">{item.body}</p>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

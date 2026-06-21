@@ -19,6 +19,8 @@ import { saveMatch } from '@/lib/github/matches';
 import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import { loadLocalTactics } from '@/lib/localTactics';
+import { updateMorale, initMorale, MORALE_DEFAULT } from '@/lib/competition/morale';
+import { generateMatchPressItem, generateMoralePressItem } from '@/lib/competition/press';
 
 import type { Team } from '@/lib/types';
 import type { MatchInput } from '@/lib/sim/types';
@@ -104,6 +106,7 @@ export default function CompetitionMatchLive() {
         const homeTactics = loadLocalTactics(homeData.team.id) ?? homeData.team.tactics;
         const awayTactics = loadLocalTactics(awayData.team.id) ?? awayData.team.tactics;
 
+        const moraleMap = comp.morale ?? initMorale(comp.teamIds);
         const input: MatchInput = {
           matchId: mid,
           home: {
@@ -112,6 +115,7 @@ export default function CompetitionMatchLive() {
             formation: homeTactics?.formation ?? homeData.team.formation,
             lineup: homeTactics?.lineup,
             tacticStyle: homeTactics?.style,
+            morale: moraleMap[compMatch.homeTeamId!] ?? MORALE_DEFAULT,
           },
           away: {
             team: awayData.team,
@@ -119,6 +123,7 @@ export default function CompetitionMatchLive() {
             formation: awayTactics?.formation ?? awayData.team.formation,
             lineup: awayTactics?.lineup,
             tacticStyle: awayTactics?.style,
+            morale: moraleMap[compMatch.awayTeamId!] ?? MORALE_DEFAULT,
           },
           speed: '1',
           rules: rulesForPhase(comp.config, compMatch.phase),
@@ -268,6 +273,51 @@ export default function CompetitionMatchLive() {
         { team: matchInput!.away.team, players: matchInput!.away.players },
       ));
 
+      // Morale update
+      const compMatchForMorale = current!.matches.find((m) => m.id === matchId);
+      const homeTeamId = compMatchForMorale?.homeTeamId ?? '';
+      const awayTeamId = compMatchForMorale?.awayTeamId ?? '';
+      const prevMorale = current!.morale ?? initMorale(current!.teamIds);
+      const updatedMorale = updateMorale(
+        prevMorale,
+        homeTeamId,
+        awayTeamId,
+        matchState!.score.home,
+        matchState!.score.away,
+      );
+
+      // Press generation
+      const teamSnap = current!.teamSnapshot ?? {};
+      const round = compMatchForMorale?.round ?? current!.currentRound;
+      const seed = `${current!.id}-${matchId}`;
+      const newPressItems = [...(current!.pressItems ?? [])];
+
+      for (const [tid, goalsFor, goalsAgainst] of [
+        [homeTeamId, matchState!.score.home, matchState!.score.away],
+        [awayTeamId, matchState!.score.away, matchState!.score.home],
+      ] as [string, number, number][]) {
+        const tname = teamSnap[tid]?.name ?? tid;
+        const item = generateMatchPressItem({
+          round,
+          teamId: tid,
+          teamName: tname,
+          goalsFor,
+          goalsAgainst,
+          moraleBefore: prevMorale[tid] ?? MORALE_DEFAULT,
+          moraleAfter: updatedMorale[tid] ?? MORALE_DEFAULT,
+          seed: seed + tid,
+        });
+        newPressItems.push(item);
+        const moraleItem = generateMoralePressItem({
+          round,
+          teamId: tid,
+          teamName: tname,
+          morale: updatedMorale[tid] ?? MORALE_DEFAULT,
+          seed: seed + tid + round,
+        });
+        if (moraleItem) newPressItems.push(moraleItem);
+      }
+
       const updated = {
         ...current!,
         matches: updatedMatches,
@@ -278,6 +328,8 @@ export default function CompetitionMatchLive() {
         status: allDone ? ('completed' as const) : ('ongoing' as const),
         winner,
         disqualifiedTeamIds: disqualifiedTeamIds.length > 0 ? disqualifiedTeamIds : undefined,
+        morale: updatedMorale,
+        pressItems: newPressItems,
       };
 
       // Résultat appliqué en mémoire + localStorage — sauvegarde GitHub manuelle

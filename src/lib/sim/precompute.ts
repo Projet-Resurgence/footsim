@@ -3,6 +3,7 @@ import type { Coach } from '@/lib/gen/coach';
 import { computeCoachBonuses } from '@/lib/gen/coach';
 import type { SideRatings, TacticMods } from './types';
 import { pickXI } from './lineup';
+import { moraleMult } from '@/lib/competition/morale';
 
 function getTacticMods(style?: TacticStyle): TacticMods {
   switch (style) {
@@ -28,6 +29,7 @@ export function precomputeSide(
   matchSeed?: number,
   coachSuspended?: boolean,
   customTacticStyle?: CustomTacticStyle,
+  morale?: number,
 ): SideRatings {
   let lineup: Player[];
   let bench: Player[];
@@ -63,10 +65,11 @@ export function precomputeSide(
 
   const tacticMods = customTacticStyle ? customTacticStyle.mods : getTacticMods(tacticStyle);
   const coachB = (coach && !coachSuspended) ? computeCoachBonuses(coach, matchSeed) : null;
+  const mm = moraleMult(morale ?? 50);
 
-  const attack = (0.7 * meanAtt + 0.3 * meanAm) * tacticMods.attackMult * (coachB?.attackMult ?? 1);
-  const midfield = (mid.length ? avg(mid.map((p) => p.overall)) : 50) * tacticMods.midfieldMult * (coachB?.midfieldMult ?? 1);
-  const defense = ((def.length ? avg(def.map((p) => p.overall)) : 50) * 0.8 + (gk?.overall ?? 50) * 0.2) * tacticMods.defenseMult * (coachB?.defenseMult ?? 1);
+  const attack = (0.7 * meanAtt + 0.3 * meanAm) * tacticMods.attackMult * (coachB?.attackMult ?? 1) * mm;
+  const midfield = (mid.length ? avg(mid.map((p) => p.overall)) : 50) * tacticMods.midfieldMult * (coachB?.midfieldMult ?? 1) * mm;
+  const defense = ((def.length ? avg(def.map((p) => p.overall)) : 50) * 0.8 + (gk?.overall ?? 50) * 0.2) * tacticMods.defenseMult * (coachB?.defenseMult ?? 1) * mm;
   const gkRating = gk?.overall ?? 50;
 
   const mergedTacticMods: TacticMods = coachB ? {
