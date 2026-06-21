@@ -687,7 +687,7 @@ function MatchCard({ slot }: { slot: import('@/stores/multiplex').MultiplexSlot 
 
   // Last 3 notable events
   const notableEvents = state?.events
-    .filter((e) => ['goal', 'yellow', 'red', 'penalty'].includes(e.type))
+    .filter((e) => ['goal', 'yellow', 'red', 'penalty', 'penalty_miss', 'penalty_saved'].includes(e.type))
     .slice(-3) ?? [];
 
   return (
