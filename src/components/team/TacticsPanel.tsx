@@ -382,7 +382,7 @@ export function TacticsPanel({ team, players, onSave }: Props) {
 // ── Custom Styles Panel ───────────────────────────────────────────────────────
 
 const DEFAULT_MODS: TacticMods = { shotFreqMult: 1, foulRateMult: 1, midfieldMult: 1, attackMult: 1, defenseMult: 1 };
-const BUDGET_MAX = 60;
+const BUDGET_MAX = 30;
 const SLIDER_MIN = 70;  // -30%
 const SLIDER_MAX = 130; // +30%
 
