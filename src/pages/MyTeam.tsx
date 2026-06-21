@@ -13,10 +13,10 @@ import { listCompetitions } from '@/lib/github/competitions';
 import { POSITIONS, POSITION_LABEL, POSITION_FULL, CULTURES_BY_CONTINENT, CULTURE_LABEL } from '@/lib/types';
 import type { Continent } from '@/lib/types';
 import { FORMAT_LABEL } from '@/lib/competition/types';
-import type { Player, Team, TeamTactics } from '@/lib/types';
+import type { Player, SavedTactic, Team, TeamTactics } from '@/lib/types';
 import type { CompetitionSummary } from '@/lib/competition/types';
 import type { CultureWeight } from '@/lib/gen/names';
-import { loadLocalTactics, saveLocalTactics } from '@/lib/localTactics';
+import { loadLocalTactics, loadLocalSavedTactics, saveLocalSavedTactics } from '@/lib/localTactics';
 import { env } from '@/lib/env';
 import { PlayerView } from '@/components/team/PlayerView';
 
@@ -40,6 +40,9 @@ export default function MyTeam() {
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{ team: Team; players: Player[] } | null>(null);
+  const [savedTactics, setSavedTactics] = useState<SavedTactic[]>([]);
+  const [activeTacticId, setActiveTacticId] = useState<string | undefined>();
+  const [editingTacticId, setEditingTacticId] = useState<string | null>(null); // null = new
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getThemeOverride() ?? modeForHour(new Date().getHours()));
 
   function toggleTheme() {
@@ -66,11 +69,25 @@ export default function MyTeam() {
         const full = await ghPublic.loadTeam(mine.slug, session!.id);
         if (!full) { toast('error', 'Équipe introuvable.'); return; }
 
-        const localTactics = loadLocalTactics(full.team.id);
-        const team: Team = localTactics
-          ? { ...full.team, tactics: localTactics }
-          : full.team;
-        setData({ team, players: full.players });
+        // merge local saved tactics with GitHub data
+        const local = loadLocalSavedTactics(full.team.id);
+        const merged = local.savedTactics.length > 0
+          ? local.savedTactics
+          : (full.team.savedTactics ?? []);
+        // compat: if no savedTactics but legacy tactics exist, seed from it
+        if (merged.length === 0) {
+          const leg = loadLocalTactics(full.team.id) ?? full.team.tactics;
+          if (leg) {
+            const seeded: SavedTactic = { ...leg, id: crypto.randomUUID(), name: 'Tactique de base' };
+            setSavedTactics([seeded]);
+            setActiveTacticId(seeded.id);
+            saveLocalSavedTactics(full.team.id, [seeded], seeded.id);
+          }
+        } else {
+          setSavedTactics(merged);
+          setActiveTacticId(local.activeTacticId ?? full.team.activeTacticId);
+        }
+        setData({ team: full.team, players: full.players });
       } catch (err) {
         toast('error', String(err));
       } finally {
@@ -90,43 +107,62 @@ export default function MyTeam() {
       .finally(() => setLoadingComps(false));
   }, [tab]);
 
+  function persistSavedTactics(next: SavedTactic[], activeId?: string) {
+    if (!data) return;
+    setSavedTactics(next);
+    setActiveTacticId(activeId);
+    saveLocalSavedTactics(data.team.id, next, activeId);
+  }
+
   async function saveTactics(tactics: TeamTactics) {
     if (!data) return;
-    saveLocalTactics(data.team.id, tactics);
-    setData((prev) => prev ? { ...prev, team: { ...prev.team, tactics } } : prev);
-    toast('success', 'Tactique enregistrée localement.');
+    // if editing existing tactic, update it; else create new
+    const editId = editingTacticId;
+    if (editId) {
+      // update existing
+      const next = savedTactics.map((t) => t.id === editId ? { ...t, ...tactics } : t);
+      persistSavedTactics(next, activeTacticId);
+      setEditingTacticId(null);
+      toast('success', 'Tactique mise à jour.');
+    } else {
+      // new tactic — prompt name via auto-name
+      const name = `Tactique ${savedTactics.length + 1}`;
+      const newT: SavedTactic = { ...tactics, id: crypto.randomUUID(), name };
+      const next = [...savedTactics, newT];
+      persistSavedTactics(next, newT.id);
+      setEditingTacticId(null);
+      toast('success', `"${name}" sauvegardée et activée.`);
+    }
+  }
+
+  function activateTactic(id: string) {
+    persistSavedTactics(savedTactics, id);
+  }
+
+  function deleteTactic(id: string) {
+    const next = savedTactics.filter((t) => t.id !== id);
+    const newActive = activeTacticId === id ? (next[0]?.id ?? undefined) : activeTacticId;
+    persistSavedTactics(next, newActive);
+  }
+
+  function renameTactic(id: string, name: string) {
+    const next = savedTactics.map((t) => t.id === id ? { ...t, name } : t);
+    persistSavedTactics(next, activeTacticId);
   }
 
   function exportTactics() {
-    if (!data?.team.tactics) { toast('error', 'Aucune tactique à exporter.'); return; }
-    const { team, players } = data;
-    const playerMap = new Map(players.map((p) => [p.id, p]));
-    const lineup = team.tactics!.lineup.map((id) => {
-      const p = playerMap.get(id);
-      return p ? { id, name: `${p.firstName} ${p.lastName}`, position: p.position, overall: p.overall } : { id };
-    });
-    const filledSet = new Set(team.tactics!.lineup);
-    const bench = players
-      .filter((p) => !filledSet.has(p.id))
-      .sort((a, b) => b.overall - a.overall)
-      .slice(0, 12)
-      .map((p) => ({ id: p.id, name: `${p.firstName} ${p.lastName}`, position: p.position, overall: p.overall }));
-
+    if (!data) return;
+    const { team } = data;
     const payload = {
       teamName: team.name,
-      formation: team.tactics!.formation,
-      formationLabel: team.tactics!.formationLabel,
-      style: team.tactics!.style,
-      customStyles: team.tactics!.customStyles ?? [],
-      activeCustomStyleId: team.tactics!.activeCustomStyleId,
-      lineup,
-      bench,
+      savedTactics,
+      activeTacticId,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tactique-${team.slug ?? team.name.toLowerCase().replace(/\s+/g, '-')}.json`;
+    a.download = `tactiques-${team.slug ?? team.name.toLowerCase().replace(/\s+/g, '-')}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -138,17 +174,35 @@ export default function MyTeam() {
     reader.onload = (ev) => {
       try {
         const json = JSON.parse(ev.target?.result as string);
-        const tactics: TeamTactics = {
-          formation: json.formation,
-          style: json.style,
-          lineup: Array.isArray(json.lineup) ? json.lineup.map((p: { id: string } | string) => typeof p === 'string' ? p : p.id) : [],
-          formationLabel: json.formationLabel,
-          customStyles: json.customStyles ?? [],
-          activeCustomStyleId: json.activeCustomStyleId,
-        };
-        saveLocalTactics(data.team.id, tactics);
-        setData((prev) => prev ? { ...prev, team: { ...prev.team, tactics } } : prev);
-        toast('success', 'Tactique importée.');
+        // new format: savedTactics array
+        if (Array.isArray(json.savedTactics)) {
+          const imported: SavedTactic[] = json.savedTactics.map((t: SavedTactic) => ({
+            ...t,
+            id: t.id ?? crypto.randomUUID(),
+            name: t.name ?? 'Importée',
+            lineup: Array.isArray(t.lineup) ? t.lineup.map((p: { id: string } | string) => typeof p === 'string' ? p : p.id) : [],
+          }));
+          // merge: add imported if id not already present
+          const existing = new Set(savedTactics.map((t) => t.id));
+          const toAdd = imported.filter((t) => !existing.has(t.id));
+          const next = [...savedTactics, ...toAdd];
+          persistSavedTactics(next, activeTacticId);
+          toast('success', `${toAdd.length} tactique(s) importée(s).`);
+        } else {
+          // legacy single-tactic format
+          const tactics: TeamTactics = {
+            formation: json.formation,
+            style: json.style,
+            lineup: Array.isArray(json.lineup) ? json.lineup.map((p: { id: string } | string) => typeof p === 'string' ? p : p.id) : [],
+            formationLabel: json.formationLabel,
+            customStyles: json.customStyles ?? [],
+            activeCustomStyleId: json.activeCustomStyleId,
+          };
+          const newT: SavedTactic = { ...tactics, id: crypto.randomUUID(), name: json.tacticName ?? `Importée ${savedTactics.length + 1}` };
+          const next = [...savedTactics, newT];
+          persistSavedTactics(next, activeTacticId);
+          toast('success', `"${newT.name}" ajoutée.`);
+        }
       } catch {
         toast('error', 'Fichier invalide.');
       }
@@ -252,12 +306,62 @@ export default function MyTeam() {
 
       {/* Tactique */}
       {tab === 'tactique' && (
-        <div className="rounded-lg border border-border bg-surface p-5 space-y-4">
-          <p className="text-xs text-muted">Modifie ta formation, ton 11 et ton style. Sauvegarde locale uniquement.</p>
-          {team.tactics && (
-            <TacticsSummary tactics={team.tactics} players={players} />
-          )}
-          <TacticsPanel key={`${team.id}-${team.tactics?.formation ?? ''}-${team.tactics?.lineup?.join(',') ?? ''}`} team={team} players={players} onSave={saveTactics} />
+        <div className="rounded-lg border border-border bg-surface p-5 space-y-5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted">Tactiques locales. Sauvegarde locale uniquement.</p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={exportTactics}>↑ Exporter</Button>
+              <Button size="sm" variant="ghost" onClick={() => importRef.current?.click()}>↓ Importer</Button>
+              <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+            </div>
+          </div>
+
+          <TacticsSummary
+            savedTactics={savedTactics}
+            activeTacticId={activeTacticId}
+            players={players}
+            onActivate={activateTactic}
+            onDelete={deleteTactic}
+            onRename={renameTactic}
+          />
+
+          {/* Editor for selected or new tactic */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium">
+                {editingTacticId
+                  ? `Modifier : ${savedTactics.find((t) => t.id === editingTacticId)?.name ?? ''}`
+                  : 'Nouvelle tactique'}
+              </span>
+              {savedTactics.length > 0 && (
+                <div className="flex gap-1">
+                  {savedTactics.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setEditingTacticId(t.id === editingTacticId ? null : t.id)}
+                      className={`text-xs px-2 py-0.5 rounded border transition-colors ${t.id === editingTacticId ? 'border-accent text-accent' : 'border-border text-muted hover:text-text'}`}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setEditingTacticId(null)}
+                    className={`text-xs px-2 py-0.5 rounded border transition-colors ${editingTacticId === null ? 'border-accent text-accent' : 'border-border text-muted hover:text-text'}`}
+                  >
+                    + Nouvelle
+                  </button>
+                </div>
+              )}
+            </div>
+            <TacticsPanel
+              key={editingTacticId ?? 'new'}
+              team={editingTacticId
+                ? { ...team, tactics: savedTactics.find((t) => t.id === editingTacticId) }
+                : { ...team, tactics: undefined }}
+              players={players}
+              onSave={saveTactics}
+            />
+          </div>
         </div>
       )}
 

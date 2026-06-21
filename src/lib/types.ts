@@ -238,6 +238,12 @@ export type TeamTactics = {
   activeCustomStyleId?: string;
 };
 
+/** A named saved tactic — superset of TeamTactics */
+export type SavedTactic = TeamTactics & {
+  id: string;
+  name: string;
+};
+
 export type TeamKind = 'national' | 'club';
 
 export type Team = {
@@ -271,6 +277,10 @@ export type Team = {
   coach?: import('@/lib/gen/coach').Coach;
   /** Coach suspended for next match (received red card in previous match) */
   coachSuspended?: boolean;
+  /** All saved tactics (named slots) */
+  savedTactics?: SavedTactic[];
+  /** ID of the active saved tactic */
+  activeTacticId?: string;
 };
 
 export type LeagueClub = {

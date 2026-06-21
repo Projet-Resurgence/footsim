@@ -8,7 +8,7 @@ import { RosterTable } from '@/components/team/RosterTable';
 import { PlayerEdit } from '@/components/team/PlayerEdit';
 import { TacticsPanel } from '@/components/team/TacticsPanel';
 import { TacticsSummary } from '@/components/team/TacticsSummary';
-import type { Player, Team, TeamTactics, Culture, Continent } from '@/lib/types';
+import type { Player, SavedTactic, Team, TeamTactics, Culture, Continent } from '@/lib/types';
 import { CULTURE_LABEL, CONTINENT_LABEL, CULTURES_BY_CONTINENT } from '@/lib/types';
 import { FlagUpload } from '@/components/team/FlagUpload';
 import { Input } from '@/components/ui/Input';
@@ -38,6 +38,9 @@ export default function TeamDetail() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState<'roster' | 'tactique' | 'entraineur' | 'infos'>('roster');
+  const [savedTactics, setSavedTactics] = useState<SavedTactic[]>([]);
+  const [activeTacticId, setActiveTacticId] = useState<string | undefined>();
+  const [editingTacticId, setEditingTacticId] = useState<string | null>(null);
 const [regenStrength, setRegenStrength] = useState(false);
   const [newStrength, setNewStrength] = useState<number | null>(null);
   const [editCultures, setEditCultures] = useState<CultureWeight[] | null>(null);
@@ -88,10 +91,34 @@ const [regenStrength, setRegenStrength] = useState(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, ownerId, effectivePat]);
 
+  // Init savedTactics when team data first loads
+  useEffect(() => {
+    if (!data) return;
+    const team = data.team;
+    const existing = team.savedTactics ?? [];
+    if (existing.length > 0) {
+      setSavedTactics(existing);
+      setActiveTacticId(team.activeTacticId ?? existing[0]?.id);
+    } else if (team.tactics) {
+      const seeded: SavedTactic = { ...team.tactics, id: crypto.randomUUID(), name: 'Tactique de base' };
+      setSavedTactics([seeded]);
+      setActiveTacticId(seeded.id);
+    }
+  // only on initial load
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.team.id]);
+
   function mutate(next: { team: Team; players: Player[] }) {
     setData(next);
     setDirty(true);
     setUnpublished(true);
+  }
+
+  function mutateSavedTactics(next: SavedTactic[], activeId?: string) {
+    setSavedTactics(next);
+    setActiveTacticId(activeId);
+    if (!data) return;
+    mutate({ ...data, team: { ...data.team, savedTactics: next, activeTacticId: activeId } });
   }
 
   async function saveLocal() {
@@ -225,51 +252,52 @@ async function applyNewStrength(strength: number) {
 
   async function saveTactics(tactics: TeamTactics) {
     if (!data) return;
-    mutate({ team: { ...data.team, tactics }, players: data.players });
-    toast('success', 'Tactique enregistrée.');
+    const editId = editingTacticId;
+    if (editId) {
+      const next = savedTactics.map((t) => t.id === editId ? { ...t, ...tactics } : t);
+      mutateSavedTactics(next, activeTacticId);
+      setEditingTacticId(null);
+      toast('success', 'Tactique mise à jour.');
+    } else {
+      const name = `Tactique ${savedTactics.length + 1}`;
+      const newT: SavedTactic = { ...tactics, id: crypto.randomUUID(), name };
+      const next = [...savedTactics, newT];
+      mutateSavedTactics(next, newT.id);
+      setEditingTacticId(null);
+      toast('success', `"${name}" sauvegardée.`);
+    }
+  }
+
+  function activateTactic(id: string) { mutateSavedTactics(savedTactics, id); }
+  function deleteTacticEntry(id: string) {
+    const next = savedTactics.filter((t) => t.id !== id);
+    mutateSavedTactics(next, activeTacticId === id ? (next[0]?.id ?? undefined) : activeTacticId);
+  }
+  function renameTactic(id: string, name: string) {
+    mutateSavedTactics(savedTactics.map((t) => t.id === id ? { ...t, name } : t), activeTacticId);
   }
 
   function exportTactics() {
-    if (!data?.team.tactics) { toast('error', 'Aucune tactique à exporter.'); return; }
-    const { team, players } = data;
-    const playerMap = new Map(players.map((p) => [p.id, p]));
-    const lineupEntries = team.tactics!.lineup.map((id) => {
-      const p = playerMap.get(id);
-      return p ? { id, name: `${p.firstName} ${p.lastName}`, position: p.position, overall: p.overall } : { id };
-    });
-    const filledSet = new Set(team.tactics!.lineup);
-    const bench = players
-      .filter((p) => !filledSet.has(p.id))
-      .sort((a, b) => b.overall - a.overall)
-      .slice(0, 12)
-      .map((p) => ({ id: p.id, name: `${p.firstName} ${p.lastName}`, position: p.position, overall: p.overall }));
-    const payload = {
-      teamName: team.name,
-      formation: team.tactics!.formation,
-      formationLabel: team.tactics!.formationLabel,
-      style: team.tactics!.style,
-      customStyles: team.tactics!.customStyles ?? [],
-      activeCustomStyleId: team.tactics!.activeCustomStyleId,
-      lineup: lineupEntries,
-      bench,
-    };
+    if (!data) { toast('error', 'Aucune donnée.'); return; }
+    const payload = { teamName: data.team.name, savedTactics, activeTacticId };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tactique-${team.slug}.json`;
+    a.download = `tactiques-${data.team.slug}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   async function publishTactics() {
-    if (!data?.team.tactics || !effectivePat) return;
+    if (!data || !effectivePat) return;
     setPublishing(true);
     try {
-      await saveTeam(data.team, data.players, effectivePat);
+      const teamToPublish = { ...data.team, savedTactics, activeTacticId };
+      await saveTeam(teamToPublish, data.players, effectivePat);
       setDirty(false);
       setUnpublished(false);
-      toast('success', 'Tactique publiée sur GitHub.');
+      toast('success', 'Tactiques publiées sur GitHub.');
     } catch (err) {
       toast('error', String(err));
     } finally {
@@ -284,16 +312,31 @@ async function applyNewStrength(strength: number) {
     reader.onload = (ev) => {
       try {
         const json = JSON.parse(ev.target?.result as string);
-        const tactics: TeamTactics = {
-          formation: json.formation,
-          style: json.style,
-          lineup: Array.isArray(json.lineup) ? json.lineup.map((p: { id: string } | string) => typeof p === 'string' ? p : p.id) : [],
-          formationLabel: json.formationLabel,
-          customStyles: json.customStyles ?? [],
-          activeCustomStyleId: json.activeCustomStyleId,
-        };
-        mutate({ team: { ...data.team, tactics }, players: data.players });
-        toast('success', 'Tactique importée (non publiée).');
+        if (Array.isArray(json.savedTactics)) {
+          const imported: SavedTactic[] = json.savedTactics.map((t: SavedTactic) => ({
+            ...t,
+            id: t.id ?? crypto.randomUUID(),
+            name: t.name ?? 'Importée',
+            lineup: Array.isArray(t.lineup) ? t.lineup.map((p: { id: string } | string) => typeof p === 'string' ? p : p.id) : [],
+          }));
+          const existing = new Set(savedTactics.map((t) => t.id));
+          const toAdd = imported.filter((t) => !existing.has(t.id));
+          mutateSavedTactics([...savedTactics, ...toAdd], activeTacticId);
+          toast('success', `${toAdd.length} tactique(s) importée(s).`);
+        } else {
+          // legacy single tactic
+          const tactics: TeamTactics = {
+            formation: json.formation,
+            style: json.style,
+            lineup: Array.isArray(json.lineup) ? json.lineup.map((p: { id: string } | string) => typeof p === 'string' ? p : p.id) : [],
+            formationLabel: json.formationLabel,
+            customStyles: json.customStyles ?? [],
+            activeCustomStyleId: json.activeCustomStyleId,
+          };
+          const newT: SavedTactic = { ...tactics, id: crypto.randomUUID(), name: json.tacticName ?? `Importée ${savedTactics.length + 1}` };
+          mutateSavedTactics([...savedTactics, newT], activeTacticId);
+          toast('success', `"${newT.name}" ajoutée.`);
+        }
       } catch {
         toast('error', 'Fichier tactique invalide.');
       }
@@ -551,25 +594,59 @@ async function applyNewStrength(strength: number) {
           <div className="flex items-center justify-between">
             <h2 className="font-display text-xl">Tactique</h2>
             <div className="flex gap-2">
-              <Button size="sm" variant="ghost" onClick={exportTactics}>
-                ↑ Exporter JSON
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => tacticsImportRef.current?.click()}>
-                ↓ Importer JSON
-              </Button>
+              <Button size="sm" variant="ghost" onClick={exportTactics}>↑ Exporter JSON</Button>
+              <Button size="sm" variant="ghost" onClick={() => tacticsImportRef.current?.click()}>↓ Importer JSON</Button>
               <input ref={tacticsImportRef} type="file" accept=".json" className="hidden" onChange={importTactics} />
-              {team.tactics && (
-                <Button size="sm" onClick={publishTactics} disabled={publishing || !effectivePat}>
-                  {publishing ? <Spinner className="mr-1" /> : null}
-                  ↑ Publier GitHub
-                </Button>
-              )}
+              <Button size="sm" onClick={publishTactics} disabled={publishing || !effectivePat || savedTactics.length === 0}>
+                {publishing ? <Spinner className="mr-1" /> : null}
+                ↑ Publier GitHub
+              </Button>
             </div>
           </div>
-          {team.tactics && (
-            <TacticsSummary tactics={team.tactics} players={players} />
-          )}
-          <TacticsPanel team={team} players={players} onSave={saveTactics} />
+
+          <TacticsSummary
+            savedTactics={savedTactics}
+            activeTacticId={activeTacticId}
+            players={players}
+            onActivate={activateTactic}
+            onDelete={deleteTacticEntry}
+            onRename={renameTactic}
+          />
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium">
+                {editingTacticId
+                  ? `Modifier : ${savedTactics.find((t) => t.id === editingTacticId)?.name ?? ''}`
+                  : 'Nouvelle tactique'}
+              </span>
+              <div className="flex gap-1 flex-wrap">
+                {savedTactics.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setEditingTacticId(t.id === editingTacticId ? null : t.id)}
+                    className={`text-xs px-2 py-0.5 rounded border transition-colors ${t.id === editingTacticId ? 'border-accent text-accent' : 'border-border text-muted hover:text-text'}`}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setEditingTacticId(null)}
+                  className={`text-xs px-2 py-0.5 rounded border transition-colors ${editingTacticId === null ? 'border-accent text-accent' : 'border-border text-muted hover:text-text'}`}
+                >
+                  + Nouvelle
+                </button>
+              </div>
+            </div>
+            <TacticsPanel
+              key={editingTacticId ?? 'new'}
+              team={editingTacticId
+                ? { ...team, tactics: savedTactics.find((t) => t.id === editingTacticId) }
+                : { ...team, tactics: undefined }}
+              players={players}
+              onSave={saveTactics}
+            />
+          </div>
         </section>
       )}
 
