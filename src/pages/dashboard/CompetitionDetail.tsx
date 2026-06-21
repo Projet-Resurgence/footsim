@@ -250,7 +250,7 @@ export default function CompetitionDetail() {
   }
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link to="/dashboard/competitions" className="text-sm text-muted hover:text-text">← Compétitions</Link>
