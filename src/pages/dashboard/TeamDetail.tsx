@@ -611,6 +611,27 @@ async function applyNewStrength(strength: number) {
             players={players}
             formation={team.tactics?.formation ?? team.formation}
             lineup={team.tactics?.lineup}
+            onSaveAutoXI={effectivePat ? async (lineupIds) => {
+              if (!data) return;
+              // Update active tactic lineup or create one
+              const activeId = activeTacticId ?? savedTactics[0]?.id;
+              const formation = team.tactics?.formation ?? team.formation;
+              if (activeId) {
+                const next = savedTactics.map((t) =>
+                  t.id === activeId ? { ...t, formation, lineup: lineupIds } : t,
+                );
+                mutateSavedTactics(next, activeId);
+              } else {
+                const newT = { id: crypto.randomUUID(), name: 'XI auto', formation, lineup: lineupIds, style: 'possession' as const };
+                mutateSavedTactics([...savedTactics, newT], newT.id);
+              }
+              // Publish to GitHub
+              const updated = { ...data.team, savedTactics, activeTacticId };
+              await saveTeam({ ...updated, ownerId }, data.players, effectivePat);
+              setDirty(false);
+              setUnpublished(false);
+              toast('success', 'XI sauvegardé et publié.');
+            } : undefined}
           />
           <RosterTable players={players} onSelect={setEditingId} />
         </section>

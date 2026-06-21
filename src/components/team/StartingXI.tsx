@@ -8,11 +8,14 @@ type Props = {
   formation: Formation;
   /** IDs du lineup custom (tactics.lineup) — si absent ou invalide → meilleur XI auto */
   lineup?: string[];
+  /** Called with the auto XI IDs when user wants to save it as the active tactic lineup */
+  onSaveAutoXI?: (lineupIds: string[]) => Promise<void>;
 };
 
-export function StartingXI({ players, formation, lineup }: Props) {
+export function StartingXI({ players, formation, lineup, onSaveAutoXI }: Props) {
   const hasCustom = !!(lineup && lineup.length === 11);
   const [mode, setMode] = useState<'auto' | 'custom'>(hasCustom ? 'custom' : 'auto');
+  const [saving, setSaving] = useState(false);
 
   const { starters, bench } = useMemo(() => {
     const byId = new Map(players.map((p) => [p.id, p]));
@@ -43,21 +46,36 @@ export function StartingXI({ players, formation, lineup }: Props) {
   return (
     <div className="space-y-4">
       {/* Toggle auto / custom */}
-      <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1 w-fit">
-        <button
-          onClick={() => setMode('auto')}
-          className={`px-3 py-1 rounded text-xs font-medium transition-colors ${mode === 'auto' ? 'bg-accent text-white' : 'text-muted hover:text-text'}`}
-        >
-          ⚡ Meilleur XI auto
-        </button>
-        <button
-          onClick={() => setMode('custom')}
-          disabled={!hasCustom}
-          className={`px-3 py-1 rounded text-xs font-medium transition-colors ${mode === 'custom' ? 'bg-accent text-white' : !hasCustom ? 'opacity-30 cursor-not-allowed text-muted' : 'text-muted hover:text-text'}`}
-          title={!hasCustom ? 'Aucun XI défini dans les tactiques' : undefined}
-        >
-          XI défini
-        </button>
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+          <button
+            onClick={() => setMode('auto')}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${mode === 'auto' ? 'bg-accent text-white' : 'text-muted hover:text-text'}`}
+          >
+            ⚡ Meilleur XI auto
+          </button>
+          <button
+            onClick={() => setMode('custom')}
+            disabled={!hasCustom}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${mode === 'custom' ? 'bg-accent text-white' : !hasCustom ? 'opacity-30 cursor-not-allowed text-muted' : 'text-muted hover:text-text'}`}
+            title={!hasCustom ? 'Aucun XI défini dans les tactiques' : undefined}
+          >
+            XI défini
+          </button>
+        </div>
+        {mode === 'auto' && onSaveAutoXI && (
+          <button
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try { await onSaveAutoXI(starters.map((p) => p.id)); }
+              finally { setSaving(false); }
+            }}
+            className="px-3 py-1.5 rounded text-xs font-medium border border-border bg-surface hover:bg-border/40 transition-colors disabled:opacity-50"
+          >
+            {saving ? '…' : '↑ Définir & publier ce XI'}
+          </button>
+        )}
       </div>
 
       {/* XI titulaires */}
