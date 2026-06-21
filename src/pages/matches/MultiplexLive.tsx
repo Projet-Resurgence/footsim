@@ -277,6 +277,7 @@ export default function MultiplexLive() {
         (tid === slot.away.id ? slot.away.name : null) ??
         tid;
       const baseSeed = `${current.id}-r${roundNum}-${slot.compMatchId}`;
+      let matchDopingOccurred = false;
       for (const [tid, goalsFor, goalsAgainst] of [
         [homeId, slot.state.score.home, slot.state.score.away],
         [awayId, slot.state.score.away, slot.state.score.home],
@@ -296,6 +297,7 @@ export default function MultiplexLive() {
           standing: current.standings[tid],
           totalTeams: current.teamIds.length,
           dopingBannedTeamIds,
+          dopingAlreadyThisMatch: matchDopingOccurred,
           players: teamPlayers,
           coach: teamCoach,
         });
@@ -303,11 +305,13 @@ export default function MultiplexLive() {
         if (dopingSuspension) {
           updatedDopingSuspensions = [...updatedDopingSuspensions, dopingSuspension];
           dopingBannedTeamIds.push(tid);
+          matchDopingOccurred = true;
         }
         if (teamDisqualified) {
           updatedMatches = applyCorruptionDisqualification(updatedMatches, slot.compMatchId, tid);
           updatedDisqualifiedTeamIds = [...new Set([...updatedDisqualifiedTeamIds, tid])];
           dopingBannedTeamIds.push(tid);
+          matchDopingOccurred = true;
         }
         const moralePress = generateMoralePressItem({
           seed: `${baseSeed}-${tid}-m`,

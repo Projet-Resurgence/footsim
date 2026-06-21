@@ -59,6 +59,8 @@ export type PlayerCompStats = {
   playerName: string;
   teamId: string;
   teamName: string;
+  overall: number;
+  position: string;
   goals: number;
   assists: number;
   cleanSheets: number;

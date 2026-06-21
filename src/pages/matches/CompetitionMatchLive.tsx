@@ -334,6 +334,7 @@ export default function CompetitionMatchLive() {
       let updatedSuspensions = decrementSuspensions(snap!.suspensions ?? []);
 
       const dopingBannedTeamIds = [...(snap!.disqualifiedTeamIds ?? [])];
+      let matchDopingOccurred = false;
 
       for (const [tid, goalsFor, goalsAgainst] of [
         [homeTeamId, matchState!.score.home, matchState!.score.away],
@@ -356,17 +357,20 @@ export default function CompetitionMatchLive() {
           standing: snap!.standings[tid],
           totalTeams: snap!.teamIds.length,
           dopingBannedTeamIds,
+          dopingAlreadyThisMatch: matchDopingOccurred,
           players: teamPlayers,
           coach: teamCoach,
         });
         newPressItems.push(item);
         if (dopingSuspension) {
           updatedSuspensions = [...updatedSuspensions, dopingSuspension];
+          matchDopingOccurred = true;
         }
         if (teamDisqualified) {
           updatedMatches = applyCorruptionDisqualification(updatedMatches, matchId!, tid);
           disqualifiedTeamIds = [...new Set([...disqualifiedTeamIds, tid])];
           dopingBannedTeamIds.push(tid);
+          matchDopingOccurred = true;
         }
         const moraleItem = generateMoralePressItem({
           round,

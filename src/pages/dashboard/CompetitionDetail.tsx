@@ -592,6 +592,7 @@ export default function CompetitionDetail() {
             <MedicalTab
               injuries={current.injuries ?? []}
               teamMap={teamMap}
+              playerStats={current.playerStats ?? {}}
             />
           )}
 
@@ -599,6 +600,7 @@ export default function CompetitionDetail() {
             <SuspensionsTab
               suspensions={current.suspensions ?? []}
               teamMap={teamMap}
+              playerStats={current.playerStats ?? {}}
             />
           )}
         </motion.div>
@@ -911,6 +913,67 @@ function MentionPopup({ mention, onClose }: { mention: PressMention; onClose: ()
   );
 }
 
+function PlayerCompPopup({ stat, teamMap, onClose }: { stat: import('@/lib/competition/types').PlayerCompStats; teamMap: Record<string, Team>; onClose: () => void }) {
+  const team = teamMap[stat.teamId];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60" />
+      <div
+        className="relative z-10 rounded-xl border border-border bg-surface shadow-2xl w-full max-w-xs"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div className="flex items-center gap-2">
+            {team?.flag && <img src={team.flag} alt="" className="h-7 w-7 object-cover rounded-sm shrink-0" />}
+            <div>
+              <div className="font-display text-base">{stat.playerName}</div>
+              <div className="text-xs text-muted flex items-center gap-2">
+                <span>{stat.position}</span>
+                <span className="font-medium text-accent">Overall {stat.overall}</span>
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-muted hover:text-text transition-colors text-lg leading-none">×</button>
+        </div>
+        <div className="px-4 py-3 grid grid-cols-3 gap-2 text-center">
+          <div>
+            <div className="text-xl font-display tabular-nums">{stat.goals}</div>
+            <div className="text-[10px] text-muted">Buts</div>
+          </div>
+          <div>
+            <div className="text-xl font-display tabular-nums">{stat.assists}</div>
+            <div className="text-[10px] text-muted">Passes D.</div>
+          </div>
+          <div>
+            <div className={`text-xl font-display tabular-nums ${stat.avgRating >= 8 ? 'text-green-400' : stat.avgRating >= 7 ? 'text-accent' : stat.avgRating >= 6 ? 'text-text' : 'text-muted'}`}>
+              {stat.avgRating > 0 ? stat.avgRating.toFixed(1) : '—'}
+            </div>
+            <div className="text-[10px] text-muted">Note moy.</div>
+          </div>
+          {stat.cleanSheets > 0 && (
+            <div>
+              <div className="text-xl font-display tabular-nums">{stat.cleanSheets}</div>
+              <div className="text-[10px] text-muted">Clean sheets</div>
+            </div>
+          )}
+          {stat.yellowCards > 0 && (
+            <div>
+              <div className="text-xl font-display tabular-nums text-yellow-400">{stat.yellowCards}</div>
+              <div className="text-[10px] text-muted">Jaunes</div>
+            </div>
+          )}
+          {stat.redCards > 0 && (
+            <div>
+              <div className="text-xl font-display tabular-nums text-danger">{stat.redCards}</div>
+              <div className="text-[10px] text-muted">Rouges</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Replace mention names in text with clickable spans */
 function renderBodyWithMentions(body: string, mentions: PressMention[] | undefined, onMention: (m: PressMention) => void) {
   if (!mentions?.length) return <>{body}</>;
@@ -1062,10 +1125,17 @@ function PressTab({
 function MedicalTab({
   injuries,
   teamMap,
+  playerStats,
 }: {
   injuries: Injury[];
   teamMap: Record<string, Team>;
+  playerStats: Record<string, import('@/lib/competition/types').PlayerCompStats>;
 }) {
+  const [activeStat, setActiveStat] = useState<import('@/lib/competition/types').PlayerCompStats | null>(null);
+  const statByName = Object.values(playerStats).reduce<Record<string, import('@/lib/competition/types').PlayerCompStats>>((acc, s) => {
+    acc[s.playerName] = s;
+    return acc;
+  }, {});
   const teamIds = [...new Set(injuries.map((i) => i.teamId))];
 
   if (injuries.length === 0) {
@@ -1073,57 +1143,81 @@ function MedicalTab({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-center w-fit">
-        <div className="text-2xl font-display text-danger">{injuries.length}</div>
-        <div className="text-xs text-muted mt-0.5">Blessé{injuries.length > 1 ? 's' : ''}</div>
-      </div>
-      <div className="space-y-4">
-        {teamIds.map((tid) => {
-          const team = teamMap[tid];
-          const teamInjuries = injuries.filter((i) => i.teamId === tid);
-          return (
-            <div key={tid} className="rounded-lg border border-border bg-surface overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg/40">
-                {team?.flag && <img src={team.flag} alt="" className="h-6 w-6 object-cover rounded-sm shrink-0" />}
-                <span className="font-medium text-sm">{team?.name ?? tid}</span>
-                <span className="ml-auto text-xs text-muted">{teamInjuries.length} blessé{teamInjuries.length > 1 ? 's' : ''}</span>
-              </div>
-              <div className="divide-y divide-border/50">
-                {teamInjuries.map((inj) => (
-                  <div key={inj.id} className="flex items-start gap-3 px-4 py-3">
-                    <span className={`mt-0.5 shrink-0 inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium ${SEVERITY_COLOR[inj.severity]}`}>
-                      {inj.severity}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium">{inj.playerName}</span>
-                        <span className="text-[10px] text-muted">{CAUSE_LABEL[inj.cause]}</span>
+    <>
+      <div className="space-y-6">
+        <div className="rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-center w-fit">
+          <div className="text-2xl font-display text-danger">{injuries.length}</div>
+          <div className="text-xs text-muted mt-0.5">Blessé{injuries.length > 1 ? 's' : ''}</div>
+        </div>
+        <div className="space-y-4">
+          {teamIds.map((tid) => {
+            const team = teamMap[tid];
+            const teamInjuries = injuries.filter((i) => i.teamId === tid);
+            return (
+              <div key={tid} className="rounded-lg border border-border bg-surface overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg/40">
+                  {team?.flag && <img src={team.flag} alt="" className="h-6 w-6 object-cover rounded-sm shrink-0" />}
+                  <span className="font-medium text-sm">{team?.name ?? tid}</span>
+                  <span className="ml-auto text-xs text-muted">{teamInjuries.length} blessé{teamInjuries.length > 1 ? 's' : ''}</span>
+                </div>
+                <div className="divide-y divide-border/50">
+                  {teamInjuries.map((inj) => {
+                    const stat = statByName[inj.playerName];
+                    return (
+                      <div key={inj.id} className="flex items-start gap-3 px-4 py-3">
+                        <span className={`mt-0.5 shrink-0 inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium ${SEVERITY_COLOR[inj.severity]}`}>
+                          {inj.severity}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {stat ? (
+                              <button
+                                onClick={() => setActiveStat(stat)}
+                                className="text-sm font-medium text-accent underline decoration-dotted hover:text-accent/70 transition-colors"
+                              >
+                                {inj.playerName}
+                              </button>
+                            ) : (
+                              <span className="text-sm font-medium">{inj.playerName}</span>
+                            )}
+                            <span className="text-[10px] text-muted">{CAUSE_LABEL[inj.cause]}</span>
+                          </div>
+                          <p className="text-xs text-muted mt-0.5">{inj.description}</p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-sm font-display tabular-nums text-danger">{inj.matchesRemaining}</div>
+                          <div className="text-[10px] text-muted">match{inj.matchesRemaining > 1 ? 's' : ''}</div>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted mt-0.5">{inj.description}</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className="text-sm font-display tabular-nums text-danger">{inj.matchesRemaining}</div>
-                      <div className="text-[10px] text-muted">match{inj.matchesRemaining > 1 ? 's' : ''}</div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
-    </div>
+      {activeStat && (
+        <PlayerCompPopup stat={activeStat} teamMap={teamMap} onClose={() => setActiveStat(null)} />
+      )}
+    </>
   );
 }
 
 function SuspensionsTab({
   suspensions,
   teamMap,
+  playerStats,
 }: {
   suspensions: Suspension[];
   teamMap: Record<string, Team>;
+  playerStats: Record<string, import('@/lib/competition/types').PlayerCompStats>;
 }) {
+  const [activeStat, setActiveStat] = useState<import('@/lib/competition/types').PlayerCompStats | null>(null);
+  const statByName = Object.values(playerStats).reduce<Record<string, import('@/lib/competition/types').PlayerCompStats>>((acc, s) => {
+    acc[s.playerName] = s;
+    return acc;
+  }, {});
   const players = suspensions.filter((s) => s.subjectId !== 'coach');
   const coaches = suspensions.filter((s) => s.subjectId === 'coach');
 
@@ -1133,18 +1227,30 @@ function SuspensionsTab({
 
   function SuspRow({ sus }: { sus: Suspension }) {
     const team = teamMap[sus.teamId];
-    // Detect card type from reason string
     const isRed = /rouge|red|2e jaune|double/i.test(sus.reason);
-    const cardBadge = isRed
-      ? <span className="inline-block w-3 h-4 rounded-sm bg-danger shrink-0" title="Carton rouge" />
-      : <span className="inline-block w-3 h-4 rounded-sm bg-yellow-400 shrink-0" title="Carton jaune" />;
+    const isDoping = /dopage/i.test(sus.reason);
+    const cardBadge = isDoping
+      ? <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-900/40 text-purple-300 border border-purple-700/40 shrink-0">DOPING</span>
+      : isRed
+        ? <span className="inline-block w-3 h-4 rounded-sm bg-danger shrink-0" title="Carton rouge" />
+        : <span className="inline-block w-3 h-4 rounded-sm bg-yellow-400 shrink-0" title="Carton jaune" />;
+    const stat = sus.subjectId !== 'coach' ? statByName[sus.subjectName] : null;
 
     return (
       <div className="flex items-center gap-3 px-4 py-3 border-t border-border/50">
         {team?.flag && <img src={team.flag} alt="" className="h-5 w-5 object-cover rounded-sm shrink-0" />}
         {cardBadge}
         <div className="min-w-0 flex-1">
-          <span className="text-sm font-medium">{sus.subjectName}</span>
+          {stat ? (
+            <button
+              onClick={() => setActiveStat(stat)}
+              className="text-sm font-medium text-accent underline decoration-dotted hover:text-accent/70 transition-colors"
+            >
+              {sus.subjectName}
+            </button>
+          ) : (
+            <span className="text-sm font-medium">{sus.subjectName}</span>
+          )}
           <span className="ml-2 text-xs text-muted">{team?.name ?? sus.teamId}</span>
           <p className="text-xs text-muted mt-0.5">{sus.reason}</p>
         </div>
@@ -1179,6 +1285,9 @@ function SuspensionsTab({
             {coaches.map((sus) => <SuspRow key={sus.id} sus={sus} />)}
           </div>
         </div>
+      )}
+      {activeStat && (
+        <PlayerCompPopup stat={activeStat} teamMap={teamMap} onClose={() => setActiveStat(null)} />
       )}
     </div>
   );

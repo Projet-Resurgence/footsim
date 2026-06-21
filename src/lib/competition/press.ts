@@ -519,24 +519,24 @@ const KO_LOSS_BODIES: Record<string, string[]> = {
 
 const DOPING_PAIRS: [string, string][] = [
   [
-    'DOPAGE : un joueur de {team} contrôlé positif — suspension immédiate',
-    'Le contrôle antidopage effectué après le dernier match de {team} a révélé la présence d\'une substance interdite chez un joueur du groupe. La commission disciplinaire a prononcé une suspension pour le reste de la compétition. Le joueur conteste les résultats.',
+    'DOPAGE : {player} ({team}) contrôlé positif — suspension immédiate',
+    'Le contrôle antidopage effectué après le dernier match de {team} a révélé la présence d\'une substance interdite chez {player}. La commission disciplinaire a prononcé une suspension pour le reste de la compétition. Le joueur conteste les résultats.',
   ],
   [
-    'SCANDALE DOPAGE chez {team} — la compétition sous le choc',
-    'Un résultat de contrôle positif tombe comme un couperet sur {team}. Le joueur concerné est suspendu pour l\'intégralité de la compétition. La fédération parle d\'un "signal fort envoyé à tous les participants".',
+    'SCANDALE DOPAGE chez {team} — {player} suspendu, la compétition sous le choc',
+    'Un résultat de contrôle positif tombe comme un couperet sur {team}. {player} est suspendu pour l\'intégralité de la compétition. La fédération parle d\'un "signal fort envoyé à tous les participants".',
   ],
   [
-    '{team} frappé par un cas de dopage — un joueur écarté définitivement',
-    'La nouvelle a éclaté dans la nuit : un membre de l\'effectif de {team} a été contrôlé positif lors d\'un test inopiné. Suspension immédiate et définitive pour cette compétition. Le staff de {team} dit n\'avoir "rien su, rien vu".',
+    '{team} frappé par un cas de dopage — {player} écarté définitivement',
+    'La nouvelle a éclaté dans la nuit : {player} a été contrôlé positif lors d\'un test inopiné. Suspension immédiate et définitive pour cette compétition. Le staff de {team} dit n\'avoir "rien su, rien vu".',
   ],
   [
-    'Contrôle antidopage positif chez {team} — une ombre sur la compétition',
-    'Un joueur de {team} a été contrôlé positif à une substance anabolisante. La fédération a statué rapidement : suspension immédiate pour le reste de la compétition. L\'entourage du joueur prépare un recours, mais la sanction s\'applique sans délai.',
+    'Contrôle antidopage positif chez {team} — {player} visé, une ombre sur la compétition',
+    '{player} ({team}) a été contrôlé positif à une substance anabolisante. La fédération a statué rapidement : suspension immédiate pour le reste de la compétition. L\'entourage du joueur prépare un recours, mais la sanction s\'applique sans délai.',
   ],
   [
-    '{team} : un élément du groupe suspendu pour dopage — le vestiaire sous le choc',
-    'L\'annonce est tombée en plein milieu de la compétition. Un membre de l\'effectif de {team} a été testé positif lors d\'un contrôle surprise. Le joueur est suspendu immédiatement. Ses coéquipiers, visiblement ébranlés, n\'ont pas souhaité commenter.',
+    '{team} : {player} suspendu pour dopage — le vestiaire sous le choc',
+    'L\'annonce est tombée en plein milieu de la compétition. {player} a été testé positif lors d\'un contrôle surprise. Le joueur est suspendu immédiatement. Ses coéquipiers, visiblement ébranlés, n\'ont pas souhaité commenter.',
   ],
 ];
 
@@ -587,6 +587,8 @@ export function generateMatchPressItem(opts: {
   totalTeams?: number;
   /** teamIds already banned for doping this competition — prevents re-roll */
   dopingBannedTeamIds?: string[];
+  /** If another team already had a doping event this match, skip player doping roll */
+  dopingAlreadyThisMatch?: boolean;
   /** Roster of this team — used to mention a player by name in press body */
   players?: Player[];
   /** Head coach of this team — mentioned in body with overall */
@@ -604,6 +606,7 @@ export function generateMatchPressItem(opts: {
   let body: string;
   let dopingSuspension: Suspension | null = null;
   let teamDisqualified = false;
+  const mentions: PressMention[] = [];
 
   // Pick a notable player to mention in body (non-GK preferred)
   const nonGK = opts.players?.filter((p) => p.position !== 'GK') ?? [];
@@ -612,19 +615,19 @@ export function generateMatchPressItem(opts: {
   const top5 = pool.slice().sort((a, b) => b.overall - a.overall).slice(0, 5);
   const featuredPlayer = top5.length > 0 ? pick(top5, r) : null;
   const playerMention = featuredPlayer
-    ? `${featuredPlayer.firstName} ${featuredPlayer.lastName} (${featuredPlayer.overall})`
+    ? `${featuredPlayer.firstName} ${featuredPlayer.lastName}`
     : null;
 
   const alreadyDisqualified = opts.dopingBannedTeamIds?.includes(opts.teamId) ?? false;
   // Jamais si déjà disqualifié ou phase finale
-  const baseAllowed = !alreadyDisqualified && !isKnockout;
+  const baseAllowed = !alreadyDisqualified && !isKnockout && !opts.dopingAlreadyThisMatch;
 
-  // Dopage joueur : 0.8% / 1.5% sur défaite
-  const playerDopingChance = baseAllowed ? (diff < 0 ? 0.015 : 0.008) : 0;
+  // Dopage joueur : 0.3% / 0.6% sur défaite (rare — max 1 par match via dopingAlreadyThisMatch)
+  const playerDopingChance = baseAllowed ? (diff < 0 ? 0.006 : 0.003) : 0;
   const isPlayerDoping = r() < playerDopingChance;
 
-  // Dopage équipe : 1% indépendant, seulement si pas de dopage joueur ce tour
-  const teamDopingChance = baseAllowed && !isPlayerDoping ? 0.01 : 0;
+  // Dopage équipe : 0.4% indépendant, seulement si pas de dopage joueur ce tour
+  const teamDopingChance = baseAllowed && !isPlayerDoping ? 0.004 : 0;
   const isTeamDoping = r() < teamDopingChance;
 
   // Scandale classique : 3% sur défaite, 0.8% sinon
@@ -639,18 +642,36 @@ export function generateMatchPressItem(opts: {
     teamDisqualified = true;
   } else if (isPlayerDoping) {
     category = 'scandale';
-    const [h, b] = pick(DOPING_PAIRS, r);
-    headline = h.replace(/{team}/g, opts.teamName);
-    body = b.replace(/{team}/g, opts.teamName);
-    // Suspension joueur pour le reste de la compétition
+    // Pick a specific player (non-GK, from pool already computed)
+    const dopingVictim = pool.length > 0 ? pick(pool, r) : null;
+    const victimName = dopingVictim ? `${dopingVictim.firstName} ${dopingVictim.lastName}` : null;
+    const [hTpl, bTpl] = pick(DOPING_PAIRS, r);
+    const fallback = 'un joueur';
+    headline = hTpl.replace(/{team}/g, opts.teamName).replace(/{player}/g, victimName ?? fallback);
+    body = bTpl.replace(/{team}/g, opts.teamName).replace(/{player}/g, victimName ?? fallback);
     dopingSuspension = createSuspension(
       opts.teamId,
-      `doping-${opts.teamId}`,
-      'Joueur contrôlé positif',
+      dopingVictim?.id ?? `doping-${opts.teamId}`,
+      victimName ?? 'Joueur contrôlé positif',
       999,
       'Dopage — contrôle positif',
       opts.round,
     );
+    // Ajouter mention cliquable
+    if (dopingVictim && victimName) {
+      mentions.push({
+        type: 'player',
+        name: victimName,
+        overall: dopingVictim.overall,
+        position: dopingVictim.position,
+        stats: {
+          technical: dopingVictim.stats.technical as unknown as Record<string, number>,
+          mental: dopingVictim.stats.mental as unknown as Record<string, number>,
+          physical: dopingVictim.stats.physical as unknown as Record<string, number>,
+          ...(dopingVictim.stats.goalkeeping ? { goalkeeping: dopingVictim.stats.goalkeeping as unknown as Record<string, number> } : {}),
+        },
+      });
+    }
   } else if (scandalize) {
     category = 'scandale';
     const [h, b] = pick(SCANDAL_PAIRS, r);
@@ -735,12 +756,10 @@ export function generateMatchPressItem(opts: {
     }
   }
 
-  const mentions: PressMention[] = [];
-
   // Coach mention (40% chance, performance categories only)
   const coach = opts.coach;
   if (coach && r() < 0.4 && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite', 'scandale'].includes(category)) {
-    const coachLabel = `${coach.firstName} ${coach.lastName} (${coach.overall})`;
+    const coachLabel = `${coach.firstName} ${coach.lastName}`;
     const coachSuffixes: Record<string, string[]> = {
       victoire: [
         `Le sélectionneur ${coachLabel} a su trouver les bons réglages tactiques.`,

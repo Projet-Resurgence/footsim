@@ -169,6 +169,8 @@ export function accumulateMatchStats(
         playerName: `${p.firstName} ${p.lastName}`,
         teamId: team.id,
         teamName: team.name,
+        overall: p.overall,
+        position: p.position,
         goals: 0,
         assists: 0,
         cleanSheets: 0,
