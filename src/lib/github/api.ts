@@ -46,7 +46,10 @@ export async function readJson<T>(
   const json = (await res.json()) as { content: string; sha: string; encoding: string; download_url?: string };
   if (json.encoding === 'none' && json.download_url) {
     // File too large for inline base64 — fetch raw content via download_url
-    const raw = await fetch(json.download_url, { headers: authHeaders(token) });
+    // Use only Authorization header; custom Accept/X-GitHub headers cause CORS issues on raw.githubusercontent.com
+    const rawHeaders: Record<string, string> = {};
+    if (token) rawHeaders['Authorization'] = `Bearer ${token}`;
+    const raw = await fetch(json.download_url, { headers: rawHeaders });
     if (!raw.ok) throw new Error(`GitHub read ${path} (raw): ${raw.status}`);
     const text = await raw.text();
     return { data: JSON.parse(text) as T, sha: json.sha };
