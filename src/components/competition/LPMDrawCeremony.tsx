@@ -50,7 +50,7 @@ export function LPMDrawCeremony({ pairs, teams, title, subtitle, pairLabels, onC
 
   function revealNext() {
     if (done || currentId) return;
-    stepReveal(revealedCount, 1200);
+    stepReveal(revealedCount, 2000);
   }
 
   function revealAll() {
@@ -76,6 +76,13 @@ export function LPMDrawCeremony({ pairs, teams, title, subtitle, pairLabels, onC
       }, 600);
     }
     step();
+  }
+
+  function skipAll() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setRevealedCount(total * 2);
+    setCurrentId(null);
+    setDone(true);
   }
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
@@ -189,6 +196,9 @@ export function LPMDrawCeremony({ pairs, teams, title, subtitle, pairLabels, onC
             </Button>
             <Button onClick={revealAll} variant="ghost" size="lg" disabled={!!currentId}>
               ⚡ Tirage automatique
+            </Button>
+            <Button onClick={skipAll} variant="ghost" size="lg">
+              Passer
             </Button>
           </>
         )}
