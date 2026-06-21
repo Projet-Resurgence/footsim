@@ -3,6 +3,7 @@ export type Culture =
   | 'grec' | 'hongrois' | 'tcheque' | 'polonais' | 'russe' | 'ukrainien'
   | 'suedois' | 'norvegien' | 'danois' | 'finlandais' | 'islandais' | 'groenlandais' | 'inuit'
   | 'neerlandais' | 'belge' | 'luxembourgeois' | 'autrichien' | 'roumain' | 'serbe' | 'croate' | 'turc'
+  | 'estonien' | 'letton' | 'lituanien'
   | 'arabe' | 'japonais' | 'coreen'
   | 'chinois' | 'vietnamien' | 'thai' | 'indonesien' | 'persan' | 'indien' | 'israelien'
   | 'bresilien' | 'argentin' | 'mexicain' | 'anglo-americain' | 'quebecois'
@@ -25,6 +26,7 @@ export const CULTURES: Culture[] = [
   'grec','hongrois','tcheque','polonais','russe','ukrainien',
   'suedois','norvegien','danois','finlandais','islandais','groenlandais','inuit',
   'neerlandais','belge','luxembourgeois','autrichien','roumain','serbe','croate','turc',
+  'estonien','letton','lituanien',
   'arabe','japonais','coreen',
   'chinois','vietnamien','thai','indonesien','persan','indien','israelien',
   'bresilien','argentin','mexicain','anglo-americain','quebecois',
@@ -51,6 +53,7 @@ export const CULTURE_LABEL: Record<Culture, string> = {
   islandais: 'Islandais', groenlandais: 'Groenlandais', inuit: 'Inuit',
   neerlandais: 'Néerlandais', belge: 'Belge', luxembourgeois: 'Luxembourgeois', autrichien: 'Autrichien', roumain: 'Roumain', serbe: 'Serbe',
   croate: 'Croate', turc: 'Turc',
+  estonien: 'Estonien', letton: 'Letton', lituanien: 'Lituanien',
   arabe: 'Arabe (générique)', japonais: 'Japonais', coreen: 'Coréen',
   chinois: 'Chinois', vietnamien: 'Vietnamien', thai: 'Thaï', indonesien: 'Indonésien',
   persan: 'Persan', indien: 'Indien', israelien: 'Israélien',
@@ -96,6 +99,7 @@ export const CULTURE_CONTINENT: Record<Culture, Continent> = {
   islandais: 'europe', groenlandais: 'europe', inuit: 'europe',
   neerlandais: 'europe', belge: 'europe', luxembourgeois: 'europe', autrichien: 'europe', roumain: 'europe', serbe: 'europe',
   croate: 'europe', turc: 'europe',
+  estonien: 'europe', letton: 'europe', lituanien: 'europe',
   japonais: 'asie', coreen: 'asie', chinois: 'asie', vietnamien: 'asie',
   thai: 'asie', indonesien: 'asie', indien: 'asie', cambodgien: 'asie',
   birman: 'asie', philippin: 'asie', malaisien: 'asie',
@@ -121,7 +125,7 @@ export const CULTURE_CONTINENT: Record<Culture, Continent> = {
 };
 
 export const CULTURES_BY_CONTINENT: Record<Continent, Culture[]> = {
-  europe: ['francais','anglais','allemand','italien','espagnol','portugais','grec','hongrois','tcheque','polonais','russe','ukrainien','suedois','norvegien','danois','finlandais','islandais','groenlandais','inuit','neerlandais','belge','luxembourgeois','autrichien','roumain','serbe','croate','turc'],
+  europe: ['francais','anglais','allemand','italien','espagnol','portugais','grec','hongrois','tcheque','polonais','russe','ukrainien','suedois','norvegien','danois','finlandais','islandais','groenlandais','inuit','neerlandais','belge','luxembourgeois','autrichien','roumain','serbe','croate','turc','estonien','letton','lituanien'],
   asie: ['japonais','coreen','chinois','vietnamien','thai','indonesien','indien','cambodgien','birman','philippin','malaisien','ouighour','mongol','siberien'],
   asiecentrale: ['kazakh','ouzbek','kirghiz','tadjik','turkmene','azeri'],
   moyenorient: ['arabe','levantin','golfe','persan','israelien'],
