@@ -25,8 +25,8 @@ function periodLabel(state: MatchState): string {
 }
 
 export function Scoreboard({ state, home, away, leg1Score }: Props) {
-  const aggHome = leg1Score ? state.score.home + leg1Score.away : null;
-  const aggAway = leg1Score ? state.score.away + leg1Score.home : null;
+  const aggHome = leg1Score ? leg1Score.home + state.score.home : null;
+  const aggAway = leg1Score ? leg1Score.away + state.score.away : null;
 
   return (
     <div className="flex items-center justify-between gap-6 rounded-lg border border-border bg-surface p-5 shadow-subtle-sm">

@@ -811,7 +811,7 @@ function MatchCard({ slot }: { slot: import('@/stores/multiplex').MultiplexSlot 
               aller {slot.leg1Score.home}–{slot.leg1Score.away}
               {state && (
                 <span className="ml-1 text-accent font-medium">
-                  · cumul {state.score.home + slot.leg1Score.away}–{state.score.away + slot.leg1Score.home}
+                  · cumul {slot.leg1Score.home + state.score.home}–{slot.leg1Score.away + state.score.away}
                 </span>
               )}
             </div>

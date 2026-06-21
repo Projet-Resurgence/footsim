@@ -1068,7 +1068,7 @@ function PressTab({
             className="ml-auto h-7 rounded border border-border bg-surface px-2 text-xs"
           >
             <option value="all">Tous les types</option>
-            {(['victoire', 'exploit', 'defaite', 'crise', 'scandale', 'neutralite', 'forme'] as const).map((c) => (
+            {(['victoire', 'exploit', 'defaite', 'crise', 'scandale', 'neutralite', 'forme', 'critique', 'revolte'] as const).map((c) => (
               <option key={c} value={c}>{PRESS_CATEGORY_LABEL[c]}</option>
             ))}
           </select>
