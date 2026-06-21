@@ -480,7 +480,7 @@ const KO_LOSS_BODIES: Record<string, string[]> = {
   ],
 };
 
-// ── Templates dopage ─────────────────────────────────────────────────────────
+// ── Templates dopage — joueur (suspension individuelle) ──────────────────────
 
 const DOPING_PAIRS: [string, string][] = [
   [
@@ -495,13 +495,44 @@ const DOPING_PAIRS: [string, string][] = [
     '{team} frappé par un cas de dopage — un joueur écarté définitivement',
     'La nouvelle a éclaté dans la nuit : un membre de l\'effectif de {team} a été contrôlé positif lors d\'un test inopiné. Suspension immédiate et définitive pour cette compétition. Le staff de {team} dit n\'avoir "rien su, rien vu".',
   ],
+  [
+    'Contrôle antidopage positif chez {team} — une ombre sur la compétition',
+    'Un joueur de {team} a été contrôlé positif à une substance anabolisante. La fédération a statué rapidement : suspension immédiate pour le reste de la compétition. L\'entourage du joueur prépare un recours, mais la sanction s\'applique sans délai.',
+  ],
+  [
+    '{team} : un élément du groupe suspendu pour dopage — le vestiaire sous le choc',
+    'L\'annonce est tombée en plein milieu de la compétition. Un membre de l\'effectif de {team} a été testé positif lors d\'un contrôle surprise. Le joueur est suspendu immédiatement. Ses coéquipiers, visiblement ébranlés, n\'ont pas souhaité commenter.',
+  ],
 ];
+
+// ── Templates dopage — équipe (disqualification collective) ──────────────────
+
+const TEAM_DOPING_PAIRS: [string, string][] = [
+  [
+    'DISQUALIFICATION : {team} exclu de la compétition pour dopage systématique',
+    'La commission antidopage a conclu à des pratiques organisées au sein de {team}. Plusieurs membres du groupe auraient bénéficié d\'un protocole de dopage coordonné. La sanction est immédiate et sans appel : {team} est disqualifié. Tous ses résultats sont annulés.',
+  ],
+  [
+    'CHOC : {team} expulsé de la compétition — affaire de dopage collectif',
+    'Ce que tout le monde redoutait est arrivé. Une enquête approfondie a révélé que le dopage au sein de {team} n\'était pas un cas isolé. C\'est le staff médical entier qui est visé. La fédération n\'a pas hésité : exclusion immédiate. Les matchs restants de {team} seront attribués 3-0 à leurs adversaires.',
+  ],
+  [
+    'SCANDALE HISTORIQUE : {team} rayé de la compétition après enquête antidopage',
+    'La décision de la commission est tombée comme un couperet : {team} est disqualifié pour le reste de la compétition. L\'enquête a mis au jour un système de dopage organisé impliquant plusieurs joueurs et membres du staff. Une page sombre pour cette édition de la compétition.',
+  ],
+  [
+    '{team} banni — la compétition perd l\'un de ses participants dans des circonstances effroyables',
+    'Le rêve de {team} s\'arrête brutalement, non pas sur le terrain, mais dans les coulisses. La fédération a prononcé la disqualification après avoir établi l\'existence d\'un programme de dopage institutionnalisé. Les matchs à venir de {team} seront forfaits. Une honte pour le sport.',
+  ],
+];
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type MatchPressResult = {
   item: PressItem;
   dopingSuspension: Suspension | null;
+  teamDisqualified: boolean;
 };
 
 export function generateMatchPressItem(opts: {
@@ -533,22 +564,36 @@ export function generateMatchPressItem(opts: {
   let headline: string;
   let body: string;
   let dopingSuspension: Suspension | null = null;
+  let teamDisqualified = false;
 
-  const alreadyBanned = opts.dopingBannedTeamIds?.includes(opts.teamId) ?? false;
-  // Dopage : 0.8% anytime, 1.5% on loss — jamais si équipe déjà bannie ou phase finale
-  const dopingChance = alreadyBanned || isKnockout ? 0 : (diff < 0 ? 0.015 : 0.008);
-  const isDoping = r() < dopingChance;
+  const alreadyDisqualified = opts.dopingBannedTeamIds?.includes(opts.teamId) ?? false;
+  // Jamais si déjà disqualifié ou phase finale
+  const baseAllowed = !alreadyDisqualified && !isKnockout;
 
-  // Scandale classique : 3% sur défaite, 0.8% sinon (exclu si dopage tiré ou phase finale)
-  const scandalChance = isDoping ? 0 : (diff < 0 ? 0.03 : 0.008);
+  // Dopage joueur : 0.8% / 1.5% sur défaite
+  const playerDopingChance = baseAllowed ? (diff < 0 ? 0.015 : 0.008) : 0;
+  const isPlayerDoping = r() < playerDopingChance;
+
+  // Dopage équipe : 1% indépendant, seulement si pas de dopage joueur ce tour
+  const teamDopingChance = baseAllowed && !isPlayerDoping ? 0.01 : 0;
+  const isTeamDoping = r() < teamDopingChance;
+
+  // Scandale classique : 3% sur défaite, 0.8% sinon
+  const scandalChance = isPlayerDoping || isTeamDoping ? 0 : (diff < 0 ? 0.03 : 0.008);
   const scandalize = r() < scandalChance;
 
-  if (isDoping) {
+  if (isTeamDoping) {
+    category = 'scandale';
+    const [h, b] = pick(TEAM_DOPING_PAIRS, r);
+    headline = h.replace(/{team}/g, opts.teamName);
+    body = b.replace(/{team}/g, opts.teamName);
+    teamDisqualified = true;
+  } else if (isPlayerDoping) {
     category = 'scandale';
     const [h, b] = pick(DOPING_PAIRS, r);
     headline = h.replace(/{team}/g, opts.teamName);
     body = b.replace(/{team}/g, opts.teamName);
-    // Suspension pour le reste de la compétition (999 rounds = permanent dans la compétition)
+    // Suspension joueur pour le reste de la compétition
     dopingSuspension = createSuspension(
       opts.teamId,
       `doping-${opts.teamId}`,
@@ -654,6 +699,7 @@ export function generateMatchPressItem(opts: {
       createdAt: new Date().toISOString(),
     },
     dopingSuspension,
+    teamDisqualified,
   };
 }
 

@@ -9,7 +9,7 @@ import { useCompetition } from '@/stores/competition';
 import { useTeams } from '@/stores/teams';
 import { useCredentials } from '@/stores/credentials';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
-import { advanceBracket, applyResultToStandings } from '@/lib/competition/scheduler';
+import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import { accumulateMatchStats, computeAwards } from '@/lib/competition/statsAccumulator';
 import { generateRefOffer, acceptOffer } from '@/lib/sim/corruption';
@@ -261,6 +261,9 @@ export default function MultiplexLive() {
     let updatedMorale = current.morale ?? initMorale(current.teamIds);
     let updatedPressItems = current.pressItems ?? [];
     let updatedDopingSuspensions: import('@/lib/competition/injuries').Suspension[] = [];
+    // Shared across all slots — prevents double-ban within same round
+    const dopingBannedTeamIds = [...(current.disqualifiedTeamIds ?? [])];
+    let updatedDisqualifiedTeamIds = current.disqualifiedTeamIds ?? [];
     for (const slot of slots) {
       if (!slot.state || slot.state.status !== 'fulltime') continue;
       const compMatch = current.matches.find((m) => m.id === slot.compMatchId);
@@ -274,12 +277,11 @@ export default function MultiplexLive() {
         (tid === slot.away.id ? slot.away.name : null) ??
         tid;
       const baseSeed = `${current.id}-r${roundNum}-${slot.compMatchId}`;
-      const dopingBannedTeamIds = current.disqualifiedTeamIds ?? [];
       for (const [tid, goalsFor, goalsAgainst] of [
         [homeId, slot.state.score.home, slot.state.score.away],
         [awayId, slot.state.score.away, slot.state.score.home],
       ] as [string, number, number][]) {
-        const { item: matchPress, dopingSuspension } = generateMatchPressItem({
+        const { item: matchPress, dopingSuspension, teamDisqualified } = generateMatchPressItem({
           seed: `${baseSeed}-${tid}`,
           round: current.currentRound,
           teamId: tid,
@@ -296,6 +298,11 @@ export default function MultiplexLive() {
         updatedPressItems = [...updatedPressItems, matchPress];
         if (dopingSuspension) {
           updatedDopingSuspensions = [...updatedDopingSuspensions, dopingSuspension];
+          dopingBannedTeamIds.push(tid);
+        }
+        if (teamDisqualified) {
+          updatedMatches = applyCorruptionDisqualification(updatedMatches, slot.compMatchId, tid);
+          updatedDisqualifiedTeamIds = [...new Set([...updatedDisqualifiedTeamIds, tid])];
           dopingBannedTeamIds.push(tid);
         }
         const moralePress = generateMoralePressItem({
@@ -359,6 +366,7 @@ export default function MultiplexLive() {
       currentRound: Math.min(nextRound, Math.max(...updatedMatches.map((m) => m.round))),
       status: allDone ? ('completed' as const) : ('ongoing' as const),
       winner,
+      disqualifiedTeamIds: updatedDisqualifiedTeamIds.length > 0 ? updatedDisqualifiedTeamIds : undefined,
       morale: updatedMorale,
       pressItems: updatedPressItems,
       injuries: updatedInjuries,

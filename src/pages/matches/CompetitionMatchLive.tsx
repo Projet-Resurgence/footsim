@@ -333,7 +333,7 @@ export default function CompetitionMatchLive() {
       let updatedInjuries = decrementInjuries(snap!.injuries ?? []);
       let updatedSuspensions = decrementSuspensions(snap!.suspensions ?? []);
 
-      const dopingBannedTeamIds = snap!.disqualifiedTeamIds ?? [];
+      const dopingBannedTeamIds = [...(snap!.disqualifiedTeamIds ?? [])];
 
       for (const [tid, goalsFor, goalsAgainst] of [
         [homeTeamId, matchState!.score.home, matchState!.score.away],
@@ -341,7 +341,7 @@ export default function CompetitionMatchLive() {
       ] as [string, number, number][]) {
         if (!tid) continue;
         const tname = nameFor(tid);
-        const { item, dopingSuspension } = generateMatchPressItem({
+        const { item, dopingSuspension, teamDisqualified } = generateMatchPressItem({
           round,
           teamId: tid,
           teamName: tname,
@@ -358,6 +358,11 @@ export default function CompetitionMatchLive() {
         newPressItems.push(item);
         if (dopingSuspension) {
           updatedSuspensions = [...updatedSuspensions, dopingSuspension];
+        }
+        if (teamDisqualified) {
+          updatedMatches = applyCorruptionDisqualification(updatedMatches, matchId!, tid);
+          disqualifiedTeamIds = [...new Set([...disqualifiedTeamIds, tid])];
+          dopingBannedTeamIds.push(tid);
         }
         const moraleItem = generateMoralePressItem({
           round,

@@ -669,6 +669,7 @@ function RoundsView({
                   teamMap={teamMap}
                   canSimulate={canSimulate}
                   onSimulate={() => onSimulateMatch(m.id)}
+                  disqualifiedTeamIds={competition.disqualifiedTeamIds ?? []}
                 />
               ))}
             </div>
@@ -684,22 +685,37 @@ function RoundMatchRow({
   teamMap,
   canSimulate,
   onSimulate,
+  disqualifiedTeamIds = [],
 }: {
   match: CompMatch;
   teamMap: Record<string, Team>;
   canSimulate: boolean;
   onSimulate: () => void;
+  disqualifiedTeamIds?: string[];
 }) {
   const home = match.homeTeamId ? teamMap[match.homeTeamId] : null;
   const away = match.awayTeamId ? teamMap[match.awayTeamId] : null;
   const done = match.status === 'completed';
-  const canSim = canSimulate && match.status === 'pending' && match.homeTeamId && match.awayTeamId;
+
+  const homeDisq = !!match.homeTeamId && disqualifiedTeamIds.includes(match.homeTeamId);
+  const awayDisq = !!match.awayTeamId && disqualifiedTeamIds.includes(match.awayTeamId);
+  const isWalkover = homeDisq || awayDisq;
+
+  const canSim = canSimulate && match.status === 'pending' && match.homeTeamId && match.awayTeamId && !isWalkover;
 
   return (
-    <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${done ? 'border-border/50 bg-surface/50' : 'border-border bg-surface'}`}>
-      <TeamCell team={home} side="home" />
+    <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${
+      isWalkover
+        ? 'border-green-800/40 bg-green-950/30'
+        : done
+        ? 'border-border/50 bg-surface/50'
+        : 'border-border bg-surface'
+    }`}>
+      <TeamCell team={home} side="home" dimmed={homeDisq} />
       <div className="flex-1 text-center font-display tabular-nums">
-        {done && match.result ? (
+        {isWalkover ? (
+          <span className="text-xs font-medium text-green-500 uppercase tracking-wider">Tapis vert</span>
+        ) : done && match.result ? (
           <span>
             {match.result.home} – {match.result.away}
             {match.result.penalties && (
@@ -712,7 +728,7 @@ function RoundMatchRow({
           <span className="text-muted">vs</span>
         )}
       </div>
-      <TeamCell team={away} side="away" />
+      <TeamCell team={away} side="away" dimmed={awayDisq} />
       {canSim && (
         <button
           onClick={onSimulate}
@@ -1152,9 +1168,9 @@ function LPMStandingsView({
   );
 }
 
-function TeamCell({ team, side }: { team: Team | null; side: 'home' | 'away' }) {
+function TeamCell({ team, side, dimmed }: { team: Team | null; side: 'home' | 'away'; dimmed?: boolean }) {
   return (
-    <div className={`flex items-center gap-2 min-w-0 flex-1 ${side === 'away' ? 'flex-row-reverse text-right' : ''}`}>
+    <div className={`flex items-center gap-2 min-w-0 flex-1 ${side === 'away' ? 'flex-row-reverse text-right' : ''} ${dimmed ? 'opacity-40 line-through' : ''}`}>
       {team?.flag ? (
         <img src={team.flag} alt="" className="h-6 w-6 object-cover rounded-sm shrink-0" />
       ) : (
