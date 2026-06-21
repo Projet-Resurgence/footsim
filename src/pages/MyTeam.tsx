@@ -316,7 +316,7 @@ export default function MyTeam() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {summaries.map((s) => {
-                const clickable = s.status === 'ongoing';
+                const clickable = s.status === 'ongoing' || s.status === 'completed';
                 const inner = (
                   <div className={`rounded-lg border border-border bg-surface p-4 space-y-2 transition-colors ${clickable ? 'hover:border-accent/50 cursor-pointer' : ''}`}>
                     <div className="flex items-start justify-between gap-2">
