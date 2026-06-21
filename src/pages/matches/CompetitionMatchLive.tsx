@@ -114,6 +114,28 @@ export default function CompetitionMatchLive() {
         const compSuspensions = comp.suspensions ?? [];
         const homeUnavail = unavailableIds(compMatch.homeTeamId!, compInjuries, compSuspensions);
         const awayUnavail = unavailableIds(compMatch.awayTeamId!, compInjuries, compSuspensions);
+
+        const matchRules = rulesForPhase(comp.config, compMatch.phase);
+
+        // For two-legged ties (leg 2): find leg 1 score for aggregate-aware ET
+        let leg1Score: { home: number; away: number } | undefined;
+        if (compMatch.leg === 2 && compMatch.phase === 'lpm_playoff') {
+          const leg1 = comp.matches.find(
+            (m) => m.phase === 'lpm_playoff' && m.leg === 1
+              && ((m.homeTeamId === compMatch.awayTeamId && m.awayTeamId === compMatch.homeTeamId)
+                || (m.homeTeamId === compMatch.homeTeamId && m.awayTeamId === compMatch.awayTeamId))
+              && m.status === 'completed' && m.result,
+          );
+          if (leg1?.result) {
+            // Express leg1 score from leg2's perspective (leg2 home team was leg1 away team)
+            if (leg1.homeTeamId === compMatch.awayTeamId) {
+              leg1Score = { home: leg1.result.away, away: leg1.result.home };
+            } else {
+              leg1Score = { home: leg1.result.home, away: leg1.result.away };
+            }
+          }
+        }
+
         const input: MatchInput = {
           matchId: mid,
           home: {
@@ -135,8 +157,9 @@ export default function CompetitionMatchLive() {
             unavailablePlayerIds: [...awayUnavail].filter((id) => id !== 'coach'),
           },
           speed: '1',
-          rules: rulesForPhase(comp.config, compMatch.phase),
+          rules: matchRules,
           corruption,
+          leg1Score,
         };
         startMatch(input);
       } catch (err) {

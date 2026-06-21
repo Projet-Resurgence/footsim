@@ -12,6 +12,7 @@ import {
   generateLeagueMatches,
   generateCupBracket,
   generateGroupsKnockoutFromGroups,
+  generateLPMMatches,
   buildInitialStandings,
 } from '@/lib/competition/scheduler';
 import { FORMAT_LABEL, FORMAT_DESCRIPTION } from '@/lib/competition/types';
@@ -41,6 +42,7 @@ export default function CompetitionNew() {
   const [rules, setRules] = useState<MatchRules>(DEFAULT_RULES);
   const [knockoutRules, setKnockoutRules] = useState<MatchRules>({ ...DEFAULT_RULES, extraTime: true, penalties: true });
   const [drawResult, setDrawResult] = useState<ReturnType<typeof conductDraw> | null>(null);
+  const [hostTeamId, setHostTeamId] = useState<string>('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -54,10 +56,11 @@ export default function CompetitionNew() {
   }
 
   const minTeamsPerGroup = 4;
-  const minTeams = format === 'league' ? 3 : format === 'cup' ? 2 : groupsCount * minTeamsPerGroup;
+  const minTeams = format === 'lpm' ? 48 : format === 'league' ? 3 : format === 'cup' ? 2 : groupsCount * minTeamsPerGroup;
   const needsEven = format === 'groups_knockout';
   const evenOk = !needsEven || isEvenTeamCount(selectedTeams.length);
-  const valid = name.trim().length > 0 && selectedTeams.length >= minTeams && evenOk && !!pat;
+  const lpmOk = format !== 'lpm' || selectedTeams.length === 48;
+  const valid = name.trim().length > 0 && selectedTeams.length >= minTeams && evenOk && lpmOk && !!pat;
 
   function startDraw() {
     if (!valid) return;
@@ -79,13 +82,17 @@ export default function CompetitionNew() {
         groupsCount: format === 'groups_knockout' ? groupsCount : undefined,
         qualifyPerGroup: format === 'groups_knockout' ? qualifyPerGroup : undefined,
         matchRules: rules,
-        knockoutRules: format === 'groups_knockout' ? knockoutRules : undefined,
+        knockoutRules: (format === 'groups_knockout' || format === 'lpm') ? knockoutRules : undefined,
       };
 
       let teamIds: string[];
       let matches, groups;
 
-      if (format === 'league') {
+      if (format === 'lpm') {
+        teamIds = [...selectedTeams];
+        matches = generateLPMMatches(teamIds);
+        groups = undefined;
+      } else if (format === 'league') {
         teamIds = [...selectedTeams];
         matches = generateLeagueMatches(teamIds, legs);
         groups = undefined;
@@ -129,6 +136,7 @@ export default function CompetitionNew() {
         status: 'ongoing',
         createdAt: new Date().toISOString(),
         teamSnapshot,
+        hostTeamId: (format === 'lpm' && hostTeamId && teamIds.includes(hostTeamId)) ? hostTeamId : undefined,
       };
 
       await save(comp, pat);
@@ -148,6 +156,16 @@ export default function CompetitionNew() {
       return;
     }
     await createWithGroups({});
+  }
+
+  function applyLPMPreset() {
+    setName('Ligue Préliminaire Mondiale');
+    setFormat('lpm');
+    setLegs(1);
+    setKnockoutRules({ ...DEFAULT_RULES, extraTime: true, penalties: true });
+    // Sélectionner jusqu'à 48 équipes (toutes si dispo)
+    const ids = teams.slice(0, 48).map((t) => t.id);
+    setSelectedTeams(ids);
   }
 
   if (drawResult) {
@@ -175,6 +193,21 @@ export default function CompetitionNew() {
       <div>
         <h1 className="mb-1 font-display text-4xl">Nouvelle compétition</h1>
         <p className="text-muted">Configure le format et les équipes participantes.</p>
+      </div>
+
+      {/* Preset rapide LPM */}
+      <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 flex items-start gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm">Ligue Préliminaire Mondiale</div>
+          <div className="text-xs text-muted mt-0.5">48 équipes · 11 journées · barrages A/R · pré-remplit tout automatiquement</div>
+        </div>
+        <button
+          type="button"
+          onClick={applyLPMPreset}
+          className="shrink-0 rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/20 transition-colors"
+        >
+          Appliquer le preset LPM
+        </button>
       </div>
 
       <section className="space-y-4 rounded-lg border border-border bg-surface p-5">
@@ -214,16 +247,35 @@ export default function CompetitionNew() {
 
       <section className="space-y-4 rounded-lg border border-border bg-surface p-5">
         <div className="text-xs uppercase tracking-widest text-muted">Options du format</div>
-        <label className="flex items-center gap-3 text-sm cursor-pointer">
-          <select
-            className="h-9 rounded-md border border-border bg-surface px-3 text-sm"
-            value={legs}
-            onChange={(e) => setLegs(Number(e.target.value) as 1 | 2)}
-          >
-            <option value={1}>1 match aller</option>
-            <option value={2}>2 matchs (aller-retour)</option>
-          </select>
-        </label>
+        {format !== 'lpm' && (
+          <label className="flex items-center gap-3 text-sm cursor-pointer">
+            <select
+              className="h-9 rounded-md border border-border bg-surface px-3 text-sm"
+              value={legs}
+              onChange={(e) => setLegs(Number(e.target.value) as 1 | 2)}
+            >
+              <option value={1}>1 match aller</option>
+              <option value={2}>2 matchs (aller-retour)</option>
+            </select>
+          </label>
+        )}
+        {format === 'lpm' && (
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Pays hôte de la Coupe du Monde</span>
+            <span className="text-xs text-muted block mb-2">Si qualifié d'office, sa place est réattribuée au suivant.</span>
+            <select
+              className="h-9 rounded-md border border-border bg-surface px-3 text-sm w-full max-w-xs"
+              value={hostTeamId}
+              onChange={(e) => setHostTeamId(e.target.value)}
+            >
+              <option value="">— Aucun pays hôte —</option>
+              {selectedTeams.map((id) => {
+                const t = teams.find((x) => x.id === id);
+                return <option key={id} value={id}>{t?.name ?? id}</option>;
+              })}
+            </select>
+          </label>
+        )}
         {format !== 'league' && (
           <label className="flex items-center gap-3 text-sm cursor-pointer">
             <input
@@ -366,13 +418,18 @@ export default function CompetitionNew() {
           Minimum {minTeamsPerGroup} équipes par groupe — il faut au moins {minTeams} équipes pour {groupsCount} groupe{groupsCount > 1 ? 's' : ''}.
         </p>
       )}
+      {format === 'lpm' && selectedTeams.length > 0 && selectedTeams.length !== 48 && (
+        <p className="text-sm text-warning">
+          La LPM requiert exactement 48 équipes ({selectedTeams.length} sélectionnée{selectedTeams.length > 1 ? 's' : ''}).
+        </p>
+      )}
 
       <div className="flex items-center gap-3">
         <Button onClick={create} size="lg" disabled={!valid || busy}>
           {busy && <Spinner className="mr-2" />}
           {format === 'groups_knockout' || format === 'cup' ? 'Lancer le tirage' : 'Créer la compétition'}
         </Button>
-        {selectedTeams.length < minTeams && (
+        {selectedTeams.length < minTeams && format !== 'lpm' && (
           <span className="text-sm text-muted">
             Sélectionne au moins {minTeams} équipes
           </span>

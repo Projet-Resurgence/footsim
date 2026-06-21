@@ -74,6 +74,8 @@ export type MatchInput = {
   speed: Speed;
   rules: MatchRules;
   corruption?: CorruptionDeal;
+  /** For two-legged ties: leg 1 score so ET is only triggered on aggregate draw */
+  leg1Score?: { home: number; away: number };
   /** coaches are taken from team.coach — passed explicitly here for worker use */
 };
 
@@ -111,4 +113,6 @@ export type MatchState = {
   coachEjected?: { home: boolean; away: boolean };
   /** Players injured during this match: side → playerId[] */
   matchInjuries?: { home: string[]; away: string[] };
+  /** For two-legged ties: leg 1 score so ET fires on aggregate draw, not match draw */
+  leg1Score?: { home: number; away: number };
 };

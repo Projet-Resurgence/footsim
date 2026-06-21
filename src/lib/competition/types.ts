@@ -2,7 +2,7 @@ import type { MatchRules } from '@/lib/sim/types';
 import type { PressItem } from './press';
 import type { Injury, Suspension } from './injuries';
 
-export type CompetitionFormat = 'league' | 'cup' | 'groups_knockout';
+export type CompetitionFormat = 'league' | 'cup' | 'groups_knockout' | 'lpm';
 export type CompetitionStatus = 'setup' | 'ongoing' | 'completed';
 export type CompMatchStatus = 'pending' | 'completed';
 
@@ -101,6 +101,8 @@ export type Competition = {
   injuries?: Injury[];
   /** Active suspensions across all teams */
   suspensions?: Suspension[];
+  /** LPM: host nation team ID — auto-qualified regardless of finish position */
+  hostTeamId?: string;
 };
 
 export type CompetitionSummary = {
@@ -123,10 +125,12 @@ export const FORMAT_LABEL: Record<CompetitionFormat, string> = {
   league: 'Championnat (Ligue)',
   cup: 'Coupe (Élimination directe)',
   groups_knockout: 'Groupes + Phase finale',
+  lpm: 'Ligue Préliminaire Mondiale (LPM)',
 };
 
 export const FORMAT_DESCRIPTION: Record<CompetitionFormat, string> = {
   league: 'Toutes les équipes se rencontrent. Classement par points.',
   cup: 'Tirage au sort, élimination directe à chaque tour.',
   groups_knockout: 'Phase de groupes puis tableau final à élimination directe.',
+  lpm: '48 équipes · 11 journées · top 24 qualifiés directement · places 25–40 en barrages A/R.',
 };

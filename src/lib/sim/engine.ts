@@ -299,7 +299,10 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   }
 
   if (state.status === 'secondHalf' && state.minute > 90 + state.awayAddedTime) {
-    const tied = state.score.home === state.score.away;
+    // For two-legged ties, ET/penalties fire on aggregate draw, not per-match draw
+    const tied = state.leg1Score
+      ? (state.score.home + state.leg1Score.away) === (state.score.away + state.leg1Score.home)
+      : state.score.home === state.score.away;
     if (tied && state.rules.extraTime) {
       state.status = 'extraTimeFirst';
       state.minute = 90;

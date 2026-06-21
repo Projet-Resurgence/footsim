@@ -265,6 +265,123 @@ export function generateGroupsKnockoutFromGroups(
   return { matches: [...allGroupMatches, ...knockoutMatches], groups };
 }
 
+/**
+ * LPM — Ligue Préliminaire Mondiale
+ * Phase 1: 11 journées aléatoires (48 équipes, 24 matchs/journée, chaque équipe joue 1 fois/journée)
+ * Phase 2 (barrages): 8 duels A/R entre places 25–40, générés avec slots TBD
+ *   - leg 1 : round 12, leg 2 : round 13
+ *   - séeding: 25v40, 26v39 … 32v33
+ */
+export function generateLPMMatches(teamIds: string[]): CompMatch[] {
+  if (teamIds.length !== 48) throw new Error('LPM requiert exactement 48 équipes.');
+  const matches: CompMatch[] = [];
+
+  for (let round = 1; round <= 11; round++) {
+    // Fresh shuffle each round — each team plays exactly once per round
+    const shuffled = shuffle([...teamIds]);
+    for (let i = 0; i < 48; i += 2) {
+      matches.push({
+        id: makeId(),
+        homeTeamId: shuffled[i],
+        awayTeamId: shuffled[i + 1],
+        round,
+        phase: 'league',
+        leg: 1,
+        status: 'pending',
+      });
+    }
+  }
+
+  // Barrages: 8 duels aller (round 12) + retour (round 13), équipes TBD
+  for (let i = 0; i < 8; i++) {
+    const leg1Id = makeId();
+    const leg2Id = makeId();
+    matches.push({
+      id: leg1Id,
+      homeTeamId: null,
+      awayTeamId: null,
+      round: 12,
+      phase: 'lpm_playoff',
+      leg: 1,
+      status: 'pending',
+    });
+    matches.push({
+      id: leg2Id,
+      homeTeamId: null,
+      awayTeamId: null,
+      // leg 2: home/away inversés (équipe 25-32 reçoit au retour)
+      homeFromMatch: leg1Id,
+      awayFromMatch: leg1Id,
+      round: 13,
+      phase: 'lpm_playoff',
+      leg: 2,
+      status: 'pending',
+    });
+  }
+
+  return matches;
+}
+
+/**
+ * Après J11: seed les barrages LPM avec les équipes classées 25–40.
+ * Si hostTeamId est défini et l'hôte finit dans le top 24 → le 25ème prend sa place (direct qual).
+ * Si l'hôte finit 25-40 → il est qualifié directement, le 41ème entre en barrage à sa place.
+ * Si l'hôte finit 41-48 → qualifié directement, pas d'impact sur les barrages.
+ * Retourne aussi la liste des équipes directement qualifiées (top 24 + hôte éventuel).
+ */
+export function seedLPMPlayoffs(
+  matches: CompMatch[],
+  sortedStandings: Standing[],
+  hostTeamId?: string,
+): CompMatch[] {
+  const hostRank = hostTeamId
+    ? sortedStandings.findIndex((s) => s.teamId === hostTeamId)
+    : -1; // 0-indexed rank
+
+  // Build the playoff zone (16 teams, indices 24–39), adjusting for host
+  let playoffZone = sortedStandings.slice(24, 40).map((s) => s.teamId);
+
+  if (hostTeamId && hostRank >= 0) {
+    if (hostRank < 24) {
+      // Host in top 24 → already directly qualified, 25th (index 24) stays, no change needed
+      // But the 25th slot is freed: direct qualification, so playoffZone unchanged (25-40)
+      // Actually no change: the host is already top 24, zone is still indices 24-39
+    } else if (hostRank >= 24 && hostRank <= 39) {
+      // Host in playoff zone → remove host, add 41st (index 40) at host's position
+      const hostPosInZone = hostRank - 24;
+      playoffZone = [
+        ...playoffZone.slice(0, hostPosInZone),
+        sortedStandings[40]?.teamId ?? '',
+        ...playoffZone.slice(hostPosInZone + 1),
+      ].filter(Boolean);
+    }
+    // hostRank >= 40: host in elimination zone → qualified directly, playoffZone unchanged
+  }
+
+  // zone[0]=25e…zone[15]=40e (adjusted); confrontation i vs (15-i)
+  const zone = playoffZone;
+  const pairs: [string, string][] = Array.from({ length: 8 }, (_, i) => [zone[i], zone[15 - i]]);
+
+  const leg1Matches = matches.filter((m) => m.phase === 'lpm_playoff' && m.leg === 1)
+    .sort((a, b) => a.round - b.round);
+
+  return matches.map((m) => {
+    if (m.phase !== 'lpm_playoff') return m;
+
+    const idx = leg1Matches.findIndex((x) => x.id === m.id || x.id === m.homeFromMatch);
+    if (idx === -1) return m;
+    const [higher, lower] = pairs[idx]; // higher = 25-32 range (home at leg2), lower = 40-33 range
+
+    if (m.leg === 1) {
+      // leg 1: lower (40e…33e) reçoit à domicile
+      return { ...m, homeTeamId: lower, awayTeamId: higher };
+    } else {
+      // leg 2: higher (25e…32e) reçoit à domicile
+      return { ...m, homeTeamId: higher, awayTeamId: lower, homeFromMatch: undefined, awayFromMatch: undefined };
+    }
+  });
+}
+
 export function buildInitialStandings(teamIds: string[]): Record<string, Standing> {
   const s: Record<string, Standing> = {};
   for (const id of teamIds) {

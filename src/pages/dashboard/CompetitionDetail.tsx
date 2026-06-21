@@ -14,7 +14,7 @@ import { useTeams } from '@/stores/teams';
 import { useCredentials } from '@/stores/credentials';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { useSession } from '@/stores/session';
-import { needsKnockoutDraw, getQualifiersByRank, seedKnockoutWithOrder } from '@/lib/competition/scheduler';
+import { needsKnockoutDraw, getQualifiersByRank, seedKnockoutWithOrder, sortStandings, seedLPMPlayoffs } from '@/lib/competition/scheduler';
 import { buildKnockoutPots, conductKnockoutDraw } from '@/lib/competition/draw';
 import type { DrawResult } from '@/lib/competition/draw';
 import type { Competition, CompMatch, PlayerCompStats } from '@/lib/competition/types';
@@ -113,6 +113,7 @@ export default function CompetitionDetail() {
 
   const isGroupsKO = current.format === 'groups_knockout';
   const isLeague = current.format === 'league';
+  const isLPM = current.format === 'lpm';
 
   const allStandings = Object.values(current.standings);
 
@@ -173,6 +174,31 @@ export default function CompetitionDetail() {
     && current.groups
     && needsKnockoutDraw(current.matches)
     && !knockoutDraw;
+
+  // LPM: barrages à seeder quand les 11 journées sont terminées et les slots sont encore TBD
+  const lpmLeagueMatches = isLPM ? current.matches.filter((m) => m.phase === 'league') : [];
+  const lpmPlayoffMatches = isLPM ? current.matches.filter((m) => m.phase === 'lpm_playoff') : [];
+  const showLPMPlayoffSeed = isAdmin && isLPM
+    && lpmLeagueMatches.length > 0
+    && lpmLeagueMatches.every((m) => m.status === 'completed')
+    && lpmPlayoffMatches.some((m) => m.homeTeamId === null && !m.homeFromMatch);
+
+  async function seedLPMBarrages() {
+    if (!current || !pat) return;
+    const standings = sortStandings(Object.values(current.standings));
+    const updatedMatches = seedLPMPlayoffs(current.matches, standings, current.hostTeamId);
+    const updated: Competition = { ...current, matches: updatedMatches };
+    setCurrent(updated);
+    setSyncing(true);
+    try {
+      await save(updated, pat);
+      toast('success', 'Barrages LPM générés et sauvegardés.');
+    } catch {
+      toast('error', 'Barrages générés mais sauvegarde GitHub échouée — synchronise manuellement.');
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   function startKnockoutDraw() {
     if (!current || !current.groups || !current.config.qualifyPerGroup) return;
@@ -269,7 +295,10 @@ export default function CompetitionDetail() {
           <Link to={backTo} className="text-sm text-muted hover:text-text">{backLabel}</Link>
           <h1 className="mt-2 font-display text-4xl">{current.name}</h1>
           <p className="text-muted text-sm mt-1">
-            {current.format === 'league' ? 'Championnat' : current.format === 'cup' ? 'Coupe' : 'Groupes + Phase finale'}
+            {current.format === 'league' ? 'Championnat'
+              : current.format === 'cup' ? 'Coupe'
+              : current.format === 'lpm' ? 'LPM'
+              : 'Groupes + Phase finale'}
             {' · '}
             {current.teamIds.length} équipes
           </p>
@@ -297,7 +326,7 @@ export default function CompetitionDetail() {
                 ▶ Journée {currentRound}
               </Button>
             )}
-            {current.status !== 'completed' && isLeague && current.matches.some((m) => m.status === 'pending') && (
+            {current.status !== 'completed' && (isLeague || isLPM) && current.matches.some((m) => m.status === 'pending' && m.phase === 'league') && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -367,6 +396,18 @@ export default function CompetitionDetail() {
         </div>
       )}
 
+      {showLPMPlayoffSeed && (
+        <div className="rounded-lg border border-warning/40 bg-warning/5 p-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="font-medium">11 journées terminées — Barrages de la Peur</div>
+            <div className="text-sm text-muted">Places 25–40 : génère les 8 confrontations aller-retour pour les derniers tickets.</div>
+          </div>
+          <Button size="sm" onClick={seedLPMBarrages} disabled={syncing}>
+            {syncing ? <Spinner className="h-4 w-4" /> : '⚔ Lancer les barrages'}
+          </Button>
+        </div>
+      )}
+
       <div className="flex gap-1 border-b border-border overflow-x-auto">
         {(['overview', 'bracket', 'rounds', 'stats', 'presse', 'medical'] as const).map((tab) => (
           <button
@@ -409,6 +450,9 @@ export default function CompetitionDetail() {
               {isLeague && (
                 <StandingsTable standings={allStandings} teams={teamMap} />
               )}
+              {isLPM && (
+                <LPMStandingsView standings={allStandings} teams={teamMap} hostTeamId={current.hostTeamId} />
+              )}
               {isGroupsKO && current.groups && (
                 <div className="grid gap-6 md:grid-cols-2">
                   {current.groups.map((group) => {
@@ -425,7 +469,7 @@ export default function CompetitionDetail() {
                   })}
                 </div>
               )}
-              {!isLeague && !isGroupsKO && (
+              {!isLeague && !isGroupsKO && !isLPM && (
                 <p className="text-muted text-sm">Format coupe — pas de classement général.</p>
               )}
             </div>
@@ -435,6 +479,16 @@ export default function CompetitionDetail() {
             <div className="space-y-4">
               {isLeague ? (
                 <p className="text-muted text-sm">Format ligue — utilise l'onglet Journées.</p>
+              ) : isLPM ? (
+                lpmPlayoffMatches.length > 0 && lpmPlayoffMatches.some((m) => m.homeTeamId) ? (
+                  <BracketView
+                    matches={lpmPlayoffMatches}
+                    teams={teamMap}
+                    onSimulate={isAdmin ? openMatchModal : undefined}
+                  />
+                ) : (
+                  <p className="text-muted text-sm">Les barrages seront disponibles après les 11 journées.</p>
+                )
               ) : (
                 <BracketView
                   matches={current.matches.filter((m) => m.phase !== 'group')}
@@ -518,8 +572,10 @@ function RoundsView({
         const hasPending = roundMatches.some(
           (m) => m.status === 'pending' && m.homeTeamId && m.awayTeamId,
         );
-        const label = competition.format === 'league'
+        const label = competition.format === 'league' || (competition.format === 'lpm' && roundMatches[0]?.phase === 'league')
           ? `Journée ${round}`
+          : competition.format === 'lpm' && roundMatches[0]?.phase === 'lpm_playoff'
+          ? (roundMatches[0]?.leg === 1 ? 'Barrages — Match aller' : 'Barrages — Match retour')
           : roundMatches[0]?.phase === 'group'
           ? `Phase de groupes — J${round}`
           : `Tour ${round} — ${roundMatches[0]?.phase ?? ''}`;
@@ -835,6 +891,123 @@ function MedicalTab({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function LPMStandingsView({
+  standings,
+  teams,
+  hostTeamId,
+}: {
+  standings: import('@/lib/competition/types').Standing[];
+  teams: Record<string, Team>;
+  hostTeamId?: string;
+}) {
+  const sorted = [...standings].sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    const gdA = a.goalsFor - a.goalsAgainst;
+    const gdB = b.goalsFor - b.goalsAgainst;
+    if (gdB !== gdA) return gdB - gdA;
+    return b.goalsFor - a.goalsFor;
+  });
+
+  const hostRank = hostTeamId ? sorted.findIndex((s) => s.teamId === hostTeamId) : -1;
+
+  // Compute zone override note for the row that "inherits" host's place
+  // If host is top 24 → 25th gets a note "Qualifié (place hôte)"
+  // If host is 25-40 → 41st gets "Barrage (place hôte)"
+  const inheritNote: Record<string, string> = {};
+  if (hostTeamId && hostRank >= 0) {
+    if (hostRank < 24 && sorted[24]) inheritNote[sorted[24].teamId] = 'Place hôte → qualif. directe';
+    if (hostRank >= 24 && hostRank <= 39 && sorted[40]) inheritNote[sorted[40].teamId] = 'Place hôte → barrage';
+  }
+
+  const zones = [
+    { label: 'Zone Or — Qualifiés directement', from: 0, to: 23, borderCls: 'border-yellow-500/40', bgCls: 'bg-yellow-400/5' },
+    { label: 'Zone Rouge — Barrages de la Peur', from: 24, to: 39, borderCls: 'border-danger/40', bgCls: 'bg-danger/5' },
+    { label: 'Zone Noire — Éliminés', from: 40, to: 47, borderCls: 'border-border/30', bgCls: 'bg-surface/50' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {hostTeamId && hostRank >= 0 && (
+        <div className="rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 text-sm flex items-center gap-3">
+          {teams[hostTeamId]?.flag && <img src={teams[hostTeamId].flag} alt="" className="h-6 w-6 object-cover rounded-sm shrink-0" />}
+          <span>
+            <span className="font-medium">{teams[hostTeamId]?.name ?? hostTeamId}</span>
+            {' '}(pays hôte) — qualifié d'office · classé{' '}
+            <span className="font-medium">{hostRank + 1}ème</span>
+            {hostRank < 24 && ' · sa place Zone Or est réattribuée au 25ème'}
+            {hostRank >= 24 && hostRank <= 39 && ' · sa place Zone Rouge est réattribuée au 41ème'}
+          </span>
+        </div>
+      )}
+      {zones.map((zone) => {
+        const zoneTeams = sorted.slice(zone.from, zone.to + 1);
+        if (zoneTeams.length === 0) return null;
+        return (
+          <div key={zone.label} className={`rounded-lg border overflow-hidden ${zone.borderCls} ${zone.bgCls}`}>
+            <div className={`px-4 py-2 text-xs font-medium uppercase tracking-widest border-b ${zone.borderCls} ${zone.bgCls}`}>
+              {zone.label}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-muted border-b border-border/50">
+                    <th className="px-3 py-2 text-left w-8">#</th>
+                    <th className="px-3 py-2 text-left">Équipe</th>
+                    <th className="px-2 py-2 text-center">J</th>
+                    <th className="px-2 py-2 text-center">G</th>
+                    <th className="px-2 py-2 text-center">N</th>
+                    <th className="px-2 py-2 text-center">P</th>
+                    <th className="px-2 py-2 text-center">BP</th>
+                    <th className="px-2 py-2 text-center">BC</th>
+                    <th className="px-2 py-2 text-center">Diff</th>
+                    <th className="px-3 py-2 text-center font-bold">Pts</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30">
+                  {zoneTeams.map((s, i) => {
+                    const rank = zone.from + i + 1;
+                    const team = teams[s.teamId];
+                    const diff = s.goalsFor - s.goalsAgainst;
+                    const isHost = s.teamId === hostTeamId;
+                    const note = inheritNote[s.teamId];
+                    return (
+                      <tr key={s.teamId} className={`hover:bg-border/10 transition-colors ${isHost ? 'bg-accent/5' : ''}`}>
+                        <td className="px-3 py-2 tabular-nums text-muted text-xs">{rank}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {team?.flag && <img src={team.flag} alt="" className="h-5 w-5 object-cover rounded-sm shrink-0" />}
+                            <span className="truncate max-w-[120px]">{team?.name ?? s.teamId}</span>
+                            {isHost && (
+                              <span className="rounded border border-accent/40 bg-accent/10 px-1 py-0.5 text-[9px] font-medium text-accent shrink-0">Hôte</span>
+                            )}
+                            {note && (
+                              <span className="rounded border border-warning/40 bg-warning/10 px-1 py-0.5 text-[9px] font-medium text-warning shrink-0">{note}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-2 py-2 text-center tabular-nums text-muted">{s.played}</td>
+                        <td className="px-2 py-2 text-center tabular-nums">{s.won}</td>
+                        <td className="px-2 py-2 text-center tabular-nums">{s.drawn}</td>
+                        <td className="px-2 py-2 text-center tabular-nums">{s.lost}</td>
+                        <td className="px-2 py-2 text-center tabular-nums">{s.goalsFor}</td>
+                        <td className="px-2 py-2 text-center tabular-nums">{s.goalsAgainst}</td>
+                        <td className={`px-2 py-2 text-center tabular-nums font-medium ${diff > 0 ? 'text-green-500' : diff < 0 ? 'text-danger' : 'text-muted'}`}>
+                          {diff > 0 ? `+${diff}` : diff}
+                        </td>
+                        <td className="px-3 py-2 text-center tabular-nums font-bold">{s.points}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
