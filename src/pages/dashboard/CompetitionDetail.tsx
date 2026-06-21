@@ -46,7 +46,8 @@ export default function CompetitionDetail() {
   const readToken = pat ?? env.githubReadToken ?? null;
 
   useEffect(() => {
-    if (!readToken || !id) return;
+    if (!id) { setLoading(false); return; }
+    if (!readToken) { setLoading(false); return; }
 
     const teamLoad = teams.length === 0 ? refreshTeams(ownerId, effectivePat) : Promise.resolve();
 
@@ -62,6 +63,15 @@ export default function CompetitionDetail() {
 
   if (loading) {
     return <div className="flex justify-center py-20"><Spinner className="h-6 w-6" /></div>;
+  }
+
+  if (!readToken) {
+    return (
+      <div className="space-y-4">
+        <Link to="/dashboard/competitions" className="text-sm text-muted hover:text-text">← Compétitions</Link>
+        <p className="text-muted">Un token GitHub est requis pour voir les compétitions. Configure-le dans Réglages.</p>
+      </div>
+    );
   }
 
   if (!current) {
@@ -216,7 +226,7 @@ export default function CompetitionDetail() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link to="/dashboard/competitions" className="text-sm text-muted hover:text-text">← Compétitions</Link>
@@ -388,6 +398,7 @@ export default function CompetitionDetail() {
     </div>
   );
 }
+
 
 function RoundsView({
   competition,
