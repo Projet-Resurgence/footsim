@@ -43,7 +43,14 @@ export async function readJson<T>(
   );
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GitHub read ${path}: ${res.status}`);
-  const json = (await res.json()) as { content: string; sha: string; encoding: string };
+  const json = (await res.json()) as { content: string; sha: string; encoding: string; download_url?: string };
+  if (json.encoding === 'none' && json.download_url) {
+    // File too large for inline base64 — fetch raw content via download_url
+    const raw = await fetch(json.download_url, { headers: authHeaders(token) });
+    if (!raw.ok) throw new Error(`GitHub read ${path} (raw): ${raw.status}`);
+    const text = await raw.text();
+    return { data: JSON.parse(text) as T, sha: json.sha };
+  }
   if (json.encoding !== 'base64') throw new Error(`Unexpected encoding ${json.encoding}`);
   const text = base64ToUtf8(json.content);
   return { data: JSON.parse(text) as T, sha: json.sha };
