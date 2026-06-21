@@ -538,7 +538,7 @@ async function applyNewStrength(strength: number) {
           </div>
           <div className="flex items-center gap-2 pt-1">
             <Button size="sm" variant="ghost" onClick={() => namesImportRef.current?.click()}>
-              ↓ Importer noms (JSON)
+              ↑ Importer noms (JSON)
             </Button>
             <input ref={namesImportRef} type="file" accept=".json" className="hidden" onChange={importNames} />
           </div>
@@ -552,10 +552,10 @@ async function applyNewStrength(strength: number) {
             <h2 className="font-display text-xl">Tactique</h2>
             <div className="flex gap-2">
               <Button size="sm" variant="ghost" onClick={exportTactics}>
-                ↓ Exporter JSON
+                ↑ Exporter JSON
               </Button>
               <Button size="sm" variant="ghost" onClick={() => tacticsImportRef.current?.click()}>
-                ↑ Importer JSON
+                ↓ Importer JSON
               </Button>
               <input ref={tacticsImportRef} type="file" accept=".json" className="hidden" onChange={importTactics} />
               {team.tactics && (
