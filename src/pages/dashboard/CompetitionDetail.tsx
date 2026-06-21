@@ -128,6 +128,30 @@ export default function CompetitionDetail() {
     }
   }
 
+  async function handlePatchSnapshot() {
+    if (!pat || !current) return;
+    const snapshot: Record<string, { name: string; flag: string }> = {};
+    for (const id of current.teamIds) {
+      const t = teams.find((x) => x.id === id);
+      if (t) snapshot[id] = { name: t.name, flag: t.flag };
+    }
+    if (Object.keys(snapshot).length === 0) {
+      toast('error', 'Aucune équipe chargée — impossible de réparer.');
+      return;
+    }
+    const updated = { ...current, teamSnapshot: snapshot };
+    setCurrent(updated);
+    setSyncing(true);
+    try {
+      await save(updated, pat);
+      toast('success', 'Noms et drapeaux mis à jour.');
+    } catch (err) {
+      toast('error', String(err));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function handleDelete() {
     if (!pat || !current) return;
     if (!confirm(`Supprimer « ${current.name} » ? Cette action est irréversible.`)) return;
@@ -238,7 +262,12 @@ export default function CompetitionDetail() {
           </p>
         </div>
         {isAdmin && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap justify-end">
+            {!current.teamSnapshot && (
+              <Button size="sm" variant="ghost" onClick={handlePatchSnapshot} disabled={syncing}>
+                🔧 Réparer noms
+              </Button>
+            )}
             {dirty && (
               <Button size="sm" variant="ghost" onClick={handleSync} disabled={syncing}>
                 {syncing ? <Spinner className="h-4 w-4" /> : '↑ Sauvegarder'}
