@@ -224,6 +224,8 @@ export type TeamTactics = {
   style: TacticStyle;
   formation: Formation;
   lineup: string[];
+  /** display label when formation was set via free editor (e.g. "5-2-3") */
+  formationLabel?: string;
 };
 
 export type TeamKind = 'national' | 'club';

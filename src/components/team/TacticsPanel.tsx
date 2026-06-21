@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { pickXI } from '@/lib/sim/lineup';
+import { FormationEditor } from './FormationEditor';
+import type { FormationEditorResult } from './FormationEditor';
 
 const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1', '4-5-1', '4-4-1-1', '3-4-1-2', '5-4-1', '3-6-1'];
 const TACTIC_STYLES: TacticStyle[] = ['possession', 'contre-attaque', 'direct', 'pressing', 'ultra-defensif', 'gegenpressing', 'tiki-taka', 'long-ball', 'chaos'];
@@ -105,16 +107,26 @@ type Props = {
 
 export function TacticsPanel({ team, players, onSave }: Props) {
   const [formation, setFormation] = useState<Formation>(team.tactics?.formation ?? team.formation);
+  const [formationLabel, setFormationLabel] = useState<string | undefined>(team.tactics?.formationLabel);
   const [style, setStyle] = useState<TacticStyle>(team.tactics?.style ?? 'possession');
   const [lineup, setLineup] = useState<(string | null)[]>(
     team.tactics?.lineup?.length === 11 ? [...team.tactics.lineup] : Array(11).fill(null),
   );
   const [pickingSlot, setPickingSlot] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [freeEditor, setFreeEditor] = useState(false);
 
   function changeFormation(f: Formation) {
     setFormation(f);
+    setFormationLabel(undefined);
     setLineup(Array(11).fill(null));
+  }
+
+  function applyFreeEditor(result: FormationEditorResult) {
+    setFormation(result.closestPredefined);
+    setFormationLabel(result.formation !== result.closestPredefined ? result.formation : undefined);
+    setLineup(result.lineup);
+    setFreeEditor(false);
   }
 
   function fillBestXI() {
@@ -143,7 +155,7 @@ export function TacticsPanel({ team, players, onSave }: Props) {
     if (filled.length < 11) return;
     setSaving(true);
     try {
-      await onSave({ style, formation, lineup: filled });
+      await onSave({ style, formation, lineup: filled, formationLabel });
     } finally {
       setSaving(false);
     }
@@ -164,14 +176,38 @@ export function TacticsPanel({ team, players, onSave }: Props) {
     })
     .slice(0, 12);
 
+  if (freeEditor) {
+    return (
+      <FormationEditor
+        players={players}
+        initialLineup={lineup.filter(Boolean) as string[]}
+        onSave={applyFreeEditor}
+        onCancel={() => setFreeEditor(false)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Formation selector */}
       <div>
-        <span className="mb-2 block text-sm text-muted">Formation</span>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-muted">Formation</span>
+          <button
+            onClick={() => setFreeEditor(true)}
+            className="text-xs text-accent hover:underline"
+          >
+            ✏️ Éditeur libre
+          </button>
+        </div>
+        {formationLabel && (
+          <div className="mb-2 text-xs text-accent">
+            Formation personnalisée : <strong>{formationLabel}</strong> (moteur : {formation})
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           {FORMATIONS.map((f) => (
-            <Button key={f} size="sm" variant={formation === f ? 'primary' : 'ghost'} onClick={() => changeFormation(f)}>
+            <Button key={f} size="sm" variant={formation === f && !formationLabel ? 'primary' : 'ghost'} onClick={() => changeFormation(f)}>
               {f}
             </Button>
           ))}

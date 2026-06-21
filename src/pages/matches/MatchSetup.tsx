@@ -249,7 +249,7 @@ function SidePicker({
       ) : null}
       {savedTactics && (
         <div className="rounded border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-accent">
-          ✓ Compo sauvegardée · {TACTIC_STYLE_LABEL[savedTactics.style]}
+          ✓ Compo sauvegardée · {savedTactics.formationLabel ?? savedTactics.formation} · {TACTIC_STYLE_LABEL[savedTactics.style]}
         </div>
       )}
       {team?.coach && (
