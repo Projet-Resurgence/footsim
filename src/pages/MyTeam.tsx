@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getThemeOverride, setThemeOverride, modeForHour, applyTheme } from '@/lib/theme';
 import type { ThemeMode } from '@/lib/theme';
-import { Spinner } from '@/components/ui/Spinner';
+import { SkeletonCard, SkeletonRow } from '@/components/ui/Skeleton';
 import { toast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { TacticsPanel } from '@/components/team/TacticsPanel';
@@ -66,33 +66,55 @@ export default function MyTeam() {
 
   useEffect(() => {
     if (!session) return;
+    const cacheKey = `footsim.myteam.slug.${session.id}`;
+
+    async function resolveSlug(): Promise<string | null> {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) return cached;
+      const teams = await ghPublic.listTeams(session!.id);
+      const mine = teams.find((t) => t.managerDiscordId === session!.id);
+      if (!mine) return null;
+      localStorage.setItem(cacheKey, mine.slug);
+      return mine.slug;
+    }
+
+    async function applyFull(full: { team: Team; players: Player[] }) {
+      const local = loadLocalSavedTactics(full.team.id);
+      const merged = local.savedTactics.length > 0
+        ? local.savedTactics
+        : (full.team.savedTactics ?? []);
+      if (merged.length === 0) {
+        const leg = loadLocalTactics(full.team.id) ?? full.team.tactics;
+        if (leg) {
+          const seeded: SavedTactic = { ...leg, id: crypto.randomUUID(), name: 'Tactique de base' };
+          setSavedTactics([seeded]);
+          setActiveTacticId(seeded.id);
+          saveLocalSavedTactics(full.team.id, [seeded], seeded.id);
+        }
+      } else {
+        setSavedTactics(merged);
+        setActiveTacticId(local.activeTacticId ?? full.team.activeTacticId);
+      }
+      setData({ team: full.team, players: full.players });
+    }
+
     async function load() {
       try {
-        const teams = await ghPublic.listTeams(session!.id);
-        const mine = teams.find((t) => t.managerDiscordId === session!.id);
-        if (!mine) { setData(null); return; }
-        const full = await ghPublic.loadTeam(mine.slug, session!.id);
-        if (!full) { toast('error', 'Équipe introuvable.'); return; }
+        const slug = await resolveSlug();
+        if (!slug) { setData(null); return; }
 
-        // merge local saved tactics with GitHub data
-        const local = loadLocalSavedTactics(full.team.id);
-        const merged = local.savedTactics.length > 0
-          ? local.savedTactics
-          : (full.team.savedTactics ?? []);
-        // compat: if no savedTactics but legacy tactics exist, seed from it
-        if (merged.length === 0) {
-          const leg = loadLocalTactics(full.team.id) ?? full.team.tactics;
-          if (leg) {
-            const seeded: SavedTactic = { ...leg, id: crypto.randomUUID(), name: 'Tactique de base' };
-            setSavedTactics([seeded]);
-            setActiveTacticId(seeded.id);
-            saveLocalSavedTactics(full.team.id, [seeded], seeded.id);
-          }
-        } else {
-          setSavedTactics(merged);
-          setActiveTacticId(local.activeTacticId ?? full.team.activeTacticId);
+        let full = await ghPublic.loadTeam(slug, session!.id);
+        if (!full) {
+          // slug stale — bust cache, refetch list
+          localStorage.removeItem(cacheKey);
+          const teams = await ghPublic.listTeams(session!.id);
+          const mine = teams.find((t) => t.managerDiscordId === session!.id);
+          if (!mine) { setData(null); return; }
+          localStorage.setItem(cacheKey, mine.slug);
+          full = await ghPublic.loadTeam(mine.slug, session!.id);
         }
-        setData({ team: full.team, players: full.players });
+        if (!full) { toast('error', 'Équipe introuvable.'); return; }
+        await applyFull(full);
       } catch (err) {
         toast('error', String(err));
       } finally {
@@ -270,9 +292,11 @@ export default function MyTeam() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3">
-        <Spinner className="h-6 w-6" />
-        <p className="text-muted text-sm">Chargement…</p>
+      <main className="flex min-h-screen flex-col items-center justify-center px-6">
+        <div className="w-full max-w-2xl space-y-4">
+          <SkeletonCard lines={2} />
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
+        </div>
       </main>
     );
   }
@@ -487,7 +511,9 @@ export default function MyTeam() {
       {tab === 'competitions' && (
         <div className="space-y-4">
           {loadingComps ? (
-            <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} lines={3} />)}
+            </div>
           ) : summaries.length === 0 ? (
             <div className="rounded-lg border border-border bg-surface p-12 text-center text-muted">
               Aucune compétition disponible.
@@ -526,7 +552,9 @@ export default function MyTeam() {
       {tab === 'top' && (
         <div className="space-y-4">
           {loadingTop ? (
-            <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+            <div className="space-y-1">
+              {Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
+            </div>
           ) : topPlayers.length === 0 ? (
             <div className="rounded-lg border border-border bg-surface p-12 text-center text-muted">
               Aucun joueur chargé.

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
-import { Spinner } from '@/components/ui/Spinner';
+import { SkeletonCard } from '@/components/ui/Skeleton';
 import { useCompetition } from '@/stores/competition';
 import { useCredentials } from '@/stores/credentials';
 import { useSession } from '@/stores/session';
@@ -41,7 +41,9 @@ export default function Competitions() {
         {!pat ? (
           <p className="text-muted text-sm">Les compétitions sont gérées par l'administrateur.</p>
         ) : loading ? (
-          <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} lines={3} />)}
+          </div>
         ) : summaries.length === 0 ? (
           <div className="rounded-lg border border-border bg-surface p-12 text-center text-muted">
             Aucune compétition en cours.
@@ -75,7 +77,9 @@ export default function Competitions() {
           <Link to="/dashboard/settings" className="text-accent underline">Réglages</Link>.
         </p>
       ) : loading ? (
-        <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} lines={3} />)}
+        </div>
       ) : summaries.length === 0 ? (
         <div className="rounded-lg border border-border bg-surface p-12 text-center text-muted">
           Aucune compétition.{' '}

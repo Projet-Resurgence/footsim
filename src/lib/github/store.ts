@@ -1,6 +1,6 @@
 import type { Player, Team } from '@/lib/types';
 import type { CompHistoryEntry } from '@/lib/competition/types';
-import { readJson, writeJson, listDir, deleteFile } from './api';
+import { readJson, writeJson, commitFiles, listDir, deleteFile } from './api';
 
 const TEAM_PATH = (slug: string) => `data/teams/${slug}/team.json`;
 const ROSTER_PATH = (slug: string) => `data/teams/${slug}/players.json`;
@@ -61,70 +61,50 @@ export async function deleteTeam(slug: string, token: string): Promise<void> {
   }
 }
 
-/** Remove a CompHistoryEntry from team.json by compId. No-op if entry not present. */
-export async function removeTeamCompHistory(
-  slug: string,
-  compId: string,
+/**
+ * Update compHistory for multiple teams in a single Git commit.
+ * mode 'append': adds entry if compId not already present.
+ * mode 'remove': removes entry matching compId.
+ */
+export async function batchUpdateTeamCompHistory(
+  slugs: string[],
   token: string,
+  opts: { mode: 'append'; entry: CompHistoryEntry } | { mode: 'remove'; compId: string },
 ): Promise<void> {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const existing = await readJson<Team>(TEAM_PATH(slug), token);
-    if (!existing) return;
-    const team = existing.data;
-    const prev = team.compHistory ?? [];
-    if (!prev.some((e) => e.compId === compId)) return;
-    const updated: Team = { ...team, compHistory: prev.filter((e) => e.compId !== compId) };
-    try {
-      await writeJson({
-        path: TEAM_PATH(slug),
-        token,
-        data: updated,
-        message: `chore(teams/${slug}): remove comp ${compId} from palmares`,
-        sha: existing.sha,
-      });
-      return;
-    } catch (err) {
-      if ((String(err).includes('409') || String(err).includes('422')) && attempt < 3) continue;
-      throw err;
-    }
-  }
-}
+  if (slugs.length === 0) return;
 
-/** Append a CompHistoryEntry to team.json (only if not already recorded for same compId). */
-export async function appendTeamCompHistory(
-  slug: string,
-  entry: CompHistoryEntry,
-  token: string,
-): Promise<void> {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const existing = await readJson<Team>(TEAM_PATH(slug), token);
-    if (!existing) return;
+  // Read all team.json in parallel
+  const reads = await Promise.all(slugs.map((slug) => readJson<Team>(TEAM_PATH(slug), token)));
+
+  const files: Array<{ path: string; content: Team }> = [];
+  for (let i = 0; i < slugs.length; i++) {
+    const existing = reads[i];
+    if (!existing) continue;
     const team = existing.data;
     const prev = team.compHistory ?? [];
-    if (prev.some((e) => e.compId === entry.compId)) return;
-    const updated: Team = { ...team, compHistory: [...prev, entry] };
-    try {
-      await writeJson({
-        path: TEAM_PATH(slug),
-        token,
-        data: updated,
-        message: `chore(teams/${slug}): add ${entry.compName} to palmares`,
-        sha: existing.sha,
-      });
-      return;
-    } catch (err) {
-      if ((String(err).includes('409') || String(err).includes('422')) && attempt < 3) continue;
-      throw err;
+
+    let next: CompHistoryEntry[];
+    if (opts.mode === 'append') {
+      if (prev.some((e) => e.compId === opts.entry.compId)) continue;
+      next = [...prev, opts.entry];
+    } else {
+      if (!prev.some((e) => e.compId === opts.compId)) continue;
+      next = prev.filter((e) => e.compId !== opts.compId);
     }
+    files.push({ path: TEAM_PATH(slugs[i]), content: { ...team, compHistory: next } });
   }
+
+  if (files.length === 0) return;
+
+  const msg = opts.mode === 'append'
+    ? `chore(teams): add ${opts.entry.compName} to palmares (${files.length} équipes)`
+    : `chore(teams): remove comp ${opts.compId} from palmares (${files.length} équipes)`;
+
+  await commitFiles(files, msg, token);
 }
 
 export async function listTeams(token: string | null): Promise<Team[]> {
   const slugs = await listDir('data/teams', token);
-  const out: Team[] = [];
-  for (const slug of slugs) {
-    const t = await readJson<Team>(TEAM_PATH(slug), token);
-    if (t) out.push(t.data);
-  }
-  return out;
+  const results = await Promise.all(slugs.map((slug) => readJson<Team>(TEAM_PATH(slug), token)));
+  return results.filter(Boolean).map((r) => r!.data);
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
+import { SkeletonCard, SkeletonRow } from '@/components/ui/Skeleton';
 import { toast } from '@/components/ui/Toast';
 import type { League, Division, LeagueClub, SeasonState } from '@/lib/types';
 import { useLeagues } from '@/stores/leagues';
@@ -163,7 +164,12 @@ export default function LeagueDetail() {
     }
   }
 
-  if (loading) return <div className="flex items-center gap-2 text-muted"><Spinner /> Chargement…</div>;
+  if (loading) return (
+    <div className="space-y-6">
+      <SkeletonCard lines={1} />
+      {Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}
+    </div>
+  );
   if (!league) return <div className="space-y-3"><p className="text-danger">Championnat introuvable.</p><Button variant="ghost" onClick={() => navigate(-1)}>Retour</Button></div>;
 
   const totalDays = league.season

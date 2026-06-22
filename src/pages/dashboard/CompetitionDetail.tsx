@@ -26,7 +26,8 @@ import { moraleLabel, MORALE_DEFAULT } from '@/lib/competition/morale';
 import type { PressItem, PressMention, PressMentionPlayer, PressMentionCoach } from '@/lib/competition/press';
 import { PRESS_CATEGORY_COLOR, PRESS_CATEGORY_LABEL } from '@/lib/competition/press';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
-import { appendTeamCompHistory, removeTeamCompHistory } from '@/lib/github/store';
+import { batchUpdateTeamCompHistory } from '@/lib/github/store';
+import { commitFiles, readJson as ghReadJson } from '@/lib/github/api';
 import type { Injury, Suspension } from '@/lib/competition/injuries';
 import { SEVERITY_COLOR, CAUSE_LABEL } from '@/lib/competition/injuries';
 
@@ -128,22 +129,30 @@ export default function CompetitionDetail() {
     try {
       await save(current, pat);
 
-      // When competition is completed, append compHistory to each participating team (sequential to avoid SHA conflicts)
+      // When competition is completed, append compHistory — one Git commit for all teams
       if (current.status === 'completed') {
-        const teamSlugs = teams
-          .filter((t) => current.teamIds.includes(t.id))
-          .map((t) => ({ id: t.id, slug: t.slug }));
-
-        for (const { id, slug } of teamSlugs) {
+        const participating = teams.filter((t) => current.teamIds.includes(t.id));
+        const reads = await Promise.all(
+          participating.map(async (t) => ({ t, existing: await ghReadJson<import('@/lib/types').Team>(`data/teams/${t.slug}/team.json`, pat) })),
+        );
+        const files: Array<{ path: string; content: unknown }> = [];
+        for (const { t, existing } of reads) {
+          if (!existing) continue;
+          const team = existing.data;
+          const prev = team.compHistory ?? [];
+          if (prev.some((e) => e.compId === current.id)) continue;
           const entry: CompHistoryEntry = {
             compId: current.id,
             compName: current.name,
             year: current.year,
             format: current.format,
-            result: deriveTeamResult(id, current),
-            phase: deriveTeamPhase(id, current),
+            result: deriveTeamResult(t.id, current),
+            phase: deriveTeamPhase(t.id, current),
           };
-          await appendTeamCompHistory(slug, entry, pat);
+          files.push({ path: `data/teams/${t.slug}/team.json`, content: { ...team, compHistory: [...prev, entry] } });
+        }
+        if (files.length > 0) {
+          await commitFiles(files, `chore(teams): add ${current.name} to palmares (${files.length} équipes)`, pat);
         }
       }
 
@@ -185,13 +194,9 @@ export default function CompetitionDetail() {
     setDeleting(true);
     try {
       await remove(current.id, pat);
-      // Strip compHistory entries from all participating teams (sequential to avoid SHA conflicts)
-      const teamSlugs = teams
-        .filter((t) => current.teamIds.includes(t.id))
-        .map((t) => t.slug);
-      for (const slug of teamSlugs) {
-        await removeTeamCompHistory(slug, current.id, pat);
-      }
+      // Strip compHistory entries from all participating teams (single commit)
+      const participating = teams.filter((t) => current.teamIds.includes(t.id));
+      await batchUpdateTeamCompHistory(participating.map((t) => t.slug), pat, { mode: 'remove', compId: current.id });
       navigate(backTo);
     } catch (err) {
       toast('error', String(err));

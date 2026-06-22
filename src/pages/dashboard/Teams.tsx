@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
+import { SkeletonTeamCard } from '@/components/ui/Skeleton';
 import { toast } from '@/components/ui/Toast';
 import { TeamCard } from '@/components/team/TeamCard';
 import { useTeams } from '@/stores/teams';
@@ -76,8 +77,8 @@ export default function Teams() {
           pour charger les équipes.
         </p>
       ) : loading ? (
-        <div className="flex items-center gap-2 text-muted">
-          <Spinner /> Chargement…
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonTeamCard key={i} />)}
         </div>
       ) : error ? (
         <p className="text-danger">{error}</p>

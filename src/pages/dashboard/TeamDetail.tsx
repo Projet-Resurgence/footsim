@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
+import { SkeletonCard, SkeletonRow } from '@/components/ui/Skeleton';
 import { toast } from '@/components/ui/Toast';
 import { RosterTable } from '@/components/team/RosterTable';
 import { StartingXI } from '@/components/team/StartingXI';
@@ -364,8 +365,11 @@ async function applyNewStrength(strength: number) {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-muted">
-        <Spinner /> Chargement…
+      <div className="space-y-6">
+        <SkeletonCard lines={1} />
+        <div className="space-y-2">
+          {Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
+        </div>
       </div>
     );
   }

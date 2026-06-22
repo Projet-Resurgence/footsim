@@ -117,6 +117,68 @@ export async function deleteFile(
   }
 }
 
+/**
+ * Commit multiple file changes in a single Git commit via the low-level Trees API.
+ * Each entry: { path, content } — content is the JSON-serializable data.
+ */
+export async function commitFiles(
+  files: Array<{ path: string; content: unknown }>,
+  message: string,
+  token: string,
+): Promise<void> {
+  const repo = env.dataRepo;
+  const branch = env.dataBranch;
+  const h = authHeaders(token);
+
+  // 1. Get branch HEAD SHA
+  const refRes = await fetch(`${API}/repos/${repo}/git/ref/heads/${branch}`, { headers: h });
+  if (!refRes.ok) throw new Error(`GitHub ref: ${refRes.status}`);
+  const { object: { sha: headSha } } = await refRes.json() as { object: { sha: string } };
+
+  // 2. Get base tree SHA
+  const commitRes = await fetch(`${API}/repos/${repo}/git/commits/${headSha}`, { headers: h });
+  if (!commitRes.ok) throw new Error(`GitHub commit: ${commitRes.status}`);
+  const { tree: { sha: baseSha } } = await commitRes.json() as { tree: { sha: string } };
+
+  // 3. Create blobs and build tree entries
+  const treeEntries = await Promise.all(files.map(async ({ path, content }) => {
+    const blobRes = await fetch(`${API}/repos/${repo}/git/blobs`, {
+      method: 'POST',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: utf8ToBase64(JSON.stringify(content, null, 2)), encoding: 'base64' }),
+    });
+    if (!blobRes.ok) throw new Error(`GitHub blob ${path}: ${blobRes.status}`);
+    const { sha } = await blobRes.json() as { sha: string };
+    return { path, mode: '100644' as const, type: 'blob' as const, sha };
+  }));
+
+  // 4. Create tree
+  const treeRes = await fetch(`${API}/repos/${repo}/git/trees`, {
+    method: 'POST',
+    headers: { ...h, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base_tree: baseSha, tree: treeEntries }),
+  });
+  if (!treeRes.ok) throw new Error(`GitHub tree: ${treeRes.status}`);
+  const { sha: treeSha } = await treeRes.json() as { sha: string };
+
+  // 5. Create commit
+  const newCommitRes = await fetch(`${API}/repos/${repo}/git/commits`, {
+    method: 'POST',
+    headers: { ...h, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, tree: treeSha, parents: [headSha] }),
+  });
+  if (!newCommitRes.ok) throw new Error(`GitHub commit create: ${newCommitRes.status}`);
+  const { sha: newSha } = await newCommitRes.json() as { sha: string };
+
+  // 6. Update branch ref
+  const updateRes = await fetch(`${API}/repos/${repo}/git/refs/heads/${branch}`, {
+    method: 'PATCH',
+    headers: { ...h, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sha: newSha }),
+  });
+  if (!updateRes.ok) throw new Error(`GitHub ref update: ${updateRes.status}`);
+}
+
 export async function listDir(path: string, token: string | null): Promise<string[]> {
   const res = await fetch(
     `${API}/repos/${env.dataRepo}/contents/${path}?ref=${env.dataBranch}`,

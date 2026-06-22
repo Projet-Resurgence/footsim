@@ -1,30 +1,45 @@
 import { createBrowserRouter } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import Home from '@/pages/Home';
 import Callback from '@/pages/auth/Callback';
 import NoAccess from '@/pages/NoAccess';
-import MyTeam from '@/pages/MyTeam';
-import Dashboard from '@/pages/dashboard/Dashboard';
-import Settings from '@/pages/dashboard/Settings';
-import Teams from '@/pages/dashboard/Teams';
-import TeamNew from '@/pages/dashboard/TeamNew';
-import TeamDetail from '@/pages/dashboard/TeamDetail';
-import Simulation from '@/pages/dashboard/Simulation';
-import Postes from '@/pages/dashboard/Postes';
-import NotesJoueurs from '@/pages/dashboard/NotesJoueurs';
-import MeilleursJoueurs from '@/pages/dashboard/MeilleursJoueurs';
-import Competitions from '@/pages/dashboard/Competitions';
-import CompetitionNew from '@/pages/dashboard/CompetitionNew';
-import CompetitionDetail from '@/pages/dashboard/CompetitionDetail';
-import LeagueNew from '@/pages/dashboard/LeagueNew';
-import LeagueDetail from '@/pages/dashboard/LeagueDetail';
-import ClubNew from '@/pages/dashboard/ClubNew';
-import MatchSetup from '@/pages/matches/MatchSetup';
-import MatchLive from '@/pages/matches/MatchLive';
-import CompetitionMatchLive from '@/pages/matches/CompetitionMatchLive';
-import MultiplexLive from '@/pages/matches/MultiplexLive';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { RequireAuth } from '@/components/auth/RequireAuth';
 import { RequireAdmin } from '@/components/auth/RequireAdmin';
+import { Spinner } from '@/components/ui/Spinner';
+
+const MyTeam = lazy(() => import('@/pages/MyTeam'));
+const Dashboard = lazy(() => import('@/pages/dashboard/Dashboard'));
+const Settings = lazy(() => import('@/pages/dashboard/Settings'));
+const Teams = lazy(() => import('@/pages/dashboard/Teams'));
+const TeamNew = lazy(() => import('@/pages/dashboard/TeamNew'));
+const TeamDetail = lazy(() => import('@/pages/dashboard/TeamDetail'));
+const Simulation = lazy(() => import('@/pages/dashboard/Simulation'));
+const Postes = lazy(() => import('@/pages/dashboard/Postes'));
+const NotesJoueurs = lazy(() => import('@/pages/dashboard/NotesJoueurs'));
+const MeilleursJoueurs = lazy(() => import('@/pages/dashboard/MeilleursJoueurs'));
+const Competitions = lazy(() => import('@/pages/dashboard/Competitions'));
+const CompetitionNew = lazy(() => import('@/pages/dashboard/CompetitionNew'));
+const CompetitionDetail = lazy(() => import('@/pages/dashboard/CompetitionDetail'));
+const LeagueNew = lazy(() => import('@/pages/dashboard/LeagueNew'));
+const LeagueDetail = lazy(() => import('@/pages/dashboard/LeagueDetail'));
+const ClubNew = lazy(() => import('@/pages/dashboard/ClubNew'));
+const MatchSetup = lazy(() => import('@/pages/matches/MatchSetup'));
+const MatchLive = lazy(() => import('@/pages/matches/MatchLive'));
+const CompetitionMatchLive = lazy(() => import('@/pages/matches/CompetitionMatchLive'));
+const MultiplexLive = lazy(() => import('@/pages/matches/MultiplexLive'));
+
+function PageFallback() {
+  return (
+    <div className="flex h-screen items-center justify-center">
+      <Spinner className="h-6 w-6" />
+    </div>
+  );
+}
+
+function S({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<PageFallback />}>{children}</Suspense>;
+}
 
 export const router = createBrowserRouter(
   [
@@ -39,28 +54,28 @@ export const router = createBrowserRouter(
         </RequireAdmin>
       ),
       children: [
-        { index: true, element: <Dashboard /> },
-        { path: 'teams', element: <Teams /> },
-        { path: 'teams/new', element: <TeamNew /> },
-        { path: 'teams/:slug', element: <TeamDetail /> },
-        { path: 'teams/:slug/leagues/new', element: <LeagueNew /> },
-        { path: 'leagues/:leagueId', element: <LeagueDetail /> },
-        { path: 'leagues/:leagueId/divisions/:divisionId/clubs/new', element: <ClubNew /> },
-        { path: 'settings', element: <Settings /> },
-        { path: 'simulation', element: <Simulation /> },
-        { path: 'competitions', element: <Competitions /> },
-        { path: 'competitions/new', element: <CompetitionNew /> },
-        { path: 'competitions/:id', element: <CompetitionDetail /> },
-        { path: 'postes', element: <Postes /> },
-        { path: 'notes-joueurs', element: <NotesJoueurs /> },
-        { path: 'meilleurs-joueurs', element: <MeilleursJoueurs /> },
+        { index: true, element: <S><Dashboard /></S> },
+        { path: 'teams', element: <S><Teams /></S> },
+        { path: 'teams/new', element: <S><TeamNew /></S> },
+        { path: 'teams/:slug', element: <S><TeamDetail /></S> },
+        { path: 'teams/:slug/leagues/new', element: <S><LeagueNew /></S> },
+        { path: 'leagues/:leagueId', element: <S><LeagueDetail /></S> },
+        { path: 'leagues/:leagueId/divisions/:divisionId/clubs/new', element: <S><ClubNew /></S> },
+        { path: 'settings', element: <S><Settings /></S> },
+        { path: 'simulation', element: <S><Simulation /></S> },
+        { path: 'competitions', element: <S><Competitions /></S> },
+        { path: 'competitions/new', element: <S><CompetitionNew /></S> },
+        { path: 'competitions/:id', element: <S><CompetitionDetail /></S> },
+        { path: 'postes', element: <S><Postes /></S> },
+        { path: 'notes-joueurs', element: <S><NotesJoueurs /></S> },
+        { path: 'meilleurs-joueurs', element: <S><MeilleursJoueurs /></S> },
       ],
     },
     {
       path: '/my-team',
       element: (
         <RequireAuth>
-          <MyTeam />
+          <S><MyTeam /></S>
         </RequireAuth>
       ),
     },
@@ -68,7 +83,7 @@ export const router = createBrowserRouter(
       path: '/competition-view/:id',
       element: (
         <RequireAuth>
-          <CompetitionDetail />
+          <S><CompetitionDetail /></S>
         </RequireAuth>
       ),
     },
@@ -76,7 +91,7 @@ export const router = createBrowserRouter(
       path: '/match',
       element: (
         <RequireAdmin>
-          <MatchSetup />
+          <S><MatchSetup /></S>
         </RequireAdmin>
       ),
     },
@@ -84,7 +99,7 @@ export const router = createBrowserRouter(
       path: '/match/:id',
       element: (
         <RequireAdmin>
-          <MatchLive />
+          <S><MatchLive /></S>
         </RequireAdmin>
       ),
     },
@@ -92,7 +107,7 @@ export const router = createBrowserRouter(
       path: '/competition/:competitionId/match/:matchId',
       element: (
         <RequireAdmin>
-          <CompetitionMatchLive />
+          <S><CompetitionMatchLive /></S>
         </RequireAdmin>
       ),
     },
@@ -100,7 +115,7 @@ export const router = createBrowserRouter(
       path: '/competition/:competitionId/round/:round',
       element: (
         <RequireAdmin>
-          <MultiplexLive />
+          <S><MultiplexLive /></S>
         </RequireAdmin>
       ),
     },
