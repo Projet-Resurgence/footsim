@@ -182,21 +182,29 @@ export function TacticsPanel({ team, players, onSave }: Props) {
   const layout = FORMATION_LAYOUT[formation];
   const filledCount = lineup.filter(Boolean).length;
   const filledSet = new Set(lineup.filter(Boolean) as string[]);
-  const BENCH_POS_ORDER: Record<string, number> = {
-    GK: 0, CB: 1, LB: 1, RB: 1, DM: 2, CM: 2, LM: 2, RM: 2, AM: 2, LW: 3, RW: 3, ST: 3,
-  };
-  // Auto bench: max 1 GK (best overall), rest sorted by position then overall
+  // Auto bench: proportional by position family (mirrors StartingXI logic)
   const nonStartersAll = players.filter((p) => !filledSet.has(p.id));
-  const bestGk = nonStartersAll.filter((p) => p.position === 'GK').sort((a, b) => b.overall - a.overall)[0];
-  const nonGkNonStarters = nonStartersAll.filter((p) => p.position !== 'GK');
-  const nonStartersForBench = [
-    ...(bestGk ? [bestGk] : []),
-    ...nonGkNonStarters.sort((a, b) => {
-      const po = (BENCH_POS_ORDER[a.position] ?? 4) - (BENCH_POS_ORDER[b.position] ?? 4);
-      return po !== 0 ? po : b.overall - a.overall;
-    }),
-  ];
-  const autoBench = nonStartersForBench;
+  const bestN = (arr: Player[], n: number) => [...arr].sort((a, b) => b.overall - a.overall).slice(0, n);
+  const starterList = players.filter((p) => filledSet.has(p.id));
+  const starterDef = starterList.filter((p) => ['CB', 'LB', 'RB'].includes(p.position)).length;
+  const starterMid = starterList.filter((p) => ['DM', 'CM', 'AM', 'LM', 'RM'].includes(p.position)).length;
+  const starterAtt = starterList.filter((p) => ['LW', 'RW', 'ST'].includes(p.position)).length;
+  const familyTotal = starterDef + starterMid + starterAtt || 10;
+  const outfieldSlots = 11; // 12 bench - 1 GK
+  const defSlots = Math.max(1, Math.round((starterDef / familyTotal) * outfieldSlots));
+  const attSlots = Math.max(1, Math.round((starterAtt / familyTotal) * outfieldSlots));
+  const midSlots = Math.max(1, outfieldSlots - defSlots - attSlots);
+  const gkPool = nonStartersAll.filter((p) => p.position === 'GK');
+  const defPool = nonStartersAll.filter((p) => ['CB', 'LB', 'RB'].includes(p.position));
+  const midPool = nonStartersAll.filter((p) => ['DM', 'CM', 'AM', 'LM', 'RM'].includes(p.position));
+  const attPool = nonStartersAll.filter((p) => ['LW', 'RW', 'ST'].includes(p.position));
+  const pickedGk = bestN(gkPool, 1);
+  const pickedDef = bestN(defPool, defSlots);
+  const pickedMid = bestN(midPool, midSlots);
+  const pickedAtt = bestN(attPool, attSlots);
+  const pickedSet = new Set([...pickedGk, ...pickedDef, ...pickedMid, ...pickedAtt].map((p) => p.id));
+  const remainder = nonStartersAll.filter((p) => !pickedSet.has(p.id)).sort((a, b) => b.overall - a.overall);
+  const autoBench = [...pickedGk, ...pickedDef, ...pickedMid, ...pickedAtt, ...remainder].slice(0, 12);
   const playerMap = new Map(players.map((p) => [p.id, p]));
   // Bench = custom order (filtered to non-starters) + remaining not in custom order, capped at 12
   const validBenchIds = benchOrder.filter((id) => !filledSet.has(id) && playerMap.has(id));
@@ -333,7 +341,7 @@ export function TacticsPanel({ team, players, onSave }: Props) {
             autoBench={autoBench}
             allPlayers={players}
             filledSet={filledSet}
-            benchOrder={benchOrder}
+
             onChange={setBenchOrder}
           />
         </div>
@@ -417,38 +425,18 @@ function BenchEditor({
   autoBench,
   allPlayers,
   filledSet,
-  benchOrder,
   onChange,
 }: {
   bench: Player[];
   autoBench: Player[];
   allPlayers: Player[];
   filledSet: Set<string>;
-  benchOrder: string[];
   onChange: (ids: string[]) => void;
 }) {
   const [addingPlayer, setAddingPlayer] = useState(false);
   const [swappingId, setSwappingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const benchSet = new Set(bench.map((p) => p.id));
-
-  function moveUp(idx: number) {
-    if (idx === 0) return;
-    const ids = bench.map((p) => p.id);
-    [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
-    onChange(ids);
-  }
-
-  function moveDown(idx: number) {
-    if (idx === bench.length - 1) return;
-    const ids = bench.map((p) => p.id);
-    [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
-    onChange(ids);
-  }
-
-  function remove(id: string) {
-    onChange(benchOrder.filter((bid) => bid !== id));
-  }
 
   function addToBench(id: string) {
     if (benchSet.has(id) || filledSet.has(id) || bench.length >= 12) return;
@@ -594,25 +582,6 @@ function BenchEditor({
                 {p.firstName} {p.lastName}
               </button>
               <span className="text-xs text-muted tabular-nums">{p.overall}</span>
-              <div className="flex gap-0.5 ml-1">
-                <button
-                  onClick={() => moveUp(idx)}
-                  disabled={idx === 0}
-                  className="rounded px-1 py-0.5 text-xs text-muted hover:text-text disabled:opacity-20 transition-colors"
-                  title="Monter"
-                >▲</button>
-                <button
-                  onClick={() => moveDown(idx)}
-                  disabled={idx === bench.length - 1}
-                  className="rounded px-1 py-0.5 text-xs text-muted hover:text-text disabled:opacity-20 transition-colors"
-                  title="Descendre"
-                >▼</button>
-                <button
-                  onClick={() => remove(p.id)}
-                  className="rounded px-1 py-0.5 text-xs text-muted hover:text-danger transition-colors"
-                  title="Retirer du banc"
-                >✕</button>
-              </div>
             </div>
           ))}
         </div>
