@@ -457,7 +457,7 @@ async function applyNewStrength(strength: number) {
               ? ` · ${(team.continents ?? (team.continent ? [team.continent] : [])).map((c) => CONTINENT_LABEL[c]).join(' · ')}`
               : ''}
             {' '}· Force {team.globalStrength} ·{' '}
-            {team.playerCount} joueurs · Formation {team.formation}
+            {team.playerCount} joueurs · Formation {(savedTactics.find((t) => t.id === activeTacticId) ?? savedTactics[0])?.formationLabel ?? (savedTactics.find((t) => t.id === activeTacticId) ?? savedTactics[0])?.formation ?? team.formation}
           </p>
           {newStrength === null ? (
             <button
