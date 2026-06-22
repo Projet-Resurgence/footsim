@@ -31,6 +31,7 @@ export function precomputeSide(
   customTacticStyle?: CustomTacticStyle,
   morale?: number,
   unavailablePlayerIds?: Set<string>,
+  customBench?: string[],
 ): SideRatings {
   let lineup: Player[];
   let bench: Player[];
@@ -40,15 +41,27 @@ export function precomputeSide(
     ? roster.filter((p) => !unavailablePlayerIds.has(p.id))
     : roster;
 
+  const playerMap = new Map(available.map((p) => [p.id, p]));
+
   if (customLineup && customLineup.length === 11) {
-    const playerMap = new Map(available.map((p) => [p.id, p]));
     const starters = customLineup.map((id) => playerMap.get(id)).filter(Boolean) as Player[];
     if (starters.length === 11) {
       lineup = starters;
-      bench = available
-        .filter((p) => !customLineup.includes(p.id))
-        .sort((a, b) => b.overall - a.overall)
-        .slice(0, 12);
+      const lineupSet = new Set(customLineup);
+      if (customBench?.length) {
+        // Use custom bench order; fill remaining slots from auto-sort
+        const customBenchPlayers = customBench.map((id) => playerMap.get(id)).filter((p): p is Player => !!p && !lineupSet.has(p.id));
+        const customBenchSet = new Set(customBenchPlayers.map((p) => p.id));
+        const autoBenchRemainder = available
+          .filter((p) => !lineupSet.has(p.id) && !customBenchSet.has(p.id))
+          .sort((a, b) => b.overall - a.overall);
+        bench = [...customBenchPlayers, ...autoBenchRemainder].slice(0, 12);
+      } else {
+        bench = available
+          .filter((p) => !lineupSet.has(p.id))
+          .sort((a, b) => b.overall - a.overall)
+          .slice(0, 12);
+      }
     } else {
       ({ lineup, bench } = pickXI(available, formation));
       bench = bench.sort((a, b) => b.overall - a.overall).slice(0, 12);
@@ -66,45 +79,58 @@ export function precomputeSide(
   const top3Att = [...att].sort((a, b) => b.overall - a.overall).slice(0, 3);
   const am = mid.filter((p) => p.position === 'AM');
 
-  const meanAtt = top3Att.length ? avg(top3Att.map((p) => p.overall)) : 50;
+  // No attackers = near-zero raw attack (not 50 fallback)
+  const meanAtt = top3Att.length ? avg(top3Att.map((p) => p.overall)) : 10;
   const meanAm = am.length ? avg(am.map((p) => p.overall)) : meanAtt;
 
   const tacticMods = customTacticStyle ? customTacticStyle.mods : getTacticMods(tacticStyle);
   const coachB = (coach && !coachSuspended) ? computeCoachBonuses(coach, matchSeed) : null;
   const mm = moraleMult(morale ?? 50);
 
-  // Formation imbalance penalties — applied multiplicatively to ratings.
-  // Counts exclude GK (10 outfield players expected).
-  const nDef = def.length;   // expected ~3-5
-  const nMid = mid.length;   // expected ~2-5
-  const nAtt = att.length;   // expected ~1-3
+  // Formation imbalance multipliers — 10 outfield players, expected balance ~3-4 def / 3-4 mid / 2-3 att
+  const nDef = def.length;
+  const nMid = mid.length;
+  const nAtt = att.length;
 
-  // Attack penalty: no forwards = near-zero attack output; heavy defence eats attack budget
-  const attMult = nAtt === 0 ? 0.25
-    : nAtt === 1 ? 0.75
-    : nAtt >= 5  ? 1.15   // 5+ att = bonus (overloaded but aggressive)
-    : 1.0;
+  // Attack mult: no att = almost no output; excess att (5+) = chaotic, slight penalty
+  const attMult = nAtt === 0 ? 0.10
+    : nAtt === 1 ? 0.65
+    : nAtt === 2 ? 0.90
+    : nAtt <= 4  ? 1.00
+    : nAtt === 5 ? 0.90   // too many attackers = unbalanced, midfield hole hurts
+    : 0.75;               // 6+ att = catastrophic midfield absence
 
-  // Midfield penalty: no midfielders = no transitions, ratings collapse
-  const midMult = nMid === 0 ? 0.30
-    : nMid === 1 ? 0.65
-    : nMid >= 6  ? 1.10   // 6+ mid = slight bonus (midfield dominance)
-    : 1.0;
+  // Midfield mult: no mid = no build-up; excess mid (6+) = possession but slow attack
+  const midMult = nMid === 0 ? 0.20
+    : nMid === 1 ? 0.55
+    : nMid === 2 ? 0.80
+    : nMid <= 5  ? 1.00
+    : nMid === 6 ? 1.05   // slight possession bonus
+    : 1.00;               // 7+ mid = absurd but doesn't help more
 
-  // Defense penalty: too few defenders = defense exposed;
-  // but too many (6+) also hurts attack/midfield indirectly (handled via attMult)
-  const defMult = nDef === 0 ? 0.40
-    : nDef === 1 ? 0.65
-    : nDef === 2 ? 0.85
-    : nDef >= 6  ? 1.10   // 6+ def = solid block bonus
-    : 1.0;
+  // Defense mult: no def = defense exposed; excess def (6+) = organized block
+  const defMult = nDef === 0 ? 0.25
+    : nDef === 1 ? 0.55
+    : nDef === 2 ? 0.80
+    : nDef <= 5  ? 1.00
+    : nDef === 6 ? 1.10   // solid defensive block
+    : nDef === 7 ? 1.15
+    : 1.10;               // 8+ def = diminishing returns
 
-  // Cross-penalty: a team with 0 mid AND high def has no attacking outlet at all
-  const noMidAttackPenalty = nMid === 0 ? 0.50 : 1.0;
+  // Cross-penalties: excess in one zone starves another
+  // Heavy defense (6+) collapses attack — no midfield outlet
+  const heavyDefAttackPenalty = nDef >= 6 ? Math.max(0.10, 1.0 - (nDef - 5) * 0.25) : 1.0;
+  // 0 midfielders = attack has no link with defense, both suffer
+  const noMidPenalty = nMid === 0 ? 0.35 : nMid === 1 ? 0.70 : 1.0;
+  // Excess attack (5+) = defense completely exposed
+  const heavyAttDefPenalty = nAtt >= 5 ? Math.max(0.20, 1.0 - (nAtt - 4) * 0.30) : 1.0;
 
-  const attack  = (0.7 * meanAtt + 0.3 * meanAm) * tacticMods.attackMult * (coachB?.attackMult ?? 1) * mm * attMult * noMidAttackPenalty;
-  const midfield = (nMid ? avg(mid.map((p) => p.overall)) : 50) * tacticMods.midfieldMult * (coachB?.midfieldMult ?? 1) * mm * midMult;
-  const defense = ((nDef ? avg(def.map((p) => p.overall)) : 50) * 0.8 + (gk?.overall ?? 50) * 0.2) * tacticMods.defenseMult * (coachB?.defenseMult ?? 1) * mm * defMult;
+  const rawMidRating = nMid ? avg(mid.map((p) => p.overall)) : 15;
+  const rawDefRating = nDef ? avg(def.map((p) => p.overall)) : 15;
+
+  const attack  = (0.7 * meanAtt + 0.3 * meanAm) * tacticMods.attackMult * (coachB?.attackMult ?? 1) * mm * attMult * noMidPenalty * heavyDefAttackPenalty;
+  const midfield = rawMidRating * tacticMods.midfieldMult * (coachB?.midfieldMult ?? 1) * mm * midMult;
+  const defense = (rawDefRating * 0.8 + (gk?.overall ?? 50) * 0.2) * tacticMods.defenseMult * (coachB?.defenseMult ?? 1) * mm * defMult * heavyAttDefPenalty;
   const gkRating = gk?.overall ?? 50;
 
   const mergedTacticMods: TacticMods = coachB ? {

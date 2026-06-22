@@ -21,6 +21,7 @@ import type { CultureWeight } from '@/lib/gen/names';
 import { loadLocalTactics, loadLocalSavedTactics, saveLocalSavedTactics } from '@/lib/localTactics';
 import { env } from '@/lib/env';
 import { PlayerView } from '@/components/team/PlayerView';
+import Simulation from '@/pages/dashboard/Simulation';
 
 const ghPublic = new GithubTeamBackend(env.githubReadToken ?? null);
 
@@ -35,7 +36,7 @@ const STATUS_COLOR: Record<string, string> = {
   completed: 'text-warning',
 };
 
-type Tab = 'tactique' | 'joueurs' | 'noms' | 'postes' | 'competitions' | 'top' | 'simulation' | 'presse';
+type Tab = 'tactique' | 'joueurs' | 'noms' | 'postes' | 'competitions' | 'top' | 'simulation';
 
 export default function MyTeam() {
   const session = useSession((s) => s.session);
@@ -223,6 +224,7 @@ export default function MyTeam() {
             formation: json.formation,
             style: json.style,
             lineup: Array.isArray(json.lineup) ? json.lineup.map((p: { id: string } | string) => typeof p === 'string' ? p : p.id) : [],
+            bench: Array.isArray(json.bench) ? json.bench : undefined,
             formationLabel: json.formationLabel,
             customStyles: json.customStyles ?? [],
             activeCustomStyleId: json.activeCustomStyleId,
@@ -322,7 +324,7 @@ export default function MyTeam() {
 
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-1 border-b border-border">
-        {(['tactique', 'joueurs', 'noms', 'postes', 'competitions', 'top', 'simulation', 'presse'] as Tab[]).map((t) => (
+        {(['tactique', 'joueurs', 'noms', 'postes', 'competitions', 'top', 'simulation'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -334,8 +336,7 @@ export default function MyTeam() {
               : t === 'postes' ? 'Postes'
               : t === 'competitions' ? 'Compétitions'
               : t === 'top' ? 'Meilleurs joueurs'
-              : t === 'simulation' ? 'Simulation'
-              : 'Presse'}
+              : 'Simulation'}
           </button>
         ))}
       </div>
@@ -568,11 +569,8 @@ export default function MyTeam() {
           )}
         </div>
       )}
-      {/* Simulation */}
-      {tab === 'simulation' && <SimulationDocs />}
-
-      {/* Presse */}
-      {tab === 'presse' && <PresseDocs />}
+      {/* Simulation (tous sous-onglets : moteur, entraineurs, moral, notes, presse) */}
+      {tab === 'simulation' && <Simulation />}
     </main>
 
     {viewingPlayer && (
@@ -693,180 +691,6 @@ function NomExportPanel({
       >
         {busy ? 'Génération…' : `↓ Télécharger JSON (${playerCount} joueurs)`}
       </button>
-    </div>
-  );
-}
-
-function DocSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="space-y-3">
-      <h2 className="font-display text-2xl">{title}</h2>
-      <div className="space-y-2 text-sm leading-relaxed">{children}</div>
-    </section>
-  );
-}
-
-function DocTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border bg-surface">
-            {headers.map((h) => (
-              <th key={h} className="px-4 py-2 text-left text-xs font-medium uppercase tracking-widest text-muted">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} className={i % 2 === 0 ? '' : 'bg-surface/50'}>
-              {row.map((cell, j) => (
-                <td key={j} className={`px-4 py-2 ${j === 0 ? 'font-medium' : 'text-muted'}`}>{cell}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function SimulationDocs() {
-  return (
-    <div className="space-y-10 max-w-3xl">
-      <DocSection title="1. Pré-calcul des forces">
-        <p>Avant le coup d'envoi, chaque équipe reçoit quatre notes calculées depuis les stats de ses titulaires :</p>
-        <DocTable
-          headers={['Note', 'Formule']}
-          rows={[
-            ['Attaque', '70 % moyenne des 3 meilleurs attaquants + 30 % moyenne des AM × coachAttackMult'],
-            ['Milieu', 'Moyenne de tous les milieux × coachMidfieldMult'],
-            ['Défense', '80 % moyenne défenseurs + 20 % overall GK × coachDefenseMult'],
-            ['Gardien', 'Overall du GK titulaire'],
-          ]}
-        />
-      </DocSection>
-
-      <DocSection title="2. Événements et probabilités">
-        <DocTable
-          headers={['Événement', 'Poids de base', 'Modificateurs']}
-          rows={[
-            ['Tir', '~8 %', '× (0,6 + pAttaque) × style × coachShotFreqMult'],
-            ['Faute', '~8 %', '× style adverse × coachFoulRateMult'],
-            ['Corner', '4 %', '—'],
-            ['Hors-jeu', '3 %', '0 si règle désactivée'],
-            ['Passe clé', '18 %', '35 % de chance de déclencher un tir'],
-            ['Coup franc', '3 %', '30 % → tir (× 0,75)'],
-            ['Dribble', '~4 %', '40 % → tir (× 1,05)'],
-            ['Dégagement', '~3 %', 'Proportionnel à (1 − pAttaque)'],
-          ]}
-        />
-      </DocSection>
-
-      <DocSection title="3. Probabilité de but">
-        <div className="rounded-lg border border-border bg-surface px-5 py-4 font-mono text-sm">
-          pBut = sigmoid( (finition + sang-froid − 0,5 × overall_gardien) ÷ 8 ) × multiplicateur
-        </div>
-        <p className="text-sm text-muted">Clampé [4 %, 75 %]. 55 % de chances qu'un tir soit cadré.</p>
-        <DocTable
-          headers={['Origine', 'Multiplicateur']}
-          rows={[
-            ['Normal / passe clé', '× 1,00'],
-            ['Dribble', '× 1,05'],
-            ['Corner / coup de tête', '× 0,85'],
-            ['Coup franc', '× 0,75'],
-            ['Penalty (match)', '× 1,80'],
-            ['Penalty (tirs au but)', '× 1,50 — clampé [50 %, 86 %]'],
-          ]}
-        />
-      </DocSection>
-
-      <DocSection title="4. Styles tactiques">
-        <DocTable
-          headers={['Style', 'Tirs', 'Milieu', 'Attaque', 'Fautes adverses']}
-          rows={[
-            ['Possession', '−12 %', '+12 %', '=', '='],
-            ['Contre-attaque', '+8 %', '−8 %', '+10 %', '='],
-            ['Jeu direct', '+18 %', '=', '=', '='],
-            ['Pressing', '=', '+15 %', '=', '+12 %'],
-            ['Ultra-défensif', '−35 %', '−15 %', '−25 %', '+5 %'],
-            ['Gegenpressing', '+10 %', '+18 %', '+5 %', '+20 %'],
-            ['Tiki-taka', '−18 %', '+20 %', '−5 %', '−10 %'],
-            ['Long ball', '+15 %', '−20 %', '+15 %', '+5 %'],
-            ['Chaos', '+30 %', '−5 %', '+10 %', '+35 %'],
-          ]}
-        />
-      </DocSection>
-
-      <DocSection title="5. Notes joueurs et overall">
-        <ul className="list-disc space-y-1 pl-5 text-sm text-muted">
-          <li>Overall = moyenne pondérée des stats du poste × 5, clampé [1, 100].</li>
-          <li>Les ratings attaque/milieu/défense sont calculés depuis les overalls des 11 titulaires.</li>
-          <li>Finition + Sang-froid du tireur et overall du gardien entrent directement dans la probabilité de but.</li>
-          <li>Les remplacements automatiques comparent les overalls pour choisir qui rentre.</li>
-        </ul>
-      </DocSection>
-
-      <DocSection title="6. Moral (compétitions)">
-        <DocTable
-          headers={['Moral', 'Multiplicateur']}
-          rows={[
-            ['85–100', '× 1,05'],
-            ['70–84', '× 1,03 à 1,05'],
-            ['55–69', '× 1,00 à 1,03'],
-            ['40–54', '× 0,98 à 1,00'],
-            ['30–39', '× 0,98'],
-            ['1–29', '× 0,97 à 0,98 (plancher résilient)'],
-          ]}
-        />
-      </DocSection>
-    </div>
-  );
-}
-
-function PresseDocs() {
-  return (
-    <div className="space-y-10 max-w-3xl">
-      <DocSection title="Système de presse">
-        <p>
-          Après chaque match de compétition, un article de presse est généré automatiquement.
-          Il reflète le résultat, le moral de l'équipe, le comportement du coach et les événements marquants.
-          Certains articles ont un <strong>effet direct sur le moral</strong>.
-        </p>
-      </DocSection>
-
-      <DocSection title="Catégories d'articles">
-        <DocTable
-          headers={['Catégorie', 'Déclencheur', 'Effet moral']}
-          rows={[
-            ['Victoire', 'Victoire standard', 'Aucun additionnel'],
-            ['Exploit', 'Victoire contre favori', '+5 à +10'],
-            ['Défaite', 'Défaite standard', 'Aucun additionnel'],
-            ['Crise', 'Série de défaites', '−5 à −15'],
-            ['Scandale', 'Doping / expulsion coach', '−10 à −20'],
-            ['Révolte', 'Moral effondré + humiliation', '−15 à −25'],
-            ['Critique', 'Mauvaise prestation', '−3 à −8'],
-            ['Forme', 'Bonne dynamique', '+3 à +8'],
-            ['Neutralité', 'Nul / résultat sans relief', 'Aucun'],
-          ]}
-        />
-      </DocSection>
-
-      <DocSection title="Effets spéciaux">
-        <ul className="list-disc space-y-2 pl-5 text-sm text-muted">
-          <li><strong>Choc morale</strong> — Les articles hostiles appliquent un malus immédiat sur le moral, en plus du résultat du match.</li>
-          <li><strong>Bonus morale</strong> — Les articles positifs (exploit, forme) appliquent un bonus supplémentaire.</li>
-          <li><strong>Destitution du président</strong> — Certains articles de révolte/scandale grave déclenchent une destitution fictive. Un article de rebond est généré au round suivant.</li>
-          <li><strong>Suspension dopage</strong> — Un article scandale-dopage peut entraîner la suspension d'un joueur pour le prochain match.</li>
-        </ul>
-      </DocSection>
-
-      <DocSection title="Mentions cliquables">
-        <p className="text-sm text-muted">
-          Les joueurs et coachs mentionnés dans un article sont cliquables dans l'onglet <strong>Presse</strong>
-          d'une compétition. Cela ouvre une fiche avec les stats au moment de l'article.
-        </p>
-      </DocSection>
     </div>
   );
 }

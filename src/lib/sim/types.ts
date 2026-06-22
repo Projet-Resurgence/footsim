@@ -69,8 +69,8 @@ export type CorruptionDeal = {
 
 export type MatchInput = {
   matchId: string;
-  home: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number; unavailablePlayerIds?: string[] };
-  away: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number; unavailablePlayerIds?: string[] };
+  home: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; bench?: string[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number; unavailablePlayerIds?: string[] };
+  away: { team: Team; players: Player[]; formation: Formation; lineup?: string[]; bench?: string[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number; unavailablePlayerIds?: string[] };
   speed: Speed;
   rules: MatchRules;
   corruption?: CorruptionDeal;
@@ -108,6 +108,9 @@ export type MatchState = {
   /** Initial bench IDs (set at kick-off, used for press/doping pool) */
   homeBench: string[];
   awayBench: string[];
+  /** Current available bench (shrinks as players enter the pitch) */
+  homeAvailableBench: string[];
+  awayAvailableBench: string[];
   rules: MatchRules;
   homeSubs: number;
   awaySubs: number;

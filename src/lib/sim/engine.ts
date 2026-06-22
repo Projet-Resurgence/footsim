@@ -37,6 +37,8 @@ export function initialState(matchId: string, speed: MatchState['speed'], rules:
     awayOnPitch: [],
     homeBench: [],
     awayBench: [],
+    homeAvailableBench: [],
+    awayAvailableBench: [],
     rules,
     homeSubs: 0,
     awaySubs: 0,
@@ -278,8 +280,10 @@ function performAutoSubs(state: MatchState, ctx: EngineCtx, side: 'home' | 'away
     const sub = compatIdx >= 0 ? availBench.splice(compatIdx, 1)[0] : availBench.shift()!;
     if (side === 'home') {
       state.homeOnPitch = state.homeOnPitch.map((id) => (id === out.id ? sub.id : id));
+      state.homeAvailableBench = state.homeAvailableBench.filter((id) => id !== sub.id);
     } else {
       state.awayOnPitch = state.awayOnPitch.map((id) => (id === out.id ? sub.id : id));
+      state.awayAvailableBench = state.awayAvailableBench.filter((id) => id !== sub.id);
     }
     pushEvent(state, ctx, { type: 'substitution', side, playerId: sub.id, ballPos: ZONE.centre },
       teamName, `${sub.firstName} ${sub.lastName} ↔ ${out.firstName} ${out.lastName}`);
@@ -287,6 +291,52 @@ function performAutoSubs(state: MatchState, ctx: EngineCtx, side: 'home' | 'away
   }
   if (side === 'home') state.homeSubs += made;
   else state.awaySubs += made;
+}
+
+export function performManualSub(
+  state: MatchState,
+  ctx: EngineCtx,
+  side: 'home' | 'away',
+  outId: string,
+  inId: string,
+): boolean {
+  const subsUsed = side === 'home' ? state.homeSubs : state.awaySubs;
+  if (subsUsed >= state.rules.maxSubs) return false;
+
+  const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+  const players = side === 'home' ? ctx.home.players : ctx.away.players;
+  const benchIds = side === 'home' ? ctx.home.ratings.bench : ctx.away.ratings.bench;
+
+  if (!onPitch.includes(outId)) return false;
+  if (!benchIds.includes(inId)) return false;
+  const outPlayer = players.get(outId);
+  const inPlayer = players.get(inId);
+  if (!outPlayer || !inPlayer) return false;
+
+  const teamName = side === 'home' ? ctx.home.team.name : ctx.away.team.name;
+
+  if (side === 'home') {
+    state.homeOnPitch = state.homeOnPitch.map((id) => (id === outId ? inId : id));
+    state.homeSubs++;
+  } else {
+    state.awayOnPitch = state.awayOnPitch.map((id) => (id === outId ? inId : id));
+    state.awaySubs++;
+  }
+  // Remove the incoming player from bench tracking
+  const benchList = side === 'home' ? ctx.home.ratings.bench : ctx.away.ratings.bench;
+  const benchIdx = benchList.indexOf(inId);
+  if (benchIdx !== -1) benchList.splice(benchIdx, 1);
+
+  // Keep available bench in state in sync
+  if (side === 'home') {
+    state.homeAvailableBench = state.homeAvailableBench.filter((id) => id !== inId);
+  } else {
+    state.awayAvailableBench = state.awayAvailableBench.filter((id) => id !== inId);
+  }
+
+  pushEvent(state, ctx, { type: 'substitution', side, playerId: inId, ballPos: ZONE.centre },
+    teamName, `${inPlayer.firstName} ${inPlayer.lastName} ↔ ${outPlayer.firstName} ${outPlayer.lastName}`);
+  return true;
 }
 
 function simulatePenalties(state: MatchState, ctx: EngineCtx): void {
@@ -590,9 +640,11 @@ function applyInjury(state: MatchState, ctx: EngineCtx, side: 'home' | 'away', p
   if (sub && subsUsed < state.rules.maxSubs) {
     if (side === 'home') {
       state.homeOnPitch = state.homeOnPitch.map((id) => id === player.id ? sub.id : id);
+      state.homeAvailableBench = state.homeAvailableBench.filter((id) => id !== sub.id);
       state.homeSubs++;
     } else {
       state.awayOnPitch = state.awayOnPitch.map((id) => id === player.id ? sub.id : id);
+      state.awayAvailableBench = state.awayAvailableBench.filter((id) => id !== sub.id);
       state.awaySubs++;
     }
     pushEvent(state, ctx, { type: 'substitution', side, playerId: sub.id, ballPos: ZONE.centre },

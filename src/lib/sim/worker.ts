@@ -1,14 +1,15 @@
 import type { Player } from '@/lib/types';
 import type { MatchInput, MatchState, Speed } from './types';
 import { precomputeSide } from './precompute';
-import { initialState, tick, type EngineCtx } from './engine';
+import { initialState, tick, performManualSub, type EngineCtx } from './engine';
 
 type Inbound =
   | { type: 'start'; input: MatchInput }
   | { type: 'pause' }
   | { type: 'resume' }
   | { type: 'speed'; speed: Speed }
-  | { type: 'instant' };
+  | { type: 'instant' }
+  | { type: 'manualsub'; side: 'home' | 'away'; outId: string; inId: string };
 
 type Outbound =
   | { type: 'state'; state: MatchState }
@@ -45,12 +46,12 @@ function buildCtx(input: MatchInput): EngineCtx {
   const home = {
     team: input.home.team,
     players: new Map(input.home.players.map((p: Player) => [p.id, p])),
-    ratings: precomputeSide(input.home.players, input.home.formation, input.home.lineup, input.home.tacticStyle, input.home.team.coach, seed, input.home.team.coachSuspended, input.home.customTacticStyle, input.home.morale, input.home.unavailablePlayerIds ? new Set(input.home.unavailablePlayerIds) : undefined),
+    ratings: precomputeSide(input.home.players, input.home.formation, input.home.lineup, input.home.tacticStyle, input.home.team.coach, seed, input.home.team.coachSuspended, input.home.customTacticStyle, input.home.morale, input.home.unavailablePlayerIds ? new Set(input.home.unavailablePlayerIds) : undefined, input.home.bench),
   };
   const away = {
     team: input.away.team,
     players: new Map(input.away.players.map((p: Player) => [p.id, p])),
-    ratings: precomputeSide(input.away.players, input.away.formation, input.away.lineup, input.away.tacticStyle, input.away.team.coach, seed + 1, input.away.team.coachSuspended, input.away.customTacticStyle, input.away.morale, input.away.unavailablePlayerIds ? new Set(input.away.unavailablePlayerIds) : undefined),
+    ratings: precomputeSide(input.away.players, input.away.formation, input.away.lineup, input.away.tacticStyle, input.away.team.coach, seed + 1, input.away.team.coachSuspended, input.away.customTacticStyle, input.away.morale, input.away.unavailablePlayerIds ? new Set(input.away.unavailablePlayerIds) : undefined, input.away.bench),
   };
   return { home, away, eventCounter: { v: 0 } };
 }
@@ -97,6 +98,8 @@ self.onmessage = (ev: MessageEvent<Inbound>) => {
       state.awayOnPitch = [...ctx.away.ratings.lineup];
       state.homeBench = [...ctx.home.ratings.bench];
       state.awayBench = [...ctx.away.ratings.bench];
+      state.homeAvailableBench = [...ctx.home.ratings.bench];
+      state.awayAvailableBench = [...ctx.away.ratings.bench];
       if (msg.input.corruption) state.corruption = msg.input.corruption;
       if (msg.input.leg1Score) state.leg1Score = msg.input.leg1Score;
       tick(state, ctx); // kickoff
@@ -117,6 +120,11 @@ self.onmessage = (ev: MessageEvent<Inbound>) => {
     } else if (msg.type === 'instant') {
       if (state) state.speed = 'instant';
       startLoop();
+    } else if (msg.type === 'manualsub') {
+      if (state && ctx) {
+        performManualSub(state, ctx, msg.side, msg.outId, msg.inId);
+        send({ type: 'state', state });
+      }
     }
   } catch (err) {
     send({ type: 'error', message: String(err) });

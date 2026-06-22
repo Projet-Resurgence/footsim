@@ -12,7 +12,7 @@ import { HalftimeOverlay } from '@/components/match/HalftimeOverlay';
 import { GoalCelebration } from '@/components/match/GoalCelebration';
 import { PenaltyShootout } from '@/components/match/PenaltyShootout';
 import { useMatch } from '@/stores/match';
-
+import { SubstitutionPanel } from '@/components/match/SubstitutionPanel';
 
 import { computeMotm } from '@/lib/competition/statsAccumulator';
 import { isRevealed } from '@/lib/sim/corruption';
@@ -27,6 +27,8 @@ export default function MatchLive() {
   const pause = useMatch((s) => s.pause);
   const resume = useMatch((s) => s.resume);
   const resetMatch = useMatch((s) => s.reset);
+  const manualSub = useMatch((s) => s.manualSub);
+  const [showSubPanel, setShowSubPanel] = useState(false);
   const navigate = useNavigate();
   const savedRef = useRef(false);
   const [corruptionRevealed, setCorruptionRevealed] = useState(false);
@@ -141,12 +143,29 @@ export default function MatchLive() {
             onPause={pause}
             onResume={resume}
           />
+          {!finished && (state.status === 'firstHalf' || state.status === 'secondHalf' || state.status === 'extraTimeFirst' || state.status === 'extraTimeSecond') && (
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setShowSubPanel(true)}>
+                ↔ Remplacements
+              </Button>
+            </div>
+          )}
         </div>
         <div className="space-y-6">
           <StatsPanel state={state} />
           <EventFeed events={state.events} />
         </div>
       </div>
+
+      {showSubPanel && (
+        <SubstitutionPanel
+          state={state}
+          homePlayers={input.home.players}
+          awayPlayers={input.away.players}
+          onSub={(side, outId, inId) => { manualSub(side, outId, inId); setShowSubPanel(false); }}
+          onClose={() => setShowSubPanel(false)}
+        />
+      )}
 
       {showHalftime ? (
         <HalftimeOverlay

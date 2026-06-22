@@ -234,6 +234,8 @@ export type TeamTactics = {
   style: TacticStyle;
   formation: Formation;
   lineup: string[];
+  /** custom bench order — up to 12 player IDs, overrides auto sort */
+  bench?: string[];
   /** display label when formation was set via free editor (e.g. "5-2-3") */
   formationLabel?: string;
   /** user-created custom styles */

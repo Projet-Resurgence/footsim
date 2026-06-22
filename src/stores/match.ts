@@ -13,6 +13,7 @@ type State = {
   resume: () => void;
   stop: () => void;
   reset: () => void;
+  manualSub: (side: 'home' | 'away', outId: string, inId: string) => void;
 };
 
 export const useMatch = create<State>((set, get) => ({
@@ -57,5 +58,8 @@ export const useMatch = create<State>((set, get) => ({
     const w = get().worker;
     if (w) w.terminate();
     set({ worker: null, state: null, input: null, finished: false, paused: false });
+  },
+  manualSub(side, outId, inId) {
+    get().worker?.postMessage({ type: 'manualsub', side, outId, inId });
   },
 }));

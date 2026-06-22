@@ -327,6 +327,7 @@ async function applyNewStrength(strength: number) {
             formation: json.formation,
             style: json.style,
             lineup: Array.isArray(json.lineup) ? json.lineup.map((p: { id: string } | string) => typeof p === 'string' ? p : p.id) : [],
+            bench: Array.isArray(json.bench) ? json.bench : undefined,
             formationLabel: json.formationLabel,
             customStyles: json.customStyles ?? [],
             activeCustomStyleId: json.activeCustomStyleId,

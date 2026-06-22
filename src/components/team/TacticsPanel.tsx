@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { CustomTacticStyle, Formation, Player, TacticStyle, Team, TeamTactics } from '@/lib/types';
-import { TACTIC_STYLE_LABEL } from '@/lib/types';
+import { POSITION_LABEL, TACTIC_STYLE_LABEL } from '@/lib/types';
 import type { TacticMods } from '@/lib/sim/types';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -118,6 +118,7 @@ export function TacticsPanel({ team, players, onSave }: Props) {
   const [lineup, setLineup] = useState<(string | null)[]>(
     team.tactics?.lineup?.length === 11 ? [...team.tactics.lineup] : Array(11).fill(null),
   );
+  const [benchOrder, setBenchOrder] = useState<string[]>(team.tactics?.bench ?? []);
   const [pickingSlot, setPickingSlot] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [freeEditor, setFreeEditor] = useState(false);
@@ -161,7 +162,9 @@ export function TacticsPanel({ team, players, onSave }: Props) {
     if (filled.length < 11) return;
     setSaving(true);
     try {
-      await onSave({ style, formation, lineup: filled, formationLabel, customStyles, activeCustomStyleId });
+      const filledSet = new Set(filled);
+      const validBench = benchOrder.filter((id) => !filledSet.has(id));
+      await onSave({ style, formation, lineup: filled, bench: validBench.length ? validBench : undefined, formationLabel, customStyles, activeCustomStyleId });
     } finally {
       setSaving(false);
     }
@@ -173,19 +176,32 @@ export function TacticsPanel({ team, players, onSave }: Props) {
   }
 
   const layout = FORMATION_LAYOUT[formation];
-  const playerMap = new Map(players.map((p) => [p.id, p]));
   const filledCount = lineup.filter(Boolean).length;
   const filledSet = new Set(lineup.filter(Boolean) as string[]);
   const BENCH_POS_ORDER: Record<string, number> = {
     GK: 0, CB: 1, LB: 1, RB: 1, DM: 2, CM: 2, LM: 2, RM: 2, AM: 2, LW: 3, RW: 3, ST: 3,
   };
-  const bench = players
-    .filter((p) => !filledSet.has(p.id))
-    .sort((a, b) => {
+  // Auto bench: max 1 GK (best overall), rest sorted by position then overall
+  const nonStartersAll = players.filter((p) => !filledSet.has(p.id));
+  const bestGk = nonStartersAll.filter((p) => p.position === 'GK').sort((a, b) => b.overall - a.overall)[0];
+  const nonGkNonStarters = nonStartersAll.filter((p) => p.position !== 'GK');
+  const nonStartersForBench = [
+    ...(bestGk ? [bestGk] : []),
+    ...nonGkNonStarters.sort((a, b) => {
       const po = (BENCH_POS_ORDER[a.position] ?? 4) - (BENCH_POS_ORDER[b.position] ?? 4);
       return po !== 0 ? po : b.overall - a.overall;
-    })
-    .slice(0, 12);
+    }),
+  ];
+  const autoBench = nonStartersForBench;
+  const playerMap = new Map(players.map((p) => [p.id, p]));
+  // Bench = custom order (filtered to non-starters) + remaining not in custom order, capped at 12
+  const validBenchIds = benchOrder.filter((id) => !filledSet.has(id) && playerMap.has(id));
+  const validBenchSet = new Set(validBenchIds);
+  const remainingBench = autoBench.filter((p) => !validBenchSet.has(p.id));
+  const bench = [
+    ...validBenchIds.map((id) => playerMap.get(id)!),
+    ...remainingBench,
+  ].slice(0, 12);
 
   if (freeEditor) {
     return (
@@ -305,19 +321,13 @@ export function TacticsPanel({ team, players, onSave }: Props) {
             </div>
           </div>
 
-          {bench.length > 0 && (
-            <div className="space-y-2">
-              <span className="text-sm text-muted">Banc ({bench.length})</span>
-              <div className="max-h-48 overflow-y-auto space-y-0.5 rounded-lg border border-border">
-                {bench.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between px-3 py-1.5 text-sm hover:bg-border/40 transition-colors">
-                    <span>{p.firstName} {p.lastName}</span>
-                    <span className="text-xs text-muted">{p.position} · {p.overall}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <BenchEditor
+            bench={bench}
+            allPlayers={players}
+            filledSet={filledSet}
+            benchOrder={benchOrder}
+            onChange={setBenchOrder}
+          />
         </div>
       )}
 
@@ -374,6 +384,132 @@ export function TacticsPanel({ team, players, onSave }: Props) {
           onClear={() => clearSlot(pickingSlot)}
           onClose={() => setPickingSlot(null)}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Bench Editor ─────────────────────────────────────────────────────────────
+
+function BenchEditor({
+  bench,
+  allPlayers,
+  filledSet,
+  benchOrder,
+  onChange,
+}: {
+  bench: Player[];
+  allPlayers: Player[];
+  filledSet: Set<string>;
+  benchOrder: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [addingPlayer, setAddingPlayer] = useState(false);
+  const [search, setSearch] = useState('');
+  const benchSet = new Set(bench.map((p) => p.id));
+
+  function moveUp(idx: number) {
+    if (idx === 0) return;
+    const ids = bench.map((p) => p.id);
+    [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
+    onChange(ids);
+  }
+
+  function moveDown(idx: number) {
+    if (idx === bench.length - 1) return;
+    const ids = bench.map((p) => p.id);
+    [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
+    onChange(ids);
+  }
+
+  function remove(id: string) {
+    // Remove from custom bench order so they fall back to auto pool
+    onChange(benchOrder.filter((bid) => bid !== id));
+  }
+
+  function addToBench(id: string) {
+    if (benchSet.has(id) || filledSet.has(id) || bench.length >= 12) return;
+    onChange([...bench.map((p) => p.id), id]);
+    setAddingPlayer(false);
+    setSearch('');
+  }
+
+  const available = allPlayers
+    .filter((p) => !filledSet.has(p.id) && !benchSet.has(p.id))
+    .filter((p) => search === '' || `${p.firstName} ${p.lastName}`.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => b.overall - a.overall);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-muted">Banc ({bench.length}/12)</span>
+        {bench.length < 12 && (
+          <button
+            onClick={() => setAddingPlayer((v) => !v)}
+            className="text-xs text-accent hover:underline"
+          >
+            {addingPlayer ? 'Annuler' : '+ Ajouter'}
+          </button>
+        )}
+      </div>
+
+      {addingPlayer && (
+        <div className="rounded-lg border border-border bg-bg p-2 space-y-2">
+          <input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher un joueur…"
+            className="w-full rounded border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-accent"
+          />
+          <div className="max-h-40 overflow-y-auto space-y-0.5">
+            {available.slice(0, 20).map((p) => (
+              <button
+                key={p.id}
+                onClick={() => addToBench(p.id)}
+                className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-border/40 transition-colors"
+              >
+                <span>{p.firstName} {p.lastName}</span>
+                <span className="text-xs text-muted">{POSITION_LABEL[p.position]} · {p.overall}</span>
+              </button>
+            ))}
+            {available.length === 0 && <p className="text-xs text-muted px-2 py-2">Aucun joueur disponible.</p>}
+          </div>
+        </div>
+      )}
+
+      {bench.length > 0 && (
+        <div className="rounded-lg border border-border overflow-hidden">
+          {bench.map((p, idx) => (
+            <div key={p.id} className="flex items-center gap-1 px-3 py-1.5 border-t first:border-t-0 border-border hover:bg-border/10 transition-colors text-sm">
+              <span className="w-5 text-center text-xs text-muted tabular-nums">{idx + 1}</span>
+              <span className="rounded bg-border/40 px-1.5 py-0.5 font-mono text-xs shrink-0">
+                {POSITION_LABEL[p.position]}
+              </span>
+              <span className="flex-1 truncate">{p.firstName} {p.lastName}</span>
+              <span className="text-xs text-muted tabular-nums">{p.overall}</span>
+              <div className="flex gap-0.5 ml-1">
+                <button
+                  onClick={() => moveUp(idx)}
+                  disabled={idx === 0}
+                  className="rounded px-1 py-0.5 text-xs text-muted hover:text-text disabled:opacity-20 transition-colors"
+                  title="Monter"
+                >▲</button>
+                <button
+                  onClick={() => moveDown(idx)}
+                  disabled={idx === bench.length - 1}
+                  className="rounded px-1 py-0.5 text-xs text-muted hover:text-text disabled:opacity-20 transition-colors"
+                  title="Descendre"
+                >▼</button>
+                <button
+                  onClick={() => remove(p.id)}
+                  className="rounded px-1 py-0.5 text-xs text-muted hover:text-danger transition-colors"
+                  title="Retirer du banc"
+                >✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
