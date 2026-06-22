@@ -88,7 +88,35 @@ function pickDefender(side: 'home' | 'away', ctx: EngineCtx, state: MatchState):
   const players = side === 'home' ? ctx.home.players : ctx.away.players;
   const candidates = onPitch.map((id) => players.get(id)!).filter((p) => p && ['CB', 'LB', 'RB', 'DM'].includes(p.position));
   if (!candidates.length) return null;
+  candidates.sort((a, b) => (b.stats.technical.tackling + b.stats.technical.marking) - (a.stats.technical.tackling + a.stats.technical.marking));
   return pick(candidates.slice(0, Math.min(4, candidates.length)));
+}
+
+function pickHeader(side: 'home' | 'away', ctx: EngineCtx, state: MatchState): Player | null {
+  const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+  const players = side === 'home' ? ctx.home.players : ctx.away.players;
+  const candidates = onPitch.map((id) => players.get(id)!).filter((p) => p && ['ST', 'LW', 'RW', 'AM', 'CM', 'CB'].includes(p.position));
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => (b.stats.technical.heading + b.stats.physical.jumping) - (a.stats.technical.heading + a.stats.physical.jumping));
+  return pick(candidates.slice(0, Math.min(4, candidates.length)));
+}
+
+function pickDribbler(side: 'home' | 'away', ctx: EngineCtx, state: MatchState): Player | null {
+  const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+  const players = side === 'home' ? ctx.home.players : ctx.away.players;
+  const candidates = onPitch.map((id) => players.get(id)!).filter((p) => p && ['ST', 'LW', 'RW', 'AM', 'CM'].includes(p.position));
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => (b.stats.technical.dribbling + b.stats.physical.agility) - (a.stats.technical.dribbling + a.stats.physical.agility));
+  return pick(candidates.slice(0, Math.min(4, candidates.length)));
+}
+
+function pickFreeKickTaker(side: 'home' | 'away', ctx: EngineCtx, state: MatchState): Player | null {
+  const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+  const players = side === 'home' ? ctx.home.players : ctx.away.players;
+  const candidates = onPitch.map((id) => players.get(id)!).filter((p) => p && ['ST', 'LW', 'RW', 'AM', 'CM', 'LM', 'RM'].includes(p.position));
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => (b.stats.technical.longShots + b.stats.mental.composure) - (a.stats.technical.longShots + a.stats.mental.composure));
+  return pick(candidates.slice(0, Math.min(3, candidates.length)));
 }
 
 function pickFouler(side: 'home' | 'away', ctx: EngineCtx, state: MatchState): Player | null {
@@ -487,12 +515,14 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
     const cz = possessing === 'home' ? ZONE.homeRightCorner : ZONE.awayLeftCorner;
     pushEvent(state, ctx, { type: 'corner', side: possessing, ballPos: cz }, teamName);
     if (chance(0.45)) {
-      const header = pickAttacker(possessing, ctx, state);
+      const header = pickHeader(possessing, ctx, state);
       if (header) {
         const hz = possessing === 'home' ? ZONE.awayBox : ZONE.homeBox;
         pushEvent(state, ctx, { type: 'header', side: possessing, playerId: header.id, ballPos: hz },
           teamName, `${header.firstName} ${header.lastName}`);
-        if (chance(0.35)) tryShot(state, ctx, possessing, opp, teamName, oppName, 0.85, hz);
+        // heading quality influences shot chance on corners (base 0.35, +/- based on heading stat)
+        const headerBonus = (header.stats.technical.heading - 10) / 100;
+        if (chance(0.35 + headerBonus)) tryShot(state, ctx, possessing, opp, teamName, oppName, 0.85, hz);
       }
     }
 
@@ -508,22 +538,28 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
       type: 'keyPass', side: possessing, playerId: passer?.id,
       ballPos: possessing === 'home' ? ZONE.midfieldAway : ZONE.midfieldHome,
     }, teamName, passer ? `${passer.firstName} ${passer.lastName}` : undefined);
-    if (chance(0.35)) tryShot(state, ctx, possessing, opp, teamName, oppName, 1.0);
+    // vision influences how often a key pass creates a real chance
+    const visionBonus = passer ? (passer.stats.mental.vision - 10) / 100 : 0;
+    if (chance(0.35 + visionBonus)) tryShot(state, ctx, possessing, opp, teamName, oppName, 1.0);
 
   } else if (r < wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick) {
-    const fkShooter = pickAttacker(possessing, ctx, state);
+    const fkShooter = pickFreeKickTaker(possessing, ctx, state);
     const fkZone = possessing === 'home' ? ZONE.awayAttack : ZONE.homeAttack;
     pushEvent(state, ctx, { type: 'freeKick', side: possessing, playerId: fkShooter?.id, ballPos: fkZone },
       teamName, fkShooter ? `${fkShooter.firstName} ${fkShooter.lastName}` : undefined);
-    if (chance(0.30)) tryShot(state, ctx, possessing, opp, teamName, oppName, 0.75, fkZone);
+    // longShots quality influences shot chance on free kicks
+    const fkBonus = fkShooter ? (fkShooter.stats.technical.longShots - 10) / 100 : 0;
+    if (chance(0.30 + fkBonus)) tryShot(state, ctx, possessing, opp, teamName, oppName, 0.75, fkZone);
 
   } else if (r < wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick + wDribble) {
-    const dribbler = pickAttacker(possessing, ctx, state);
+    const dribbler = pickDribbler(possessing, ctx, state);
     pushEvent(state, ctx, {
       type: 'dribble', side: possessing, playerId: dribbler?.id,
       ballPos: possessing === 'home' ? ZONE.awayAttack : ZONE.homeAttack,
     }, teamName, dribbler ? `${dribbler.firstName} ${dribbler.lastName}` : undefined);
-    if (chance(0.40)) tryShot(state, ctx, possessing, opp, teamName, oppName, 1.05);
+    // dribbling quality influences how often a dribble creates a shot
+    const dribBonus = dribbler ? (dribbler.stats.technical.dribbling - 10) / 100 : 0;
+    if (chance(0.40 + dribBonus)) tryShot(state, ctx, possessing, opp, teamName, oppName, 1.05);
 
   } else if (r < total) {
     const defender = pickDefender(opp, ctx, state);

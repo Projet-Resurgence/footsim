@@ -73,9 +73,38 @@ export function precomputeSide(
   const coachB = (coach && !coachSuspended) ? computeCoachBonuses(coach, matchSeed) : null;
   const mm = moraleMult(morale ?? 50);
 
-  const attack = (0.7 * meanAtt + 0.3 * meanAm) * tacticMods.attackMult * (coachB?.attackMult ?? 1) * mm;
-  const midfield = (mid.length ? avg(mid.map((p) => p.overall)) : 50) * tacticMods.midfieldMult * (coachB?.midfieldMult ?? 1) * mm;
-  const defense = ((def.length ? avg(def.map((p) => p.overall)) : 50) * 0.8 + (gk?.overall ?? 50) * 0.2) * tacticMods.defenseMult * (coachB?.defenseMult ?? 1) * mm;
+  // Formation imbalance penalties — applied multiplicatively to ratings.
+  // Counts exclude GK (10 outfield players expected).
+  const nDef = def.length;   // expected ~3-5
+  const nMid = mid.length;   // expected ~2-5
+  const nAtt = att.length;   // expected ~1-3
+
+  // Attack penalty: no forwards = near-zero attack output; heavy defence eats attack budget
+  const attMult = nAtt === 0 ? 0.25
+    : nAtt === 1 ? 0.75
+    : nAtt >= 5  ? 1.15   // 5+ att = bonus (overloaded but aggressive)
+    : 1.0;
+
+  // Midfield penalty: no midfielders = no transitions, ratings collapse
+  const midMult = nMid === 0 ? 0.30
+    : nMid === 1 ? 0.65
+    : nMid >= 6  ? 1.10   // 6+ mid = slight bonus (midfield dominance)
+    : 1.0;
+
+  // Defense penalty: too few defenders = defense exposed;
+  // but too many (6+) also hurts attack/midfield indirectly (handled via attMult)
+  const defMult = nDef === 0 ? 0.40
+    : nDef === 1 ? 0.65
+    : nDef === 2 ? 0.85
+    : nDef >= 6  ? 1.10   // 6+ def = solid block bonus
+    : 1.0;
+
+  // Cross-penalty: a team with 0 mid AND high def has no attacking outlet at all
+  const noMidAttackPenalty = nMid === 0 ? 0.50 : 1.0;
+
+  const attack  = (0.7 * meanAtt + 0.3 * meanAm) * tacticMods.attackMult * (coachB?.attackMult ?? 1) * mm * attMult * noMidAttackPenalty;
+  const midfield = (nMid ? avg(mid.map((p) => p.overall)) : 50) * tacticMods.midfieldMult * (coachB?.midfieldMult ?? 1) * mm * midMult;
+  const defense = ((nDef ? avg(def.map((p) => p.overall)) : 50) * 0.8 + (gk?.overall ?? 50) * 0.2) * tacticMods.defenseMult * (coachB?.defenseMult ?? 1) * mm * defMult;
   const gkRating = gk?.overall ?? 50;
 
   const mergedTacticMods: TacticMods = coachB ? {

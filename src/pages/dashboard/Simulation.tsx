@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION, POSITIVE_TRAITS, NEGATIVE_TRAITS } from '@/lib/gen/coach';
 
-type Tab = 'moteur' | 'entraineurs' | 'moral';
+type Tab = 'moteur' | 'entraineurs' | 'moral' | 'notes' | 'presse';
+
+const TAB_LABEL: Record<Tab, string> = {
+  moteur: 'Moteur de jeu',
+  entraineurs: 'Entraîneurs',
+  moral: 'Moral',
+  notes: 'Notes joueurs',
+  presse: 'Presse',
+};
 
 export default function Simulation() {
   const [tab, setTab] = useState<Tab>('moteur');
@@ -13,14 +21,14 @@ export default function Simulation() {
         <p className="mt-2 text-muted">Documentation du moteur probabiliste et du système d'entraîneurs.</p>
       </div>
 
-      <div className="flex gap-1 border-b border-border">
-        {(['moteur', 'entraineurs', 'moral'] as Tab[]).map((t) => (
+      <div className="flex flex-wrap gap-1 border-b border-border">
+        {(['moteur', 'entraineurs', 'moral', 'notes', 'presse'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium transition-colors ${tab === t ? 'border-b-2 border-accent text-accent' : 'text-muted hover:text-text'}`}
           >
-            {t === 'moteur' ? 'Moteur de jeu' : t === 'entraineurs' ? 'Entraîneurs' : 'Moral'}
+            {TAB_LABEL[t]}
           </button>
         ))}
       </div>
@@ -28,6 +36,8 @@ export default function Simulation() {
       {tab === 'moteur' && <MoteurTab />}
       {tab === 'entraineurs' && <EntraineurTab />}
       {tab === 'moral' && <MoralTab />}
+      {tab === 'notes' && <NotesTab />}
+      {tab === 'presse' && <PresseTab />}
     </div>
   );
 }
@@ -43,15 +53,44 @@ function MoteurTab() {
         <Table
           headers={['Note', 'Formule']}
           rows={[
-            ['Attaque', '70 % moyenne des 3 meilleurs attaquants + 30 % moyenne des AM × coachAttackMult'],
-            ['Milieu', 'Moyenne de tous les milieux × coachMidfieldMult'],
-            ['Défense', '80 % moyenne défenseurs + 20 % overall GK × coachDefenseMult'],
+            ['Attaque', '70 % moyenne des 3 meilleurs attaquants + 30 % moyenne des AM × coachAttackMult × pénalité formation'],
+            ['Milieu', 'Moyenne de tous les milieux × coachMidfieldMult × pénalité formation'],
+            ['Défense', '80 % moyenne défenseurs + 20 % overall GK × coachDefenseMult × pénalité formation'],
             ['Gardien', 'Overall du GK titulaire'],
           ]}
         />
         <p className="mt-3 text-sm text-muted">
           Les multiplicateurs de style tactique s'appliquent en plus des bonus entraîneur (multiplicatifs).
         </p>
+      </Section>
+
+      <Section title="1b. Pénalités de formation">
+        <p className="text-sm text-muted mb-2">
+          Une formation déséquilibrée pénalise fortement les ratings. Calculé depuis le nombre réel
+          de défenseurs / milieux / attaquants dans le XI titulaire (hors GK) :
+        </p>
+        <Table
+          headers={['Zone', 'Effectif', 'Multiplicateur']}
+          rows={[
+            ['Attaque', '0 attaquants (ST/LW/RW)', '× 0,25 — quasi-nul'],
+            ['Attaque', '1 attaquant', '× 0,75'],
+            ['Attaque', '2–4 attaquants', '× 1,00 (normal)'],
+            ['Attaque', '5+ attaquants', '× 1,15 (surcharge offensive)'],
+            ['Milieu', '0 milieux (DM/CM/AM/LM/RM)', '× 0,30 — effondrement'],
+            ['Milieu', '1 milieu', '× 0,65'],
+            ['Milieu', '2–5 milieux', '× 1,00 (normal)'],
+            ['Milieu', '6+ milieux', '× 1,10 (domination milieu)'],
+            ['Défense', '0 défenseurs (CB/LB/RB)', '× 0,40 sur défense'],
+            ['Défense', '1 défenseur', '× 0,65'],
+            ['Défense', '2 défenseurs', '× 0,85'],
+            ['Défense', '3–5 défenseurs', '× 1,00 (normal)'],
+            ['Défense', '6+ défenseurs', '× 1,10 (bloc solide)'],
+          ]}
+        />
+        <div className="mt-3 rounded-lg border border-warning/20 bg-warning/5 px-4 py-3 text-sm text-warning">
+          Pénalité croisée : 0 milieux + surcharge défensive → rating attaque également réduit de 50 % supplémentaire
+          (pas de transition possible). Une équipe 10-0-0 joue à ~12 % de son attaque théorique.
+        </div>
       </Section>
 
       <Section title="2. Déroulement d'une minute">
@@ -95,6 +134,10 @@ function MoteurTab() {
           pBut = sigmoid( (finition + sang-froid − 0,5 × overall_gardien) ÷ 8 ) × multiplicateur
         </div>
         <p className="text-sm text-muted">Clampé [4 %, 75 %]. Tir non cadré : 10 % chance poteau.</p>
+        <p className="text-sm text-muted mt-2">
+          Le <strong>tireur</strong> est choisi parmi les 4 meilleurs ST/LW/RW/AM/CM par <strong>finition + sang-froid</strong>.
+          Le <strong>gardien adverse</strong> réduit pBut via son overall.
+        </p>
         <Table
           headers={['Origine', 'Multiplicateur']}
           rows={[
@@ -367,6 +410,217 @@ function MoralTab() {
         <p className="text-sm text-muted">
           Le moral de chaque équipe est visible dans l'onglet <strong>Compétitions</strong>, sur la fiche
           de chaque équipe en compétition active. Il est aussi affiché dans les classements LPM.
+        </p>
+      </Section>
+    </div>
+  );
+}
+
+function NotesTab() {
+  return (
+    <div className="max-w-3xl space-y-10">
+      <Section title="Formule">
+        <div className="rounded-lg border border-border bg-surface px-5 py-4 font-mono text-sm">
+          Overall = round( Σ(stat × poids) / Σ(poids) × 5 )
+        </div>
+        <p className="text-sm text-muted">
+          Seules les statistiques listées dans le tableau du poste comptent. Chaque stat vaut entre 1 et 20 — une moyenne pondérée à 20 donne un overall de 100.
+        </p>
+      </Section>
+
+      <Section title="Statistiques disponibles">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <StatGroup title="Technique" stats={['Passes', 'Centres', 'Dribble', 'Finition', 'Contrôle', 'Jeu de tête', 'Frappe loin', 'Tacle', 'Marquage']} />
+          <StatGroup title="Mental" stats={['Vision', 'Décisions', 'Sang-froid', 'Anticipation', 'Démarquage', 'Agressivité', 'Combativité']} />
+          <StatGroup title="Physique" stats={['Vitesse', 'Accélération', 'Force', 'Endurance', 'Agilité', 'Équilibre', 'Détente']} />
+          <StatGroup title="Gardien (GK uniquement)" stats={['Réflexes', 'Prise de balle', 'Jeu aérien', 'Face-à-face', 'Dégagement', 'Relance main']} />
+        </div>
+      </Section>
+
+      <Section title="Poids par poste">
+        <PosTable pos="GK" label="Gardien" rows={[
+          ['Réflexes', 5], ['Prise de balle', 4], ['Face-à-face', 3], ['Jeu aérien', 3],
+          ['Anticipation', 2], ['Décisions', 2], ['Sang-froid', 2], ['Dégagement', 2],
+          ['Relance main', 2], ['Détente', 2], ['Agilité', 2],
+        ]} />
+        <PosTable pos="CB" label="Défenseur central" rows={[
+          ['Tacle', 4], ['Marquage', 4], ['Jeu de tête', 3], ['Force', 3],
+          ['Détente', 3], ['Anticipation', 3], ['Décisions', 3], ['Sang-froid', 2],
+          ['Vitesse', 2], ['Passes', 1],
+        ]} />
+        <PosTable pos="LB/RB" label="Latéral" rows={[
+          ['Tacle', 3], ['Centres', 3], ['Vitesse', 3], ['Endurance', 3],
+          ['Anticipation', 2], ['Décisions', 2], ['Combativité', 2],
+          ['Marquage', 2], ['Dribble', 1],
+        ]} />
+        <PosTable pos="DM" label="Milieu défensif" rows={[
+          ['Tacle', 4], ['Marquage', 3], ['Décisions', 3], ['Anticipation', 3],
+          ['Combativité', 3], ['Passes', 2], ['Sang-froid', 2], ['Endurance', 2],
+        ]} />
+        <PosTable pos="CM" label="Milieu central" rows={[
+          ['Passes', 4], ['Vision', 3], ['Décisions', 3], ['Endurance', 2],
+          ['Combativité', 2], ['Contrôle', 2], ['Dribble', 1], ['Tacle', 1],
+        ]} />
+        <PosTable pos="AM" label="Milieu offensif" rows={[
+          ['Vision', 4], ['Dribble', 3], ['Frappe loin', 3], ['Passes', 2],
+          ['Décisions', 2], ['Sang-froid', 2], ['Contrôle', 2],
+        ]} />
+        <PosTable pos="LM/RM" label="Milieu latéral" rows={[
+          ['Centres', 3], ['Endurance', 3], ['Vitesse', 2], ['Passes', 2],
+          ['Dribble', 2], ['Combativité', 2],
+        ]} />
+        <PosTable pos="LW/RW" label="Ailier" rows={[
+          ['Vitesse', 4], ['Dribble', 4], ['Centres', 3], ['Accélération', 3],
+          ['Finition', 2], ['Agilité', 2],
+        ]} />
+        <PosTable pos="ST" label="Buteur" rows={[
+          ['Finition', 5], ['Sang-froid', 3], ['Démarquage', 3], ['Jeu de tête', 2],
+          ['Vitesse', 2], ['Force', 2], ['Dribble', 1],
+        ]} />
+      </Section>
+
+      <Section title="Impact direct des stats sur le moteur">
+        <p className="text-sm text-muted mb-2">
+          Ces stats influencent le moteur <strong>directement</strong>, en dehors de l'overall :
+        </p>
+        <Table
+          headers={['Stat', 'Où elle s\'applique', 'Effet']}
+          rows={[
+            ['Finition', 'Tout tir cadré', 'Entre dans pBut = sigmoid((finition + sang-froid − 0,5 × GK) / 8)'],
+            ['Sang-froid', 'Tout tir + tirs au but', 'Entre dans pBut avec finition — crucial sous pression'],
+            ['Agressivité', 'Fautes', 'Augmente la prob. de jaune (13–19 %) et de rouge direct (0,5–1 %)'],
+            ['Jeu de tête', 'Corners', 'Trie qui conteste le centre — hausse la prob. de tir sur corner'],
+            ['Détente', 'Corners', 'Combinée avec jeu de tête pour sélectionner le meilleur en-tête'],
+            ['Frappe loin', 'Coups francs', 'Trie le tireur de coup franc — hausse la prob. de tir sur FK'],
+            ['Dribble', 'Dribbles', 'Trie le dribbleur + hausse la prob. de tir en sortie de dribble'],
+            ['Agilité', 'Dribbles', 'Combinée avec dribble pour sélectionner le meilleur dribbleur'],
+            ['Vision', 'Passes clés', 'Hausse la prob. qu\'une passe clé crée une occasion (base 35 %)'],
+            ['Passes', 'Passes clés', 'Trie qui réalise la passe clé — favorise les milieux créateurs'],
+            ['Première touche', 'Passes clés', 'Combinée avec passes pour sélectionner le meilleur passeur'],
+            ['Tacle', 'Dégagements', 'Trie qui dégage — défenseurs avec bon tacle prioritaires'],
+            ['Marquage', 'Dégagements', 'Combiné avec tacle pour sélectionner le meilleur défenseur'],
+          ]}
+        />
+        <p className="mt-3 text-sm text-muted">
+          Toutes les autres stats (vitesse, endurance, force, vision de jeu…) influencent uniquement l'<strong>overall</strong>,
+          qui lui-même calcule les ratings attaque/milieu/défense de l'équipe.
+        </p>
+      </Section>
+    </div>
+  );
+}
+
+function StatGroup({ title, stats }: { title: string; stats: string[] }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface p-4 space-y-2">
+      <div className="text-xs uppercase tracking-widest text-muted">{title}</div>
+      <ul className="space-y-0.5">
+        {stats.map((s) => (
+          <li key={s} className="text-sm text-text/80">{s}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PosTable({ pos, label, rows }: { pos: string; label: string; rows: [string, number][] }) {
+  const total = rows.reduce((s, [, w]) => s + w, 0);
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="rounded bg-border/40 px-2 py-0.5 font-mono text-xs font-medium">{pos}</span>
+        <span className="text-sm font-medium">{label}</span>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-surface">
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-widest text-muted">Stat</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-widest text-muted">Poids</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-widest text-muted">% du total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([stat, weight], i) => (
+              <tr key={stat} className={i % 2 === 0 ? '' : 'bg-surface/50'}>
+                <td className="px-4 py-2 font-medium">{stat}</td>
+                <td className="px-4 py-2 text-muted">{weight}</td>
+                <td className="px-4 py-2 text-muted">{Math.round((weight / total) * 100)} %</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PresseTab() {
+  return (
+    <div className="space-y-10">
+      <Section title="1. Principe général">
+        <p>
+          Après chaque match de compétition, le système génère automatiquement un ou plusieurs articles de presse.
+          Ces articles reflètent le résultat, le moral de l'équipe, le comportement du coach et les événements marquants.
+          Certains articles ont un <strong>effet direct sur le moral</strong> de l'équipe concernée.
+        </p>
+      </Section>
+
+      <Section title="2. Catégories d'articles">
+        <Table
+          headers={['Catégorie', 'Déclencheur', 'Effet moral']}
+          rows={[
+            ['Victoire', 'Victoire standard', 'Aucun (moral déjà mis à jour par le match)'],
+            ['Exploit', 'Victoire contre une équipe nettement plus forte', '+5 à +10 bonus supplémentaire'],
+            ['Défaite', 'Défaite standard', 'Aucun effet additionnel'],
+            ['Crise', 'Série de défaites ou moral très bas', '−5 à −15 choc morale'],
+            ['Scandale', 'Doping, expulsion coach, comportement', '−10 à −20 choc morale'],
+            ['Révolte', 'Moral effondré + défaite humiliante', '−15 à −25 choc morale'],
+            ['Critique', 'Mauvaise prestation malgré victoire', '−3 à −8 choc morale'],
+            ['Forme', 'Bonne dynamique sans exploit', '+3 à +8 bonus morale'],
+            ['Neutralité', 'Match nul ou résultat sans relief', 'Aucun effet'],
+          ]}
+        />
+      </Section>
+
+      <Section title="3. Mentions de joueurs et coachs">
+        <p>
+          Certains articles mentionnent des joueurs ou des entraîneurs par leur nom. Ces mentions sont cliquables
+          dans l'onglet <strong>Presse</strong> d'une compétition — elles ouvrent une fiche synthétique
+          avec les stats de la personne au moment de l'article.
+        </p>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">
+          <li>Joueurs mentionnés : nom, poste, overall, stats clés (technique / mental / physique).</li>
+          <li>Coachs mentionnés : nom, overall, stats (motivation, tactique, offensif, défensif, mentalité, gestion) et traits.</li>
+        </ul>
+      </Section>
+
+      <Section title="4. Effets spéciaux">
+        <ul className="list-disc space-y-2 pl-5 text-sm text-muted">
+          <li>
+            <strong>Choc morale (moraleShock)</strong> — Les articles hostiles (scandale, crise, révolte) appliquent
+            un malus immédiat sur le moral de l'équipe, en plus du résultat du match.
+          </li>
+          <li>
+            <strong>Bonus morale (moraleBoost)</strong> — Les articles positifs (exploit, forme) appliquent
+            un bonus supplémentaire au moral.
+          </li>
+          <li>
+            <strong>Destitution du président</strong> — Certains articles de révolte ou de scandale grave peuvent
+            déclencher la destitution fictive du président. Un article de rebond est automatiquement généré
+            au round suivant pour stabiliser la situation.
+          </li>
+          <li>
+            <strong>Suspension par dopage</strong> — Un article de scandale lié au doping peut entraîner
+            la suspension automatique d'un joueur pour le prochain match.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="5. Lecture dans l'interface">
+        <p className="text-sm text-muted">
+          Les articles de presse sont accessibles dans l'onglet <strong>Presse</strong> de chaque compétition active ou terminée.
+          Ils sont triés du plus récent au plus ancien. Un badge indique le nombre d'articles non lus.
         </p>
       </Section>
     </div>
