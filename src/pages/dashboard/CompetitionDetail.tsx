@@ -83,19 +83,6 @@ export default function CompetitionDetail() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, readToken]);
 
-  // Auto-trigger J1 draw ceremony for LPM if not yet revealed
-  useEffect(() => {
-    if (loading || !current || !isAdmin) return;
-    if (current.format !== 'lpm' || current.drawRevealed) return;
-    if (roundDraw) return; // already showing
-    const j1Matches = current.matches.filter(
-      (m) => m.round === 1 && m.phase === 'league' && m.status === 'pending' && m.homeTeamId && m.awayTeamId,
-    );
-    if (j1Matches.length === 0) return;
-    const pairs: LPMPair[] = j1Matches.map((m) => ({ home: m.homeTeamId!, away: m.awayTeamId! }));
-    setRoundDraw({ round: 1, pairs, isScheduleDraw: true });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, current?.id, current?.drawRevealed]);
 
   if (loading) {
     return <div className="flex justify-center py-20"><Spinner className="h-6 w-6" /></div>;
@@ -329,10 +316,6 @@ export default function CompetitionDetail() {
 
     if (roundMatches.length === 1) {
       openMatchModal(roundMatches[0].id);
-    } else if (isLPM && roundMatches[0]?.phase === 'league') {
-      // LPM league rounds: show draw ceremony before launching multiplex
-      const pairs: LPMPair[] = roundMatches.map((m) => ({ home: m.homeTeamId!, away: m.awayTeamId! }));
-      setRoundDraw({ round, pairs });
     } else {
       navigate(`/competition/${current.id}/round/${round}`);
     }
@@ -348,16 +331,23 @@ export default function CompetitionDetail() {
             : <button onClick={() => setRoundDraw(null)} className="text-sm text-muted hover:text-text">← Retour</button>
           }
           <h1 className="mt-2 font-display text-4xl">
-            {roundDraw.isScheduleDraw ? 'Tirage du calendrier — Journée 1' : `Tirage — Journée ${roundDraw.round}`}
+            {roundDraw.isScheduleDraw ? 'Tirage du calendrier LPM' : `Tirage — Journée ${roundDraw.round}`}
           </h1>
-          <p className="text-muted text-sm mt-1">{current.name} · {roundDraw.pairs.length} matchs</p>
+          <p className="text-muted text-sm mt-1">
+            {current.name} · {roundDraw.isScheduleDraw ? `${roundDraw.pairs.length} matchs au total` : `${roundDraw.pairs.length} matchs`}
+          </p>
         </div>
         <LPMDrawCeremony
           pairs={roundDraw.pairs}
           teams={allTeams}
-          title={`Journée ${roundDraw.round}`}
-          subtitle={roundDraw.isScheduleDraw ? 'Tirage du calendrier — Journée 1' : 'Tirage au sort des confrontations de la journée'}
-          pairLabels={(i) => `Match ${i + 1}`}
+          title={roundDraw.isScheduleDraw ? 'Calendrier complet' : `Journée ${roundDraw.round}`}
+          subtitle={roundDraw.isScheduleDraw ? 'Tous les matchs de la phase de ligue' : 'Confrontations de la journée'}
+          pairLabels={roundDraw.isScheduleDraw
+            ? (i) => {
+                const m = current.matches.filter((x) => x.phase === 'league' && x.homeTeamId && x.awayTeamId)[i];
+                return m ? `J${m.round} · M${i + 1}` : `M${i + 1}`;
+              }
+            : (i) => `Match ${i + 1}`}
           onConfirm={async () => {
             const round = roundDraw.round;
             const isScheduleDraw = roundDraw.isScheduleDraw;
@@ -366,8 +356,10 @@ export default function CompetitionDetail() {
               const updated = { ...current, drawRevealed: true };
               setCurrent(updated);
               try { await save(updated, pat); } catch { /* non-blocking */ }
+              // stay on page — no navigate
+            } else {
+              navigate(`/competition/${current.id}/round/${round}`);
             }
-            navigate(`/competition/${current.id}/round/${round}`);
           }}
         />
       </div>
@@ -434,6 +426,20 @@ export default function CompetitionDetail() {
         </div>
         {isAdmin && (
           <div className="flex gap-2 flex-wrap justify-end">
+            {isLPM && !current.drawRevealed && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  const allLeague = current.matches.filter(
+                    (m) => m.phase === 'league' && m.homeTeamId && m.awayTeamId,
+                  );
+                  const pairs: LPMPair[] = allLeague.map((m) => ({ home: m.homeTeamId!, away: m.awayTeamId! }));
+                  setRoundDraw({ round: 0, pairs, isScheduleDraw: true });
+                }}
+              >
+                🎲 Tirage du calendrier
+              </Button>
+            )}
             {!current.teamSnapshot && (
               <Button size="sm" variant="ghost" onClick={handlePatchSnapshot} disabled={syncing}>
                 🔧 Réparer noms
