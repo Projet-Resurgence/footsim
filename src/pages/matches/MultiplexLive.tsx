@@ -103,23 +103,39 @@ export default function MultiplexLive() {
 
         const inputs: Array<{ compMatchId: string; input: MatchInput }> = [];
 
-        for (const m of roundMatches) {
-          const homeSlug = resolveSlug(m.homeTeamId!);
-          const awaySlug = resolveSlug(m.awayTeamId!);
-          if (!homeSlug || !awaySlug) continue;
+        const moraleMap = comp.morale ?? initMorale(comp.teamIds);
+        const compInjuries = comp.injuries ?? [];
+        const compSuspensions = comp.suspensions ?? [];
 
-          const [homeData, awayData] = await Promise.all([
-            fetchTeam(homeSlug, ownerId, effectivePat),
-            fetchTeam(awaySlug, ownerId, effectivePat),
-          ]);
+        // Collect unique slugs and fetch all in parallel
+        const slugMap = new Map<string, string>(); // teamId → slug
+        for (const m of roundMatches) {
+          const hs = resolveSlug(m.homeTeamId!);
+          const as_ = resolveSlug(m.awayTeamId!);
+          if (hs) slugMap.set(m.homeTeamId!, hs);
+          if (as_) slugMap.set(m.awayTeamId!, as_);
+        }
+        const uniqueSlugs = Array.from(new Set(slugMap.values()));
+        const teamDataArr = await Promise.all(
+          uniqueSlugs.map((slug) => fetchTeam(slug, ownerId, effectivePat)),
+        );
+        const teamDataMap = new Map<string, NonNullable<typeof teamDataArr[number]>>();
+        for (let i = 0; i < uniqueSlugs.length; i++) {
+          const d = teamDataArr[i];
+          if (d) teamDataMap.set(uniqueSlugs[i], d);
+        }
+
+        for (const m of roundMatches) {
+          const homeSlug = slugMap.get(m.homeTeamId!);
+          const awaySlug = slugMap.get(m.awayTeamId!);
+          if (!homeSlug || !awaySlug) continue;
+          const homeData = teamDataMap.get(homeSlug);
+          const awayData = teamDataMap.get(awaySlug);
           if (!homeData || !awayData) continue;
 
           const homeTactics = resolveActiveTactic(homeData.team);
           const awayTactics = resolveActiveTactic(awayData.team);
           const mid = `comp-${competitionId}-${m.id}`;
-          const moraleMap = comp.morale ?? initMorale(comp.teamIds);
-          const compInjuries = comp.injuries ?? [];
-          const compSuspensions = comp.suspensions ?? [];
           const homeUnavail = unavailableIds(m.homeTeamId!, compInjuries, compSuspensions);
           const awayUnavail = unavailableIds(m.awayTeamId!, compInjuries, compSuspensions);
           let leg1Score: { home: number; away: number } | undefined;
