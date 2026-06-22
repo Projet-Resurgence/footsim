@@ -8,26 +8,42 @@ import { RequireAuth } from '@/components/auth/RequireAuth';
 import { RequireAdmin } from '@/components/auth/RequireAdmin';
 import { Spinner } from '@/components/ui/Spinner';
 
-const MyTeam = lazy(() => import('@/pages/MyTeam'));
-const Dashboard = lazy(() => import('@/pages/dashboard/Dashboard'));
-const Settings = lazy(() => import('@/pages/dashboard/Settings'));
-const Teams = lazy(() => import('@/pages/dashboard/Teams'));
-const TeamNew = lazy(() => import('@/pages/dashboard/TeamNew'));
-const TeamDetail = lazy(() => import('@/pages/dashboard/TeamDetail'));
-const Simulation = lazy(() => import('@/pages/dashboard/Simulation'));
-const Postes = lazy(() => import('@/pages/dashboard/Postes'));
-const NotesJoueurs = lazy(() => import('@/pages/dashboard/NotesJoueurs'));
-const MeilleursJoueurs = lazy(() => import('@/pages/dashboard/MeilleursJoueurs'));
-const Competitions = lazy(() => import('@/pages/dashboard/Competitions'));
-const CompetitionNew = lazy(() => import('@/pages/dashboard/CompetitionNew'));
-const CompetitionDetail = lazy(() => import('@/pages/dashboard/CompetitionDetail'));
-const LeagueNew = lazy(() => import('@/pages/dashboard/LeagueNew'));
-const LeagueDetail = lazy(() => import('@/pages/dashboard/LeagueDetail'));
-const ClubNew = lazy(() => import('@/pages/dashboard/ClubNew'));
-const MatchSetup = lazy(() => import('@/pages/matches/MatchSetup'));
-const MatchLive = lazy(() => import('@/pages/matches/MatchLive'));
-const CompetitionMatchLive = lazy(() => import('@/pages/matches/CompetitionMatchLive'));
-const MultiplexLive = lazy(() => import('@/pages/matches/MultiplexLive'));
+function lazyWithReload<T extends React.ComponentType<unknown>>(
+  factory: () => Promise<{ default: T }>,
+) {
+  return lazy(() =>
+    factory().catch((err) => {
+      // Stale chunk after a new deploy — hard reload once to get fresh assets
+      const reloaded = sessionStorage.getItem('footsim.chunk_reload');
+      if (!reloaded) {
+        sessionStorage.setItem('footsim.chunk_reload', '1');
+        window.location.reload();
+      }
+      return Promise.reject(err);
+    }),
+  );
+}
+
+const MyTeam = lazyWithReload(() => import('@/pages/MyTeam'));
+const Dashboard = lazyWithReload(() => import('@/pages/dashboard/Dashboard'));
+const Settings = lazyWithReload(() => import('@/pages/dashboard/Settings'));
+const Teams = lazyWithReload(() => import('@/pages/dashboard/Teams'));
+const TeamNew = lazyWithReload(() => import('@/pages/dashboard/TeamNew'));
+const TeamDetail = lazyWithReload(() => import('@/pages/dashboard/TeamDetail'));
+const Simulation = lazyWithReload(() => import('@/pages/dashboard/Simulation'));
+const Postes = lazyWithReload(() => import('@/pages/dashboard/Postes'));
+const NotesJoueurs = lazyWithReload(() => import('@/pages/dashboard/NotesJoueurs'));
+const MeilleursJoueurs = lazyWithReload(() => import('@/pages/dashboard/MeilleursJoueurs'));
+const Competitions = lazyWithReload(() => import('@/pages/dashboard/Competitions'));
+const CompetitionNew = lazyWithReload(() => import('@/pages/dashboard/CompetitionNew'));
+const CompetitionDetail = lazyWithReload(() => import('@/pages/dashboard/CompetitionDetail'));
+const LeagueNew = lazyWithReload(() => import('@/pages/dashboard/LeagueNew'));
+const LeagueDetail = lazyWithReload(() => import('@/pages/dashboard/LeagueDetail'));
+const ClubNew = lazyWithReload(() => import('@/pages/dashboard/ClubNew'));
+const MatchSetup = lazyWithReload(() => import('@/pages/matches/MatchSetup'));
+const MatchLive = lazyWithReload(() => import('@/pages/matches/MatchLive'));
+const CompetitionMatchLive = lazyWithReload(() => import('@/pages/matches/CompetitionMatchLive'));
+const MultiplexLive = lazyWithReload(() => import('@/pages/matches/MultiplexLive'));
 
 function PageFallback() {
   return (

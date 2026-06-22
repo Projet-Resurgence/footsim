@@ -22,6 +22,8 @@ import { loadLocalTactics, loadLocalSavedTactics, saveLocalSavedTactics } from '
 import { env } from '@/lib/env';
 import { PlayerView } from '@/components/team/PlayerView';
 import Simulation from '@/pages/dashboard/Simulation';
+import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
+import type { Coach } from '@/lib/gen/coach';
 
 const ghPublic = new GithubTeamBackend(env.githubReadToken ?? null);
 
@@ -36,10 +38,11 @@ const STATUS_COLOR: Record<string, string> = {
   completed: 'text-warning',
 };
 
-type Tab = 'tactique' | 'joueurs' | 'noms' | 'postes' | 'competitions' | 'palmares' | 'top' | 'simulation';
+type Tab = 'tactique' | 'joueurs' | 'noms' | 'postes' | 'competitions' | 'palmares' | 'top' | 'simulation' | 'entraineur';
 
 export default function MyTeam() {
   const session = useSession((s) => s.session);
+  const isAdmin = useSession((s) => s.isAdmin());
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{ team: Team; players: Player[] } | null>(null);
@@ -350,7 +353,7 @@ export default function MyTeam() {
 
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-1 border-b border-border">
-        {(['tactique', 'joueurs', 'noms', 'postes', 'competitions', 'palmares', 'top', 'simulation'] as Tab[]).map((t) => (
+        {(['tactique', 'joueurs', 'noms', 'postes', 'competitions', 'palmares', 'top', 'entraineur', 'simulation'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -363,6 +366,7 @@ export default function MyTeam() {
               : t === 'competitions' ? 'Compétitions'
               : t === 'palmares' ? 'Palmarès'
               : t === 'top' ? 'Meilleurs joueurs'
+              : t === 'entraineur' ? 'Entraîneur'
               : 'Simulation'}
           </button>
         ))}
@@ -604,6 +608,10 @@ export default function MyTeam() {
           )}
         </div>
       )}
+      {tab === 'entraineur' && (
+        <CoachReadPanel coach={data.team.coach ?? null} teamSlug={data.team.slug} isAdmin={isAdmin} />
+      )}
+
       {/* Simulation (tous sous-onglets : moteur, entraineurs, moral, notes, presse) */}
       {tab === 'simulation' && <Simulation />}
     </main>
@@ -612,6 +620,92 @@ export default function MyTeam() {
       <PlayerView player={viewingPlayer} onClose={() => setViewingPlayer(null)} />
     )}
     </>
+  );
+}
+
+function CoachReadPanel({ coach, teamSlug, isAdmin }: { coach: Coach | null; teamSlug?: string; isAdmin: boolean }) {
+  const statKeys = ['motivation', 'tactique', 'offensive', 'defensif', 'mentalite', 'gestion'] as const;
+  const statLabel: Record<typeof statKeys[number], string> = {
+    motivation: 'Motivation', tactique: 'Tactique', offensive: 'Offensive',
+    defensif: 'Défensif', mentalite: 'Mentalité', gestion: 'Gestion',
+  };
+
+  if (!coach) {
+    return (
+      <div className="space-y-3">
+        <h2 className="font-display text-xl">Entraîneur</h2>
+        <p className="text-sm text-muted">Aucun entraîneur pour cette équipe.</p>
+        {isAdmin && teamSlug && (
+          <Link to={`/dashboard/teams/${teamSlug}`} className="text-sm text-accent hover:underline">
+            Aller dans le dashboard pour en générer un →
+          </Link>
+        )}
+      </div>
+    );
+  }
+
+  const pos = coach.positiveTraits ?? (coach.trait ? [coach.trait] : []);
+  const neg = coach.negativeTraits ?? [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-xl">Entraîneur</h2>
+        {isAdmin && teamSlug && (
+          <Link to={`/dashboard/teams/${teamSlug}`} className="text-sm text-accent hover:underline text-xs">
+            Modifier →
+          </Link>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-border bg-surface p-5 space-y-5">
+        <div>
+          <div className="font-display text-2xl">{coach.firstName} {coach.lastName}</div>
+          <div className="text-sm text-muted mt-1">Overall {coach.overall} / 100</div>
+        </div>
+
+        {(pos.length > 0 || neg.length > 0) && (
+          <div className="space-y-2">
+            {pos.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-xs uppercase tracking-widest text-muted">Traits positifs</div>
+                {pos.map((t) => (
+                  <div key={t} className="rounded border border-green-500/20 bg-green-500/5 px-3 py-2">
+                    <div className="text-xs font-semibold text-green-400">{COACH_TRAIT_LABEL[t]}</div>
+                    <div className="text-xs text-muted mt-0.5">{COACH_TRAIT_DESCRIPTION[t]}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {neg.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-xs uppercase tracking-widest text-muted">Traits négatifs</div>
+                {neg.map((t) => (
+                  <div key={t} className="rounded border border-danger/20 bg-danger/5 px-3 py-2">
+                    <div className="text-xs font-semibold text-danger">{COACH_TRAIT_LABEL[t]}</div>
+                    <div className="text-xs text-muted mt-0.5">{COACH_TRAIT_DESCRIPTION[t]}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 border-t border-border pt-4">
+          {statKeys.map((k) => (
+            <div key={k} className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted">{statLabel[k]}</span>
+                <span className="tabular-nums font-semibold">{coach.stats[k]}</span>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-border">
+                <div className="h-full rounded-full bg-accent" style={{ width: `${(coach.stats[k] / 20) * 100}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
