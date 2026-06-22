@@ -301,9 +301,12 @@ export default function MultiplexLive() {
     if (allDone) {
       const finalMatch = updatedMatches.find((m) => m.phase === 'F');
       if (finalMatch?.result) {
-        winner = finalMatch.result.home > finalMatch.result.away
-          ? finalMatch.homeTeamId ?? undefined
-          : finalMatch.awayTeamId ?? undefined;
+        const fr = finalMatch.result;
+        if (fr.home !== fr.away) {
+          winner = fr.home > fr.away ? finalMatch.homeTeamId ?? undefined : finalMatch.awayTeamId ?? undefined;
+        } else if (fr.penalties) {
+          winner = fr.penalties.home > fr.penalties.away ? finalMatch.homeTeamId ?? undefined : finalMatch.awayTeamId ?? undefined;
+        }
       } else if (current.format === 'league') {
         const sorted = Object.values(updatedStandings).sort((a, b) => b.points - a.points);
         winner = sorted[0]?.teamId;
