@@ -16,7 +16,6 @@ import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { useSession } from '@/stores/session';
 import { needsKnockoutDraw, getQualifiersByRank, seedKnockoutWithOrder, sortStandings, seedLPMPlayoffs } from '@/lib/competition/scheduler';
 import { LPMDrawCeremony, type LPMPair } from '@/components/competition/LPMDrawCeremony';
-import { LPMScheduleDraw } from '@/components/competition/LPMScheduleDraw';
 import { buildKnockoutPots, conductKnockoutDraw } from '@/lib/competition/draw';
 import type { DrawResult } from '@/lib/competition/draw';
 import type { Competition, CompMatch, PlayerCompStats, CompHistoryEntry } from '@/lib/competition/types';
@@ -57,7 +56,7 @@ export default function CompetitionDetail() {
   const [activeTab, setActiveTab] = useState<'overview' | 'bracket' | 'rounds' | 'stats' | 'presse' | 'medical' | 'suspensions'>('overview');
   const [knockoutDraw, setKnockoutDraw] = useState<DrawResult | null>(null);
   const [lpmDraw, setLpmDraw] = useState<LPMPair[] | null>(null);
-  const [roundDraw, setRoundDraw] = useState<{ round: number; pairs: LPMPair[] } | null>(null);
+  const [roundDraw, setRoundDraw] = useState<{ round: number; pairs: LPMPair[]; isScheduleDraw?: boolean } | null>(null);
   const [preMatchModal, setPreMatchModal] = useState<{ matchId: string; home: Team; away: Team } | null>(null);
 
   // For public repos, reads work without a token. PAT only needed for writes.
@@ -83,6 +82,20 @@ export default function CompetitionDetail() {
     init().finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, readToken]);
+
+  // Auto-trigger J1 draw ceremony for LPM if not yet revealed
+  useEffect(() => {
+    if (loading || !current || !isAdmin) return;
+    if (current.format !== 'lpm' || current.drawRevealed) return;
+    if (roundDraw) return; // already showing
+    const j1Matches = current.matches.filter(
+      (m) => m.round === 1 && m.phase === 'league' && m.status === 'pending' && m.homeTeamId && m.awayTeamId,
+    );
+    if (j1Matches.length === 0) return;
+    const pairs: LPMPair[] = j1Matches.map((m) => ({ home: m.homeTeamId!, away: m.awayTeamId! }));
+    setRoundDraw({ round: 1, pairs, isScheduleDraw: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, current?.id, current?.drawRevealed]);
 
   if (loading) {
     return <div className="flex justify-center py-20"><Spinner className="h-6 w-6" /></div>;
@@ -129,31 +142,6 @@ export default function CompetitionDetail() {
   const isLPM = current.format === 'lpm';
 
   const allStandings = Object.values(current.standings);
-
-  // LPM schedule draw ceremony — shown to admin before competition starts
-  if (isLPM && isAdmin && !current.drawRevealed && current.status === 'setup') {
-    async function handleDrawConfirm() {
-      if (!pat) return;
-      const updated = { ...current!, drawRevealed: true };
-      setCurrent(updated);
-      try {
-        await save(updated, pat);
-        toast('success', 'Tirage confirmé — compétition prête.');
-      } catch (err) {
-        toast('error', String(err));
-      }
-    }
-    return (
-      <div className="max-w-5xl mx-auto space-y-6 py-4">
-        <Link to={backTo} className="text-sm text-muted hover:text-text">{backLabel}</Link>
-        <LPMScheduleDraw
-          competition={current}
-          teamMap={teamMap}
-          onConfirm={handleDrawConfirm}
-        />
-      </div>
-    );
-  }
 
   async function ensureTeams() {
     if (teams.length === 0) await refreshTeams(ownerId, effectivePat);
@@ -355,19 +343,31 @@ export default function CompetitionDetail() {
     return (
       <div className="max-w-4xl space-y-6">
         <div>
-          <button onClick={() => setRoundDraw(null)} className="text-sm text-muted hover:text-text">← Retour</button>
-          <h1 className="mt-2 font-display text-4xl">Tirage — Journée {roundDraw.round}</h1>
+          {roundDraw.isScheduleDraw
+            ? <Link to={backTo} className="text-sm text-muted hover:text-text">{backLabel}</Link>
+            : <button onClick={() => setRoundDraw(null)} className="text-sm text-muted hover:text-text">← Retour</button>
+          }
+          <h1 className="mt-2 font-display text-4xl">
+            {roundDraw.isScheduleDraw ? 'Tirage du calendrier — Journée 1' : `Tirage — Journée ${roundDraw.round}`}
+          </h1>
           <p className="text-muted text-sm mt-1">{current.name} · {roundDraw.pairs.length} matchs</p>
         </div>
         <LPMDrawCeremony
           pairs={roundDraw.pairs}
           teams={allTeams}
           title={`Journée ${roundDraw.round}`}
-          subtitle="Tirage au sort des confrontations de la journée"
+          subtitle={roundDraw.isScheduleDraw ? 'Tirage du calendrier — Journée 1' : 'Tirage au sort des confrontations de la journée'}
           pairLabels={(i) => `Match ${i + 1}`}
-          onConfirm={() => {
+          onConfirm={async () => {
+            const round = roundDraw.round;
+            const isScheduleDraw = roundDraw.isScheduleDraw;
             setRoundDraw(null);
-            navigate(`/competition/${current.id}/round/${roundDraw.round}`);
+            if (isScheduleDraw && pat) {
+              const updated = { ...current, drawRevealed: true };
+              setCurrent(updated);
+              try { await save(updated, pat); } catch { /* non-blocking */ }
+            }
+            navigate(`/competition/${current.id}/round/${round}`);
           }}
         />
       </div>
