@@ -925,7 +925,7 @@ function ActionFootPanel({
       <div className="space-y-1">
         <h3 className="font-display text-lg">Action sur le Foot</h3>
         <p className="text-xs text-muted">
-          Définit une note (0–10) et un financement (plafond 250 M€) qui octroie un bonus sur la force générale de l'équipe (0 à +5), sans modifier les joueurs.
+          Définit une note (0–10) et un financement (plafond 250 M€) qui octroie un bonus sur la force générale de l'équipe (0 à +5). Les stats des joueurs sont recalculées en conséquence.
         </p>
       </div>
 
