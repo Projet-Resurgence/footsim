@@ -67,19 +67,27 @@ export async function removeTeamCompHistory(
   compId: string,
   token: string,
 ): Promise<void> {
-  const existing = await readJson<Team>(TEAM_PATH(slug), token);
-  if (!existing) return;
-  const team = existing.data;
-  const prev = team.compHistory ?? [];
-  if (!prev.some((e) => e.compId === compId)) return;
-  const updated: Team = { ...team, compHistory: prev.filter((e) => e.compId !== compId) };
-  await writeJson({
-    path: TEAM_PATH(slug),
-    token,
-    data: updated,
-    message: `chore(teams/${slug}): remove comp ${compId} from palmares`,
-    sha: existing.sha,
-  });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const existing = await readJson<Team>(TEAM_PATH(slug), token);
+    if (!existing) return;
+    const team = existing.data;
+    const prev = team.compHistory ?? [];
+    if (!prev.some((e) => e.compId === compId)) return;
+    const updated: Team = { ...team, compHistory: prev.filter((e) => e.compId !== compId) };
+    try {
+      await writeJson({
+        path: TEAM_PATH(slug),
+        token,
+        data: updated,
+        message: `chore(teams/${slug}): remove comp ${compId} from palmares`,
+        sha: existing.sha,
+      });
+      return;
+    } catch (err) {
+      if ((String(err).includes('409') || String(err).includes('422')) && attempt < 3) continue;
+      throw err;
+    }
+  }
 }
 
 /** Append a CompHistoryEntry to team.json (only if not already recorded for same compId). */
@@ -88,19 +96,27 @@ export async function appendTeamCompHistory(
   entry: CompHistoryEntry,
   token: string,
 ): Promise<void> {
-  const existing = await readJson<Team>(TEAM_PATH(slug), token);
-  if (!existing) return;
-  const team = existing.data;
-  const prev = team.compHistory ?? [];
-  if (prev.some((e) => e.compId === entry.compId)) return;
-  const updated: Team = { ...team, compHistory: [...prev, entry] };
-  await writeJson({
-    path: TEAM_PATH(slug),
-    token,
-    data: updated,
-    message: `chore(teams/${slug}): add ${entry.compName} to palmares`,
-    sha: existing.sha,
-  });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const existing = await readJson<Team>(TEAM_PATH(slug), token);
+    if (!existing) return;
+    const team = existing.data;
+    const prev = team.compHistory ?? [];
+    if (prev.some((e) => e.compId === entry.compId)) return;
+    const updated: Team = { ...team, compHistory: [...prev, entry] };
+    try {
+      await writeJson({
+        path: TEAM_PATH(slug),
+        token,
+        data: updated,
+        message: `chore(teams/${slug}): add ${entry.compName} to palmares`,
+        sha: existing.sha,
+      });
+      return;
+    } catch (err) {
+      if ((String(err).includes('409') || String(err).includes('422')) && attempt < 3) continue;
+      throw err;
+    }
+  }
 }
 
 export async function listTeams(token: string | null): Promise<Team[]> {

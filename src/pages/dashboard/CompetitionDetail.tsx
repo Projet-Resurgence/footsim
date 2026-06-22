@@ -128,13 +128,13 @@ export default function CompetitionDetail() {
     try {
       await save(current, pat);
 
-      // When competition is completed, append compHistory to each participating team
+      // When competition is completed, append compHistory to each participating team (sequential to avoid SHA conflicts)
       if (current.status === 'completed') {
         const teamSlugs = teams
           .filter((t) => current.teamIds.includes(t.id))
           .map((t) => ({ id: t.id, slug: t.slug }));
 
-        await Promise.all(teamSlugs.map(async ({ id, slug }) => {
+        for (const { id, slug } of teamSlugs) {
           const entry: CompHistoryEntry = {
             compId: current.id,
             compName: current.name,
@@ -144,7 +144,7 @@ export default function CompetitionDetail() {
             phase: deriveTeamPhase(id, current),
           };
           await appendTeamCompHistory(slug, entry, pat);
-        }));
+        }
       }
 
       toast('success', 'Compétition sauvegardée sur GitHub.');
@@ -185,11 +185,13 @@ export default function CompetitionDetail() {
     setDeleting(true);
     try {
       await remove(current.id, pat);
-      // Strip compHistory entries from all participating teams
+      // Strip compHistory entries from all participating teams (sequential to avoid SHA conflicts)
       const teamSlugs = teams
         .filter((t) => current.teamIds.includes(t.id))
         .map((t) => t.slug);
-      await Promise.all(teamSlugs.map((slug) => removeTeamCompHistory(slug, current.id, pat)));
+      for (const slug of teamSlugs) {
+        await removeTeamCompHistory(slug, current.id, pat);
+      }
       navigate(backTo);
     } catch (err) {
       toast('error', String(err));
