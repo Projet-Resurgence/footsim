@@ -405,6 +405,7 @@ function BenchEditor({
   onChange: (ids: string[]) => void;
 }) {
   const [addingPlayer, setAddingPlayer] = useState(false);
+  const [swappingId, setSwappingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const benchSet = new Set(bench.map((p) => p.id));
 
@@ -423,7 +424,6 @@ function BenchEditor({
   }
 
   function remove(id: string) {
-    // Remove from custom bench order so they fall back to auto pool
     onChange(benchOrder.filter((bid) => bid !== id));
   }
 
@@ -434,25 +434,63 @@ function BenchEditor({
     setSearch('');
   }
 
-  const available = allPlayers
+  function swapWith(newId: string) {
+    if (!swappingId || newId === swappingId) { setSwappingId(null); setSearch(''); return; }
+    const ids = bench.map((p) => p.id);
+    const idx = ids.indexOf(swappingId);
+    if (idx === -1) { setSwappingId(null); setSearch(''); return; }
+    ids[idx] = newId;
+    onChange(ids);
+    setSwappingId(null);
+    setSearch('');
+  }
+
+  function openSwap(id: string) {
+    setAddingPlayer(false);
+    setSwappingId((prev) => (prev === id ? null : id));
+    setSearch('');
+  }
+
+  function openAdd() {
+    setSwappingId(null);
+    setAddingPlayer((v) => !v);
+    setSearch('');
+  }
+
+  const searchLower = search.toLowerCase();
+
+  // For add: exclude starters + current bench
+  const availableToAdd = allPlayers
     .filter((p) => !filledSet.has(p.id) && !benchSet.has(p.id))
-    .filter((p) => search === '' || `${p.firstName} ${p.lastName}`.toLowerCase().includes(search.toLowerCase()))
+    .filter((p) => search === '' || `${p.firstName} ${p.lastName}`.toLowerCase().includes(searchLower))
+    .sort((a, b) => b.overall - a.overall);
+
+  // For swap: exclude starters + current bench except the one being swapped out
+  const availableToSwap = allPlayers
+    .filter((p) => !filledSet.has(p.id) && (!benchSet.has(p.id) || p.id === swappingId))
+    .filter((p) => p.id !== swappingId)
+    .filter((p) => search === '' || `${p.firstName} ${p.lastName}`.toLowerCase().includes(searchLower))
     .sort((a, b) => b.overall - a.overall);
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted">Banc ({bench.length}/12)</span>
-        {bench.length < 12 && (
-          <button
-            onClick={() => setAddingPlayer((v) => !v)}
-            className="text-xs text-accent hover:underline"
-          >
-            {addingPlayer ? 'Annuler' : '+ Ajouter'}
-          </button>
-        )}
+        <div className="flex gap-2">
+          {swappingId && (
+            <button onClick={() => { setSwappingId(null); setSearch(''); }} className="text-xs text-muted hover:text-text">
+              Annuler
+            </button>
+          )}
+          {bench.length < 12 && !swappingId && (
+            <button onClick={openAdd} className="text-xs text-accent hover:underline">
+              {addingPlayer ? 'Annuler' : '+ Ajouter'}
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* Add panel */}
       {addingPlayer && (
         <div className="rounded-lg border border-border bg-bg p-2 space-y-2">
           <input
@@ -463,7 +501,7 @@ function BenchEditor({
             className="w-full rounded border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-accent"
           />
           <div className="max-h-40 overflow-y-auto space-y-0.5">
-            {available.slice(0, 20).map((p) => (
+            {availableToAdd.slice(0, 20).map((p) => (
               <button
                 key={p.id}
                 onClick={() => addToBench(p.id)}
@@ -473,7 +511,34 @@ function BenchEditor({
                 <span className="text-xs text-muted">{POSITION_LABEL[p.position]} · {p.overall}</span>
               </button>
             ))}
-            {available.length === 0 && <p className="text-xs text-muted px-2 py-2">Aucun joueur disponible.</p>}
+            {availableToAdd.length === 0 && <p className="text-xs text-muted px-2 py-2">Aucun joueur disponible.</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Swap panel */}
+      {swappingId && (
+        <div className="rounded-lg border border-accent/40 bg-accent/5 p-2 space-y-2">
+          <p className="text-xs text-accent px-1">Choisir le remplaçant :</p>
+          <input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher…"
+            className="w-full rounded border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-accent"
+          />
+          <div className="max-h-40 overflow-y-auto space-y-0.5">
+            {availableToSwap.slice(0, 20).map((p) => (
+              <button
+                key={p.id}
+                onClick={() => swapWith(p.id)}
+                className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-accent/20 transition-colors"
+              >
+                <span>{p.firstName} {p.lastName}</span>
+                <span className="text-xs text-muted">{POSITION_LABEL[p.position]} · {p.overall}</span>
+              </button>
+            ))}
+            {availableToSwap.length === 0 && <p className="text-xs text-muted px-2 py-2">Aucun joueur disponible.</p>}
           </div>
         </div>
       )}
@@ -481,12 +546,21 @@ function BenchEditor({
       {bench.length > 0 && (
         <div className="rounded-lg border border-border overflow-hidden">
           {bench.map((p, idx) => (
-            <div key={p.id} className="flex items-center gap-1 px-3 py-1.5 border-t first:border-t-0 border-border hover:bg-border/10 transition-colors text-sm">
+            <div
+              key={p.id}
+              className={`flex items-center gap-1 px-3 py-1.5 border-t first:border-t-0 border-border transition-colors text-sm ${swappingId === p.id ? 'bg-accent/10 border-accent/30' : 'hover:bg-border/10'}`}
+            >
               <span className="w-5 text-center text-xs text-muted tabular-nums">{idx + 1}</span>
               <span className="rounded bg-border/40 px-1.5 py-0.5 font-mono text-xs shrink-0">
                 {POSITION_LABEL[p.position]}
               </span>
-              <span className="flex-1 truncate">{p.firstName} {p.lastName}</span>
+              <button
+                onClick={() => openSwap(p.id)}
+                className={`flex-1 truncate text-left hover:text-accent transition-colors ${swappingId === p.id ? 'text-accent font-medium' : ''}`}
+                title="Cliquer pour remplacer ce joueur"
+              >
+                {p.firstName} {p.lastName}
+              </button>
               <span className="text-xs text-muted tabular-nums">{p.overall}</span>
               <div className="flex gap-0.5 ml-1">
                 <button
