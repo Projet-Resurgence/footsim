@@ -206,20 +206,12 @@ async function applyNewStrength(strength: number) {
     if (!data) return;
     setRegenStrength(true);
     try {
-      const { generatePlayers } = await import('@/lib/gen/players');
-      const regen = generatePlayers({
-        count: data.players.length,
+      const { reratePlayers } = await import('@/lib/gen/players');
+      const players = reratePlayers(data.players, {
         culture: data.team.culture,
+        cultures: data.team.cultures,
         globalStrength: strength,
       });
-      const players = data.players.map((p, i) => ({
-        ...regen[i % regen.length],
-        id: p.id,
-        firstName: p.firstName,
-        lastName: p.lastName,
-        age: p.age,
-        preferredFoot: p.preferredFoot,
-      }));
       mutate({ team: { ...data.team, globalStrength: strength }, players });
       setNewStrength(null);
       toast('success', `Force mise à jour : ${strength}.`);
@@ -755,21 +747,12 @@ async function applyNewStrength(strength: number) {
                 baseStrength={team.globalStrength}
                 onSave={async (bonus) => {
                   const newStrength = Math.min(100, team.globalStrength + bonus);
-                  const { generatePlayers } = await import('@/lib/gen/players');
-                  const regen = generatePlayers({
-                    count: players.length,
+                  const { reratePlayers } = await import('@/lib/gen/players');
+                  const updatedPlayers = reratePlayers(players, {
                     culture: team.culture,
+                    cultures: team.cultures,
                     globalStrength: newStrength,
                   });
-                  const updatedPlayers = players.map((p, i) => ({
-                    ...regen[i % regen.length],
-                    id: p.id,
-                    firstName: p.firstName,
-                    lastName: p.lastName,
-                    age: p.age,
-                    preferredFoot: p.preferredFoot,
-                    position: p.position,
-                  }));
                   mutate({
                     team: {
                       ...team,
@@ -1221,4 +1204,3 @@ function CultureEditPanel({
     </section>
   );
 }
-

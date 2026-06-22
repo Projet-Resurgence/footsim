@@ -11,6 +11,8 @@ export type GenerateOptions = {
   globalStrength: number;
 };
 
+export type RerateOptions = Omit<GenerateOptions, 'count'>;
+
 const POSITION_FAMILIES: Record<Position, Position[]> = {
   GK: [],
   CB: ['LB', 'RB', 'DM'],
@@ -62,54 +64,67 @@ function rollAltPositions(primary: Position): Position[] {
   return out;
 }
 
-export function generatePlayers(opts: GenerateOptions): Player[] {
-  const positions = distributePositions(opts.count);
+function generatePlayerForPosition(pos: Position, opts: RerateOptions): Player {
   const mean = 6 + opts.globalStrength / 10;
 
-  return positions.map((pos) => {
-    const { firstName, lastName } = opts.cultures?.length
-      ? pickNameMixed(opts.cultures)
-      : pickName(opts.culture);
+  const { firstName, lastName } = opts.cultures?.length
+    ? pickNameMixed(opts.cultures)
+    : pickName(opts.culture);
 
-    const stats = {
-      technical: {
-        passing: sampleStat(mean), crossing: sampleStat(mean), dribbling: sampleStat(mean),
-        finishing: sampleStat(mean), firstTouch: sampleStat(mean), heading: sampleStat(mean),
-        longShots: sampleStat(mean), tackling: sampleStat(mean), marking: sampleStat(mean),
-      },
-      mental: {
-        vision: sampleStat(mean), decisions: sampleStat(mean), composure: sampleStat(mean),
-        anticipation: sampleStat(mean), offTheBall: sampleStat(mean),
-        aggression: sampleStat(mean), workRate: sampleStat(mean),
-      },
-      physical: {
-        pace: sampleStat(mean), acceleration: sampleStat(mean), strength: sampleStat(mean),
-        stamina: sampleStat(mean), agility: sampleStat(mean), balance: sampleStat(mean),
-        jumping: sampleStat(mean),
-      },
-      goalkeeping:
-        pos === 'GK'
-          ? {
-              reflexes: sampleStat(mean), handling: sampleStat(mean), aerial: sampleStat(mean),
-              oneOnOne: sampleStat(mean), kicking: sampleStat(mean), throwing: sampleStat(mean),
-            }
-          : null,
+  const stats = {
+    technical: {
+      passing: sampleStat(mean), crossing: sampleStat(mean), dribbling: sampleStat(mean),
+      finishing: sampleStat(mean), firstTouch: sampleStat(mean), heading: sampleStat(mean),
+      longShots: sampleStat(mean), tackling: sampleStat(mean), marking: sampleStat(mean),
+    },
+    mental: {
+      vision: sampleStat(mean), decisions: sampleStat(mean), composure: sampleStat(mean),
+      anticipation: sampleStat(mean), offTheBall: sampleStat(mean),
+      aggression: sampleStat(mean), workRate: sampleStat(mean),
+    },
+    physical: {
+      pace: sampleStat(mean), acceleration: sampleStat(mean), strength: sampleStat(mean),
+      stamina: sampleStat(mean), agility: sampleStat(mean), balance: sampleStat(mean),
+      jumping: sampleStat(mean),
+    },
+    goalkeeping:
+      pos === 'GK'
+        ? {
+            reflexes: sampleStat(mean), handling: sampleStat(mean), aerial: sampleStat(mean),
+            oneOnOne: sampleStat(mean), kicking: sampleStat(mean), throwing: sampleStat(mean),
+          }
+        : null,
+  };
+
+  applyBoosts(stats as unknown as Record<string, Record<string, number>>, POSITION_BOOSTS[pos]);
+
+  const player: Player = {
+    id: crypto.randomUUID(),
+    firstName,
+    lastName,
+    age: Math.round(triangular(16, 25, 38)),
+    position: pos,
+    altPositions: rollAltPositions(pos),
+    preferredFoot: rollFoot(),
+    stats,
+    overall: 0,
+  };
+  player.overall = computeOverall(player);
+  return player;
+}
+
+export function generatePlayers(opts: GenerateOptions): Player[] {
+  const positions = distributePositions(opts.count);
+  return positions.map((pos) => generatePlayerForPosition(pos, opts));
+}
+
+export function reratePlayers(players: Player[], opts: RerateOptions): Player[] {
+  return players.map((player) => {
+    const rerated = generatePlayerForPosition(player.position, opts);
+    return {
+      ...player,
+      stats: rerated.stats,
+      overall: computeOverall({ position: player.position, stats: rerated.stats }),
     };
-
-    applyBoosts(stats as unknown as Record<string, Record<string, number>>, POSITION_BOOSTS[pos]);
-
-    const player: Player = {
-      id: crypto.randomUUID(),
-      firstName,
-      lastName,
-      age: Math.round(triangular(16, 25, 38)),
-      position: pos,
-      altPositions: rollAltPositions(pos),
-      preferredFoot: rollFoot(),
-      stats,
-      overall: 0,
-    };
-    player.overall = computeOverall(player);
-    return player;
   });
 }

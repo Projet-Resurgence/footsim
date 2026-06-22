@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generatePlayers } from './players';
+import { computeOverall } from './overall';
+import { generatePlayers, reratePlayers } from './players';
 
 describe('generatePlayers', () => {
   it('produces the requested number of players', () => {
@@ -42,5 +43,26 @@ describe('generatePlayers', () => {
     expect(mean(high.map((p) => p.overall))).toBeGreaterThan(
       mean(low.map((p) => p.overall)),
     );
+  });
+
+  it('rerates players without changing identity or position-specific overall rules', () => {
+    const original = generatePlayers({ count: 120, culture: 'francais', globalStrength: 45 });
+    const rerated = reratePlayers(original, { culture: 'francais', globalStrength: 85 });
+
+    expect(rerated).toHaveLength(original.length);
+
+    for (let i = 0; i < original.length; i++) {
+      expect(rerated[i].id).toBe(original[i].id);
+      expect(rerated[i].firstName).toBe(original[i].firstName);
+      expect(rerated[i].lastName).toBe(original[i].lastName);
+      expect(rerated[i].age).toBe(original[i].age);
+      expect(rerated[i].position).toBe(original[i].position);
+      expect(rerated[i].preferredFoot).toBe(original[i].preferredFoot);
+      expect(rerated[i].altPositions).toEqual(original[i].altPositions);
+      expect(rerated[i].overall).toBe(computeOverall(rerated[i]));
+
+      if (rerated[i].position === 'GK') expect(rerated[i].stats.goalkeeping).not.toBeNull();
+      else expect(rerated[i].stats.goalkeeping).toBeNull();
+    }
   });
 });
