@@ -753,16 +753,32 @@ async function applyNewStrength(strength: number) {
                 onFunding={setActionFootFunding}
                 current={team.actionFoot}
                 baseStrength={team.globalStrength}
-                onSave={(bonus) => {
+                onSave={async (bonus) => {
+                  const newStrength = Math.min(100, team.globalStrength + bonus);
+                  const { generatePlayers } = await import('@/lib/gen/players');
+                  const regen = generatePlayers({
+                    count: players.length,
+                    culture: team.culture,
+                    globalStrength: newStrength,
+                  });
+                  const updatedPlayers = players.map((p, i) => ({
+                    ...regen[i % regen.length],
+                    id: p.id,
+                    firstName: p.firstName,
+                    lastName: p.lastName,
+                    age: p.age,
+                    preferredFoot: p.preferredFoot,
+                    position: p.position,
+                  }));
                   mutate({
                     team: {
                       ...team,
-                      globalStrength: Math.min(100, team.globalStrength + bonus),
+                      globalStrength: newStrength,
                       actionFoot: { rating: actionFootRating, funding: actionFootFunding },
                     },
-                    players,
+                    players: updatedPlayers,
                   });
-                  toast('success', `Action sur le Foot appliquée : force ${Math.min(100, team.globalStrength + bonus)} (non publié).`);
+                  toast('success', `Action sur le Foot appliquée : force ${newStrength} (non publié).`);
                 }}
               />
             )}
