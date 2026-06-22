@@ -11,7 +11,7 @@ export type GenerateOptions = {
   globalStrength: number;
 };
 
-export type RerateOptions = Omit<GenerateOptions, 'count'> & { fromStrength?: number };
+export type RerateOptions = Omit<GenerateOptions, 'count'>;
 
 const POSITION_FAMILIES: Record<Position, Position[]> = {
   GK: [],
@@ -118,31 +118,13 @@ export function generatePlayers(opts: GenerateOptions): Player[] {
   return positions.map((pos) => generatePlayerForPosition(pos, opts));
 }
 
-function shiftStats<T extends Record<string, number>>(group: T, delta: number): T {
-  return Object.fromEntries(
-    Object.entries(group).map(([k, v]) => [k, clamp(Math.round(v + delta), 1, 20)])
-  ) as T;
-}
-
 export function reratePlayers(players: Player[], opts: RerateOptions): Player[] {
-  // shift all stats by the delta between old and new strength means
-  // preserves relative differences between players
-  const newMean = 6 + opts.globalStrength / 10;
-  const oldMean = 6 + (opts.fromStrength ?? opts.globalStrength) / 10;
-  const delta = newMean - oldMean;
-
   return players.map((player) => {
-    const stats = {
-      technical: shiftStats(player.stats.technical, delta),
-      mental: shiftStats(player.stats.mental, delta),
-      physical: shiftStats(player.stats.physical, delta),
-      goalkeeping: player.stats.goalkeeping ? shiftStats(player.stats.goalkeeping, delta) : null,
-    };
-
+    const rerated = generatePlayerForPosition(player.position, opts);
     return {
       ...player,
-      stats,
-      overall: computeOverall({ position: player.position, stats }),
+      stats: rerated.stats,
+      overall: computeOverall({ position: player.position, stats: rerated.stats }),
     };
   });
 }

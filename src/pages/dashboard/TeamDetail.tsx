@@ -214,7 +214,6 @@ async function applyNewStrength(strength: number) {
         culture: data.team.culture,
         cultures: data.team.cultures,
         globalStrength: strength,
-        fromStrength: data.team.globalStrength,
       });
       mutate({ team: { ...data.team, globalStrength: strength }, players });
       setNewStrength(null);
@@ -770,7 +769,6 @@ async function applyNewStrength(strength: number) {
                     culture: team.culture,
                     cultures: team.cultures,
                     globalStrength: newStrength,
-                    fromStrength: team.globalStrength,
                   });
                   mutate({
                     team: {
