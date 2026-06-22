@@ -21,7 +21,8 @@ import { createMatchInjury, createSuspension, decrementInjuries, decrementSuspen
 import { PenaltyShootout } from '@/components/match/PenaltyShootout';
 import type { MatchInput, MatchState, Speed, CorruptionDeal } from '@/lib/sim/types';
 import type { CorruptionOffer } from '@/lib/sim/corruption';
-import type { Team } from '@/lib/types';
+import type { Team, TacticStyle } from '@/lib/types';
+import { TACTIC_STYLE_LABEL } from '@/lib/types';
 
 export default function MultiplexLive() {
   const { competitionId, round } = useParams<{ competitionId: string; round: string }>();
@@ -642,6 +643,38 @@ export default function MultiplexLive() {
                     <span className="font-medium text-sm truncate">{away.name}</span>
                     {away.flag && <img src={away.flag} alt="" className="h-6 w-6 rounded-sm object-cover" />}
                   </div>
+                </div>
+
+                {/* Tactic style selectors */}
+                <div className="grid grid-cols-2 gap-2">
+                  {(['home', 'away'] as const).map((side) => {
+                    const team = side === 'home' ? home : away;
+                    const current = side === 'home' ? slot.input.home.tacticStyle : slot.input.away.tacticStyle;
+                    return (
+                      <div key={side} className="space-y-1">
+                        <div className="text-[10px] uppercase tracking-widest text-muted">{team.name}</div>
+                        <select
+                          value={current ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value as TacticStyle | '';
+                            setPendingInputs((prev) => prev ? prev.map((s, si) => si !== i ? s : {
+                              ...s,
+                              input: {
+                                ...s.input,
+                                [side]: { ...s.input[side], tacticStyle: val || undefined },
+                              },
+                            }) : prev);
+                          }}
+                          className="w-full rounded-md border border-border bg-surface px-2 py-1 text-xs text-text"
+                        >
+                          <option value="">Par défaut</option>
+                          {(Object.keys(TACTIC_STYLE_LABEL) as TacticStyle[]).map((s) => (
+                            <option key={s} value={s}>{TACTIC_STYLE_LABEL[s]}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {deal ? (

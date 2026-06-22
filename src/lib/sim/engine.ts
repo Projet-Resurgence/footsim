@@ -574,7 +574,7 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   const wOffside  = state.rules.noOffside ? 0 : 0.03;
   const wKeyPass  = 0.18;
   const wFreeKick = 0.03;
-  const wDribble  = 0.04 * pAttack;
+  const wDribble  = 0.28 * pAttack;
   const wClear    = 0.03 * (1 - pAttack);
   const total = wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick + wDribble + wClear;
 

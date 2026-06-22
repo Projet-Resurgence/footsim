@@ -112,6 +112,10 @@ export default function CompetitionMatchLive() {
         const corruption = storedCorruption ? JSON.parse(storedCorruption) : undefined;
         sessionStorage.removeItem(`footsim.corruption.${matchId}`);
 
+        const storedTactics = sessionStorage.getItem(`footsim.tactics.${matchId}`);
+        const tacticOverride: { home?: string; away?: string } = storedTactics ? JSON.parse(storedTactics) : {};
+        sessionStorage.removeItem(`footsim.tactics.${matchId}`);
+
         const homeTactics = resolveActiveTactic(homeData.team);
         const awayTactics = resolveActiveTactic(awayData.team);
 
@@ -155,7 +159,7 @@ export default function CompetitionMatchLive() {
             lineup: homeTactics?.lineup,
             bench: homeTactics?.bench,
             plannedSubs: homeTactics?.plannedSubs,
-            tacticStyle: homeTactics?.style,
+            tacticStyle: (tacticOverride.home as import('@/lib/types').TacticStyle | undefined) || homeTactics?.style,
             morale: moraleMap[compMatch.homeTeamId!] ?? MORALE_DEFAULT,
             unavailablePlayerIds: [...homeUnavail].filter((id) => id !== 'coach'),
           },
@@ -166,7 +170,7 @@ export default function CompetitionMatchLive() {
             lineup: awayTactics?.lineup,
             bench: awayTactics?.bench,
             plannedSubs: awayTactics?.plannedSubs,
-            tacticStyle: awayTactics?.style,
+            tacticStyle: (tacticOverride.away as import('@/lib/types').TacticStyle | undefined) || awayTactics?.style,
             morale: moraleMap[compMatch.awayTeamId!] ?? MORALE_DEFAULT,
             unavailablePlayerIds: [...awayUnavail].filter((id) => id !== 'coach'),
           },

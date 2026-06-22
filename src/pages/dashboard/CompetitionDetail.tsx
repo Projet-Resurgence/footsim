@@ -295,13 +295,18 @@ export default function CompetitionDetail() {
     setPreMatchModal({ matchId, home, away });
   }
 
-  function launchMatch(matchId: string, corruption: CorruptionDeal | null) {
+  function launchMatch(matchId: string, corruption: CorruptionDeal | null, tactics?: { home?: import('@/lib/types').TacticStyle; away?: import('@/lib/types').TacticStyle }) {
     if (!current) return;
-    // Store corruption in sessionStorage so CompetitionMatchLive can pick it up
     if (corruption) {
       sessionStorage.setItem(`footsim.corruption.${matchId}`, JSON.stringify(corruption));
     } else {
       sessionStorage.removeItem(`footsim.corruption.${matchId}`);
+    }
+    const filteredTactics = { home: tactics?.home || undefined, away: tactics?.away || undefined };
+    if (filteredTactics.home || filteredTactics.away) {
+      sessionStorage.setItem(`footsim.tactics.${matchId}`, JSON.stringify(filteredTactics));
+    } else {
+      sessionStorage.removeItem(`footsim.tactics.${matchId}`);
     }
     setPreMatchModal(null);
     navigate(`/competition/${current.id}/match/${matchId}`);
@@ -688,7 +693,7 @@ export default function CompetitionDetail() {
         <PreMatchModal
           home={preMatchModal.home}
           away={preMatchModal.away}
-          onConfirm={(corruption) => launchMatch(preMatchModal.matchId, corruption)}
+          onConfirm={(corruption, tactics) => launchMatch(preMatchModal.matchId, corruption, tactics)}
           onCancel={() => setPreMatchModal(null)}
         />
       )}
