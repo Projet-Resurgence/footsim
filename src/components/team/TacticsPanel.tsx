@@ -311,7 +311,7 @@ export function TacticsPanel({ team, players, onSave }: Props) {
                       {filled ? `${player.firstName[0]}${player.lastName[0]}` : '+'}
                     </div>
                     <span className="max-w-[56px] truncate rounded bg-black/40 px-0.5 text-center text-[9px] leading-tight text-white/90">
-                      {filled ? player.lastName : slot.pos}
+                      {filled ? player.lastName : POSITION_LABEL[slot.pos as keyof typeof POSITION_LABEL] ?? slot.pos}
                     </span>
                   </button>
                 );
@@ -330,6 +330,7 @@ export function TacticsPanel({ team, players, onSave }: Props) {
 
           <BenchEditor
             bench={bench}
+            autoBench={autoBench}
             allPlayers={players}
             filledSet={filledSet}
             benchOrder={benchOrder}
@@ -386,6 +387,7 @@ export function TacticsPanel({ team, players, onSave }: Props) {
           plannedSubs={plannedSubs}
           onChange={setPlannedSubs}
           lineup={lineup.filter(Boolean) as string[]}
+          bench={bench.map((p) => p.id)}
           players={players}
           onSave={() => save()}
           saving={saving}
@@ -412,12 +414,14 @@ export function TacticsPanel({ team, players, onSave }: Props) {
 
 function BenchEditor({
   bench,
+  autoBench,
   allPlayers,
   filledSet,
   benchOrder,
   onChange,
 }: {
   bench: Player[];
+  autoBench: Player[];
   allPlayers: Player[];
   filledSet: Set<string>;
   benchOrder: string[];
@@ -499,6 +503,15 @@ function BenchEditor({
           {swappingId && (
             <button onClick={() => { setSwappingId(null); setSearch(''); }} className="text-xs text-muted hover:text-text">
               Annuler
+            </button>
+          )}
+          {!swappingId && (
+            <button
+              onClick={() => { onChange(autoBench.map((p) => p.id).slice(0, 12)); }}
+              className="text-xs text-muted hover:text-text"
+              title="Remplir automatiquement avec les meilleurs joueurs disponibles"
+            >
+              ⚡ Meilleur banc
             </button>
           )}
           {bench.length < 12 && !swappingId && (
@@ -891,6 +904,7 @@ function PlannedSubsPanel({
   plannedSubs,
   onChange,
   lineup,
+  bench,
   players,
   onSave,
   saving,
@@ -899,6 +913,7 @@ function PlannedSubsPanel({
   plannedSubs: PlannedSub[];
   onChange: (subs: PlannedSub[]) => void;
   lineup: string[];
+  bench: string[];
   players: Player[];
   onSave: () => void;
   saving: boolean;
@@ -908,7 +923,8 @@ function PlannedSubsPanel({
   const [search, setSearch] = useState('');
   const playerMap = new Map(players.map((p) => [p.id, p]));
   const lineupSet = new Set(lineup);
-  const benchPlayers = players.filter((p) => !lineupSet.has(p.id));
+  const benchSet = new Set(bench);
+  const benchPlayers = players.filter((p) => benchSet.has(p.id));
 
   function addSub() {
     onChange([...plannedSubs, { outId: '', inId: '' }]);
@@ -1034,10 +1050,12 @@ function PlannedSubsPanel({
         </div>
       )}
 
-      <Button onClick={onSave} disabled={saving || !canSave}>
-        {saving ? <Spinner className="mr-2 h-4 w-4" /> : null}
-        Sauvegarder la tactique
-      </Button>
+      <div className="pt-4">
+        <Button onClick={onSave} disabled={saving || !canSave}>
+          {saving ? <Spinner className="mr-2 h-4 w-4" /> : null}
+          Sauvegarder la tactique
+        </Button>
+      </div>
     </div>
   );
 }
