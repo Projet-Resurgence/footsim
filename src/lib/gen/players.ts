@@ -118,24 +118,26 @@ export function generatePlayers(opts: GenerateOptions): Player[] {
   return positions.map((pos) => generatePlayerForPosition(pos, opts));
 }
 
-function scaleStats<T extends Record<string, number>>(group: T, ratio: number): T {
+function shiftStats<T extends Record<string, number>>(group: T, delta: number): T {
   return Object.fromEntries(
-    Object.entries(group).map(([k, v]) => [k, clamp(Math.round(v * ratio), 1, 20)])
+    Object.entries(group).map(([k, v]) => [k, clamp(Math.round(v + delta), 1, 20)])
   ) as T;
 }
 
 export function reratePlayers(players: Player[], opts: RerateOptions): Player[] {
+  // delta in stat points: globalStrength maps to mean stat via mean = 6 + strength/10
   const newMean = 6 + opts.globalStrength / 10;
   return players.map((player) => {
     const currentOverall = player.overall || computeOverall(player);
+    // estimate current mean from overall (overall ≈ mean * 5)
     const currentMean = currentOverall / 5;
-    const ratio = currentMean > 0 ? newMean / currentMean : 1;
+    const delta = newMean - currentMean;
 
     const stats = {
-      technical: scaleStats(player.stats.technical, ratio),
-      mental: scaleStats(player.stats.mental, ratio),
-      physical: scaleStats(player.stats.physical, ratio),
-      goalkeeping: player.stats.goalkeeping ? scaleStats(player.stats.goalkeeping, ratio) : null,
+      technical: shiftStats(player.stats.technical, delta),
+      mental: shiftStats(player.stats.mental, delta),
+      physical: shiftStats(player.stats.physical, delta),
+      goalkeeping: player.stats.goalkeeping ? shiftStats(player.stats.goalkeeping, delta) : null,
     };
 
     return {
