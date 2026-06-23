@@ -31,17 +31,17 @@ const SCOPE_MULT: Record<CompetitionScope, number> = {
 };
 
 const KIND_MULT: Record<CompetitionKind, number> = {
-  officielle: 1.5,
-  amicale: 0.8,
+  officielle: 1.2,
+  amicale: 0.4,
 };
 
 const IMPORTANCE_MULT: Record<CompetitionImportance, number> = {
-  mineur: 0.6,
-  regional: 0.8,
-  national: 1.0,
-  prestige: 1.4,
-  continental: 1.8,
-  mondial: 2.5,
+  mineur: 0.4,
+  regional: 0.6,
+  national: 0.8,
+  prestige: 1.1,
+  continental: 1.4,
+  mondial: 2.0,
 };
 
 function entryPoints(entry: CompHistoryEntry): number {

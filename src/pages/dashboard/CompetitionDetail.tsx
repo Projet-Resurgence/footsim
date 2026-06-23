@@ -199,6 +199,9 @@ export default function CompetitionDetail() {
           const next = existingIdx >= 0
             ? prev.map((e, i) => i === existingIdx ? entry : e)
             : [...prev, entry];
+          // Only write if something actually changed
+          const changed = existingIdx < 0 || JSON.stringify(prev[existingIdx]) !== JSON.stringify(entry);
+          if (!changed) continue;
           files.push({ path: `data/teams/${t.slug}/team.json`, content: { ...team, compHistory: next } });
         }
         if (files.length > 0) {
