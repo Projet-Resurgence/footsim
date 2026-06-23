@@ -111,14 +111,14 @@ export default function ClassementsCMF() {
         const players: PlayerEntry[] = [];
 
         // listTeams already reads full team.json (including recentMatches + compHistory)
-        // Only call loadTeam for players roster
+        // Only load players roster if token is available (players.json requires auth)
         await Promise.all(
           teams.map(async (team) => {
-            const roster = await loadTeam(team.slug, token);
-
-            // Players
-            for (const p of roster?.players ?? []) {
-              players.push({ player: p, team });
+            if (token) {
+              const roster = await loadTeam(team.slug, token);
+              for (const p of roster?.players ?? []) {
+                players.push({ player: p, team });
+              }
             }
 
             // Team points: palmarès bonus + match points
@@ -202,19 +202,26 @@ export default function ClassementsCMF() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {([['equipes', 'Meilleures équipes'], ['joueurs', 'Meilleurs joueurs'], ['explications', 'Explications']] as const).map(([t, label]) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === t
-                ? 'border-accent text-accent'
-                : 'border-transparent text-muted hover:text-text'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+        {([['equipes', 'Meilleures équipes'], ['joueurs', 'Meilleurs joueurs'], ['explications', 'Explications']] as const).map(([t, label]) => {
+          const disabled = t === 'joueurs' && !token;
+          return (
+            <button
+              key={t}
+              onClick={() => !disabled && setTab(t)}
+              disabled={disabled}
+              title={disabled ? 'Connexion requise pour voir les joueurs' : undefined}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab === t
+                  ? 'border-accent text-accent'
+                  : disabled
+                  ? 'border-transparent text-muted/40 cursor-not-allowed'
+                  : 'border-transparent text-muted hover:text-text'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {tab === 'equipes' && (
