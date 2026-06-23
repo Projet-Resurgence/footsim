@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getThemeOverride, setThemeOverride, modeForHour, applyTheme } from '@/lib/theme';
-import type { ThemeMode } from '@/lib/theme';
+import { AccountMenu } from '@/components/layout/AccountMenu';
 import { SkeletonCard, SkeletonRow } from '@/components/ui/Skeleton';
 import { toast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
@@ -52,14 +51,6 @@ export default function MyTeam() {
   const [savedTactics, setSavedTactics] = useState<SavedTactic[]>([]);
   const [activeTacticId, setActiveTacticId] = useState<string | undefined>();
   const [editingTacticId, setEditingTacticId] = useState<string | null>(null); // null = new
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getThemeOverride() ?? modeForHour(new Date().getHours()));
-
-  function toggleTheme() {
-    const next: ThemeMode = themeMode === 'day' ? 'night' : 'day';
-    setThemeOverride(next);
-    applyTheme(next);
-    setThemeMode(next);
-  }
   const [tab, setTab] = useState<Tab>('tactique');
   const [summaries, setSummaries] = useState<CompetitionSummary[]>([]);
   const [loadingComps, setLoadingComps] = useState(false);
@@ -335,14 +326,7 @@ export default function MyTeam() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <Link to="/" className="text-sm text-muted hover:text-text">← Retour</Link>
-        <button
-          onClick={toggleTheme}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-text/70 hover:bg-border/40 transition-colors"
-          title={themeMode === 'day' ? 'Passer en mode nuit' : 'Passer en mode jour'}
-        >
-          <span>{themeMode === 'day' ? '🌙' : '☀️'}</span>
-          <span className="text-xs">{themeMode === 'day' ? 'Nuit' : 'Jour'}</span>
-        </button>
+        <AccountMenu />
       </div>
       <div className="flex items-center gap-4">
         <img src={team.flag} alt="" className="h-16 w-16 object-cover rounded" />
