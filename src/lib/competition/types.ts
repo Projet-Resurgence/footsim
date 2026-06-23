@@ -6,6 +6,24 @@ export type CompetitionFormat = 'league' | 'cup' | 'groups_knockout' | 'lpm';
 export type CompetitionStatus = 'setup' | 'ongoing' | 'completed';
 export type CompMatchStatus = 'pending' | 'completed';
 
+/** Statut officiel de la compétition (compte pour le palmarès) */
+export type CompetitionKind = 'amicale' | 'officielle';
+/** Portée géographique/institutionnelle */
+export type CompetitionScope = 'internationale' | 'continentale' | 'regionale' | 'nationale' | 'autre';
+
+export const COMPETITION_KIND_LABEL: Record<CompetitionKind, string> = {
+  amicale: 'Amicale',
+  officielle: 'Officielle',
+};
+
+export const COMPETITION_SCOPE_LABEL: Record<CompetitionScope, string> = {
+  internationale: 'Internationale',
+  continentale: 'Continentale',
+  regionale: 'Régionale',
+  nationale: 'Nationale',
+  autre: 'Autre',
+};
+
 export type MatchStatSnapshot = {
   shots: { home: number; away: number };
   shotsOnTarget: { home: number; away: number };
@@ -112,6 +130,8 @@ export type CompHistoryEntry = {
   compName: string;
   year?: number;
   format: CompetitionFormat;
+  kind?: CompetitionKind;
+  scope?: CompetitionScope;
   result: 'winner' | 'finalist' | 'third' | 'semi' | 'participant';
   /** Phase reached (e.g. 'F', 'SF', 'QF', 'R16', 'group') */
   phase?: string;
@@ -123,6 +143,10 @@ export type Competition = {
   format: CompetitionFormat;
   /** Edition year (e.g. 2024) */
   year?: number;
+  /** Statut officiel (amicale vs officielle) */
+  kind?: CompetitionKind;
+  /** Portée géographique */
+  scope?: CompetitionScope;
   teamIds: string[];
   matches: CompMatch[];
   groups?: CompGroup[];
@@ -167,6 +191,8 @@ export type CompetitionSummary = {
   winner?: string;
   year?: number;
   teamIds?: string[];
+  kind?: CompetitionKind;
+  scope?: CompetitionScope;
 };
 
 /** Pick the right MatchRules for a given match phase. */

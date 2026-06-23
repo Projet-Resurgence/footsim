@@ -507,7 +507,7 @@ export default function CompetitionMatchLive() {
         if (dopingSuspension) {
           updatedSuspensions = [...updatedSuspensions, dopingSuspension];
           matchDopingOccurred = true;
-          newPressItems.push(generateCmfCommunique({ round, seed: `${seed}-cmf-dop-${tid}`, type: 'doping_player', matchId: compMatch.id, matchSnapshot: { homeTeamId: compMatch.homeTeamId!, awayTeamId: compMatch.awayTeamId!, homeTeamName: nameFor(compMatch.homeTeamId!), awayTeamName: nameFor(compMatch.awayTeamId!), homeScore: matchState!.score.home, awayScore: matchState!.score.away } }));
+          newPressItems.push(generateCmfCommunique({ round, seed: `${seed}-cmf-dop-${tid}`, type: 'doping_player', playerName: dopingSuspension.subjectName, matchId: compMatch.id, matchSnapshot: { homeTeamId: compMatch.homeTeamId!, awayTeamId: compMatch.awayTeamId!, homeTeamName: nameFor(compMatch.homeTeamId!), awayTeamName: nameFor(compMatch.awayTeamId!), homeScore: matchState!.score.home, awayScore: matchState!.score.away } }));
         }
         if (teamDisqualified) {
           updatedMatches = applyCorruptionDisqualification(updatedMatches, matchId!, tid);

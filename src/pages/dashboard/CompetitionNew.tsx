@@ -15,9 +15,9 @@ import {
   generateLPMMatches,
   buildInitialStandings,
 } from '@/lib/competition/scheduler';
-import { FORMAT_LABEL, FORMAT_DESCRIPTION } from '@/lib/competition/types';
+import { FORMAT_LABEL, FORMAT_DESCRIPTION, COMPETITION_KIND_LABEL, COMPETITION_SCOPE_LABEL } from '@/lib/competition/types';
 import { CULTURE_CONTINENT, CONTINENT_LABEL, type Continent } from '@/lib/types';
-import type { CompetitionFormat, CompetitionConfig, Competition } from '@/lib/competition/types';
+import type { CompetitionFormat, CompetitionConfig, Competition, CompetitionKind, CompetitionScope } from '@/lib/competition/types';
 import type { MatchRules } from '@/lib/sim/types';
 import { DEFAULT_RULES } from '@/lib/sim/types';
 import { buildPots, conductDraw, isEvenTeamCount } from '@/lib/competition/draw';
@@ -44,6 +44,8 @@ export default function CompetitionNew() {
   const [drawResult, setDrawResult] = useState<ReturnType<typeof conductDraw> | null>(null);
   const [hostTeamId, setHostTeamId] = useState<string>('');
   const [year, setYear] = useState<number | undefined>(undefined);
+  const [kind, setKind] = useState<CompetitionKind>('officielle');
+  const [scope, setScope] = useState<CompetitionScope>('internationale');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -128,6 +130,8 @@ export default function CompetitionNew() {
         name: name.trim(),
         format,
         year,
+        kind,
+        scope,
         teamIds,
         matches,
         groups,
@@ -257,6 +261,32 @@ export default function CompetitionNew() {
             max={2200}
           />
         </label>
+        <div className="flex gap-3 flex-wrap">
+          <label className="block text-sm flex-1 min-w-[140px]">
+            <span className="mb-1 block text-muted">Statut</span>
+            <select
+              className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as CompetitionKind)}
+            >
+              {(Object.keys(COMPETITION_KIND_LABEL) as CompetitionKind[]).map((k) => (
+                <option key={k} value={k}>{COMPETITION_KIND_LABEL[k]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm flex-1 min-w-[160px]">
+            <span className="mb-1 block text-muted">Type</span>
+            <select
+              className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
+              value={scope}
+              onChange={(e) => setScope(e.target.value as CompetitionScope)}
+            >
+              {(Object.keys(COMPETITION_SCOPE_LABEL) as CompetitionScope[]).map((s) => (
+                <option key={s} value={s}>{COMPETITION_SCOPE_LABEL[s]}</option>
+              ))}
+            </select>
+          </label>
+        </div>
       </section>
 
       <section className="space-y-4 rounded-lg border border-border bg-surface p-5">

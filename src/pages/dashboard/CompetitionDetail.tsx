@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 import { StandingsTable } from '@/components/competition/StandingsTable';
@@ -18,7 +19,8 @@ import { needsKnockoutDraw, getQualifiersByRank, seedKnockoutWithOrder, sortStan
 import { LPMDrawCeremony, type LPMPair } from '@/components/competition/LPMDrawCeremony';
 import { buildKnockoutPots, conductKnockoutDraw } from '@/lib/competition/draw';
 import type { DrawResult } from '@/lib/competition/draw';
-import type { Competition, CompMatch, PlayerCompStats, CompHistoryEntry } from '@/lib/competition/types';
+import type { Competition, CompMatch, PlayerCompStats, CompHistoryEntry, CompetitionKind, CompetitionScope } from '@/lib/competition/types';
+import { COMPETITION_KIND_LABEL, COMPETITION_SCOPE_LABEL } from '@/lib/competition/types';
 import type { CorruptionDeal } from '@/lib/sim/types';
 import type { Team } from '@/lib/types';
 import { env } from '@/lib/env';
@@ -185,6 +187,8 @@ export default function CompetitionDetail() {
             compName: current.name,
             year: current.year,
             format: current.format,
+            kind: current.kind,
+            scope: current.scope,
             result: deriveTeamResult(t.id, current),
             phase: deriveTeamPhase(t.id, current),
           };
@@ -447,13 +451,29 @@ export default function CompetitionDetail() {
         <div>
           <Link to={backTo} className="text-sm text-muted hover:text-text">{backLabel}</Link>
           <h1 className="mt-2 font-display text-4xl">{current.name}</h1>
-          <p className="text-muted text-sm mt-1">
-            {current.format === 'league' ? 'Championnat'
-              : current.format === 'cup' ? 'Coupe'
-              : current.format === 'lpm' ? 'LPM'
-              : 'Groupes + Phase finale'}
-            {' · '}
-            {current.teamIds.length} équipes
+          <p className="text-muted text-sm mt-1 flex items-center gap-2 flex-wrap">
+            <span>
+              {current.format === 'league' ? 'Championnat'
+                : current.format === 'cup' ? 'Coupe'
+                : current.format === 'lpm' ? 'LPM'
+                : 'Groupes + Phase finale'}
+              {' · '}
+              {current.teamIds.length} équipes
+            </span>
+            {current.kind && (
+              <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                current.kind === 'officielle'
+                  ? 'bg-accent/10 text-accent border-accent/30'
+                  : 'bg-muted/10 text-muted border-border'
+              }`}>
+                {COMPETITION_KIND_LABEL[current.kind]}
+              </span>
+            )}
+            {current.scope && (
+              <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium border bg-surface text-muted border-border">
+                {COMPETITION_SCOPE_LABEL[current.scope]}
+              </span>
+            )}
           </p>
         </div>
         {isAdmin && (
@@ -511,6 +531,10 @@ export default function CompetitionDetail() {
           </div>
         )}
       </div>
+
+      {current.status === 'completed' && isAdmin && (
+        <CompletedMetaEditor current={current} setCurrent={setCurrent} />
+      )}
 
       {current.status === 'completed' && current.winner && (
         <div className="rounded-lg border border-warning/40 bg-warning/5 p-5 space-y-4">
@@ -1927,6 +1951,76 @@ function LPMStandingsView({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function CompletedMetaEditor({
+  current,
+  setCurrent,
+}: {
+  current: Competition;
+  setCurrent: (c: Competition) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded-lg border border-border bg-surface">
+      <button
+        className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted hover:text-text transition-colors"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="font-medium">Modifier les informations</span>
+        <span>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Nom</span>
+            <Input
+              value={current.name}
+              onChange={(e) => setCurrent({ ...current, name: e.target.value })}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Année</span>
+            <Input
+              type="number"
+              value={current.year ?? ''}
+              onChange={(e) => setCurrent({ ...current, year: e.target.value ? Number(e.target.value) : undefined })}
+              placeholder="Ex : 2026"
+              min={1900}
+              max={2200}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Statut</span>
+            <select
+              className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
+              value={current.kind ?? ''}
+              onChange={(e) => setCurrent({ ...current, kind: (e.target.value || undefined) as CompetitionKind | undefined })}
+            >
+              <option value="">— Non défini —</option>
+              {(Object.keys(COMPETITION_KIND_LABEL) as CompetitionKind[]).map((k) => (
+                <option key={k} value={k}>{COMPETITION_KIND_LABEL[k]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Type</span>
+            <select
+              className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
+              value={current.scope ?? ''}
+              onChange={(e) => setCurrent({ ...current, scope: (e.target.value || undefined) as CompetitionScope | undefined })}
+            >
+              <option value="">— Non défini —</option>
+              {(Object.keys(COMPETITION_SCOPE_LABEL) as CompetitionScope[]).map((s) => (
+                <option key={s} value={s}>{COMPETITION_SCOPE_LABEL[s]}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
     </div>
   );
 }

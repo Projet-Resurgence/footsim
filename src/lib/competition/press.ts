@@ -2037,16 +2037,16 @@ export function generateDrameHommageItem(opts: {
 
 const CMF_COMMUNIQUE_DOPING_PLAYER: [string, string][] = [
   [
-    'CMF — Communiqué officiel : suspension pour dopage',
-    'La Commission Médicale et de Fair-Play (CMF) confirme la suspension immédiate d\'un joueur suite à un contrôle antidopage positif. La procédure réglementaire a été respectée. La CMF rappelle son engagement total pour l\'intégrité sportive.',
+    'CMF — Communiqué officiel : suspension de {player} pour dopage',
+    'La Commission Médicale et de Fair-Play (CMF) confirme la suspension immédiate de {player} suite à un contrôle antidopage positif. La procédure réglementaire a été respectée. La CMF rappelle son engagement total pour l\'intégrité sportive.',
   ],
   [
-    'Communiqué CMF : contrôle positif confirmé — suspension effective',
-    'Suite aux résultats du laboratoire accrédité, la CMF prononce une suspension pour le reste de la compétition. Un recours est possible dans les 48 heures. La CMF ne commentera pas davantage tant que la procédure est en cours.',
+    'Communiqué CMF : contrôle positif confirmé — {player} suspendu',
+    'Suite aux résultats du laboratoire accrédité, la CMF prononce la suspension de {player} pour le reste de la compétition. Un recours est possible dans les 48 heures. La CMF ne commentera pas davantage tant que la procédure est en cours.',
   ],
   [
-    'CMF — Décision disciplinaire : dopage avéré',
-    'Le comité disciplinaire de la CMF a statué. La substance détectée figure sur la liste des produits interdits. La sanction est immédiate et sans appel suspensif. La CMF rappelle que le sport propre est une priorité absolue de l\'institution.',
+    'CMF — Décision disciplinaire : dopage avéré, {player} écarté',
+    'Le comité disciplinaire de la CMF a statué concernant {player}. La substance détectée figure sur la liste des produits interdits. La sanction est immédiate et sans appel suspensif. La CMF rappelle que le sport propre est une priorité absolue de l\'institution.',
   ],
 ];
 
@@ -2097,12 +2097,17 @@ export function generateCmfCommunique(opts: {
   type: 'doping_player' | 'doping_team' | 'corruption' | 'drame';
   matchId?: string;
   matchSnapshot?: NonNullable<PressItem['matchSnapshot']>;
+  /** Player name for doping_player — injected into headline/body via {player} */
+  playerName?: string;
 }): PressItem {
   const r = rng(opts.seed + 'communique');
   let headline: string;
   let body: string;
   if (opts.type === 'doping_player') {
     [headline, body] = pick(CMF_COMMUNIQUE_DOPING_PLAYER, r);
+    const name = opts.playerName ?? 'un joueur';
+    headline = headline.replace(/{player}/g, name);
+    body = body.replace(/{player}/g, name);
   } else if (opts.type === 'doping_team') {
     [headline, body] = pick(CMF_COMMUNIQUE_DOPING_TEAM, r);
   } else if (opts.type === 'corruption') {
@@ -2300,8 +2305,8 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
   const teamIds = Object.keys(opts.standings);
   const favTeams = opts.moment !== 'debut' ? [] : topTeams(teamIds, opts.teamSnapshot, opts.standings, opts.playerStats, 3);
 
-  // Count: 2 or 3 articles
-  const count = 2 + (r() < 0.5 ? 1 : 0);
+  // Count: LPM always gets 3 articles (Format LPM article must always appear); others 2 or 3
+  const count = isLPM ? 3 : 2 + (r() < 0.5 ? 1 : 0);
 
   // ── Début de phase ──────────────────────────────────────────────────────────
   if (opts.moment === 'debut') {

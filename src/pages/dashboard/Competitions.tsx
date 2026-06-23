@@ -1,12 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { SkeletonCard } from '@/components/ui/Skeleton';
+import { toast } from '@/components/ui/Toast';
 import { useCompetition } from '@/stores/competition';
 import { useCredentials } from '@/stores/credentials';
 import { useSession } from '@/stores/session';
 import { FORMAT_LABEL } from '@/lib/competition/types';
 import type { CompetitionSummary } from '@/lib/competition/types';
+import { loadCompetition, saveCompetition } from '@/lib/github/competitions';
 
 const STATUS_LABEL: Record<string, string> = {
   setup: 'Configuration',
@@ -26,6 +29,30 @@ export default function Competitions() {
   const refresh = useCompetition((s) => s.refresh);
   const pat = useCredentials((s) => s.githubPat);
   const isAdmin = useSession((s) => s.isAdmin());
+  const [recoverOpen, setRecoverOpen] = useState(false);
+  const [recoverId, setRecoverId] = useState('');
+  const [recovering, setRecovering] = useState(false);
+
+  async function handleRecover() {
+    if (!pat || !recoverId.trim()) return;
+    setRecovering(true);
+    try {
+      const comp = await loadCompetition(recoverId.trim(), pat);
+      if (!comp) {
+        toast('error', `Aucun fichier trouvé pour l'ID « ${recoverId.trim()} ».`);
+        return;
+      }
+      await saveCompetition(comp, pat);
+      await refresh(pat);
+      toast('success', `« ${comp.name} » récupérée et réindexée.`);
+      setRecoverOpen(false);
+      setRecoverId('');
+    } catch (err) {
+      toast('error', String(err));
+    } finally {
+      setRecovering(false);
+    }
+  }
 
   useEffect(() => {
     if (pat && summaries.length === 0) refresh(pat);
@@ -66,10 +93,37 @@ export default function Competitions() {
           <h1 className="mb-1 font-display text-4xl">Compétitions</h1>
           <p className="text-muted">Ligues, coupes, tournois à groupes.</p>
         </div>
-        <Link to="/dashboard/competitions/new">
-          <Button>Créer une compétition</Button>
-        </Link>
+        <div className="flex gap-2 flex-wrap justify-end">
+          <Button variant="ghost" size="sm" onClick={() => setRecoverOpen((v) => !v)}>
+            🔍 Récupérer
+          </Button>
+          <Link to="/dashboard/competitions/new">
+            <Button>Créer une compétition</Button>
+          </Link>
+        </div>
       </div>
+
+      {recoverOpen && (
+        <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
+          <div className="text-sm font-medium">Récupérer une compétition orpheline</div>
+          <p className="text-xs text-muted">Entre l'ID de la compétition (nom du fichier sans .json dans <code>data/competitions/</code>).</p>
+          <div className="flex gap-2">
+            <Input
+              className="flex-1"
+              placeholder="Ex : abc123xyz"
+              value={recoverId}
+              onChange={(e) => setRecoverId(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleRecover()}
+            />
+            <Button size="sm" onClick={handleRecover} disabled={recovering || !recoverId.trim()}>
+              {recovering ? '…' : 'Récupérer'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setRecoverOpen(false); setRecoverId(''); }}>
+              Annuler
+            </Button>
+          </div>
+        </div>
+      )}
 
       {!pat ? (
         <p className="text-muted">
