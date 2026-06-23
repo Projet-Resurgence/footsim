@@ -15,17 +15,25 @@ const SCOPE_MATCH_MULT: Record<CompetitionScope, number> = {
   autre: 0.8,
 };
 const KIND_MATCH_MULT: Record<CompetitionKind, number> = {
-  officielle: 1.5,
-  amicale: 0.8,
+  officielle: 1.2,
+  amicale: 0.4,
 };
 const IMPORTANCE_MATCH_MULT: Record<CompetitionImportance, number> = {
-  mineur: 0.6,
-  regional: 0.8,
-  national: 1.0,
-  prestige: 1.4,
-  continental: 1.8,
-  mondial: 2.5,
+  mineur: 0.4,
+  regional: 0.6,
+  national: 0.8,
+  prestige: 1.1,
+  continental: 1.4,
+  mondial: 2.0,
 };
+
+function goalDiffPenalty(scoreFor: number, scoreAgainst: number): number {
+  if (scoreFor >= scoreAgainst) return 0;
+  const gap = scoreAgainst - scoreFor;
+  if (gap >= 5) return -1.5;
+  if (gap >= 3) return -1.0;
+  return -0.5; // gap === 2
+}
 
 export function calcCmfMatchPoints(opts: {
   scoreFor: number;
@@ -40,7 +48,8 @@ export function calcCmfMatchPoints(opts: {
   const kind = KIND_MATCH_MULT[opts.compKind ?? 'amicale'];
   const importance = IMPORTANCE_MATCH_MULT[opts.compImportance ?? 'national'];
   const oppFactor = Math.min(2.0, Math.max(0.5, Math.sqrt(opts.opponentStrength / 50)));
-  return Math.round(base * scope * kind * importance * oppFactor * 10) / 10;
+  const penalty = goalDiffPenalty(opts.scoreFor, opts.scoreAgainst);
+  return Math.round((base * scope * kind * importance * oppFactor + penalty) * 10) / 10;
 }
 
 export type StoredMatch = {

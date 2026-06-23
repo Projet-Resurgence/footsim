@@ -332,7 +332,7 @@ function ExplicationsTab() {
           Chaque match de compétition simulé rapporte des points selon la formule :
         </p>
         <div className="rounded-lg border border-border bg-surface p-4 font-mono text-xs leading-relaxed">
-          pts = base × multiplicateur_portée × multiplicateur_statut × multiplicateur_importance × facteur_adversaire
+          pts = base × multiplicateur_portée × multiplicateur_statut × multiplicateur_importance × facteur_adversaire + pénalité_écart
         </div>
 
         <div className="space-y-4">
@@ -352,6 +352,16 @@ function ExplicationsTab() {
                     <td className="px-4 py-2 text-right font-bold text-accent">{p}</td>
                   </tr>
                 ))}
+                <tr className="border-t border-border bg-danger/5">
+                  <td className="px-4 py-2 text-muted" colSpan={2}>
+                    <span className="font-medium text-danger">Pénalité écart de buts (défaite uniquement)</span>
+                    <div className="mt-1 space-y-0.5 text-xs">
+                      <div>Écart 2 buts → <span className="font-bold text-danger">−0.5 pt</span></div>
+                      <div>Écart 3–4 buts → <span className="font-bold text-danger">−1.0 pt</span></div>
+                      <div>Écart 5+ buts → <span className="font-bold text-danger">−1.5 pt</span></div>
+                    </div>
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -386,7 +396,7 @@ function ExplicationsTab() {
                 </tr>
               </thead>
               <tbody>
-                {[['Officielle', '×1.5'], ['Amicale', '×0.8']].map(([k, m]) => (
+                {[['Officielle', '×1.2'], ['Amicale', '×0.4']].map(([k, m]) => (
                   <tr key={k} className="border-t border-border">
                     <td className="px-4 py-2">{k}</td>
                     <td className="px-4 py-2 text-right font-bold text-accent">{m}</td>
@@ -412,12 +422,12 @@ function ExplicationsTab() {
               </thead>
               <tbody>
                 {[
-                  ['Mineur', 'Tournoi amical test', '×0.6'],
-                  ['Régional', 'Coupe régionale officielle', '×0.8'],
-                  ['National', 'Championnat / Coupe nationale', '×1.0'],
-                  ['Prestige (LPM)', 'Ligue Préliminaire Mondiale', '×1.4'],
-                  ['Continental', 'Euro, CAN, Copa América…', '×1.8'],
-                  ['Mondial', 'Coupe du Monde', '×2.5'],
+                  ['Mineur', 'Tournoi amical test', '×0.4'],
+                  ['Régional', 'Coupe régionale officielle', '×0.6'],
+                  ['National', 'Championnat / Coupe nationale', '×0.8'],
+                  ['Prestige (LPM)', 'Ligue Préliminaire Mondiale', '×1.1'],
+                  ['Continental', 'Euro, CAN, Copa América…', '×1.4'],
+                  ['Mondial', 'Coupe du Monde', '×2.0'],
                 ].map(([imp, ex, m]) => (
                   <tr key={imp} className="border-t border-border">
                     <td className="px-4 py-2 font-medium">{imp}</td>
@@ -457,7 +467,10 @@ function ExplicationsTab() {
 
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 text-xs text-muted leading-relaxed">
           <strong className="text-text">Exemple :</strong> Victoire contre une équipe force 80 dans une Coupe du Monde (internationale, officielle, importance mondiale) :<br />
-          <span className="font-mono">3 × 2.0 × 1.5 × 2.5 × √(80/50) ≈ <strong className="text-accent">28.5 pts</strong></span>
+          <span className="font-mono">3 × 2.0 × 1.2 × 2.0 × √(80/50) ≈ <strong className="text-accent">18.2 pts</strong></span>
+          <br /><br />
+          <strong className="text-text">Exemple :</strong> Défaite 0–3 contre une équipe force 60 dans un match amical (nationale, amicale, national) :<br />
+          <span className="font-mono">0 × 1.2 × 0.4 × 0.8 × √(60/50) − 1.0 = <strong className="text-danger">−1.0 pt</strong></span>
         </div>
       </section>
 
@@ -491,7 +504,7 @@ function ExplicationsTab() {
           </tbody>
         </table>
         <p className="text-xs text-muted">
-          Les mêmes multiplicateurs portée × statut s'appliquent. Portée internationale officielle = ×2.0 × 1.5 = ×3.0.
+          Les mêmes multiplicateurs portée × statut s'appliquent. Portée internationale officielle = ×2.0 × 1.2 = ×2.4.
         </p>
       </section>
 
