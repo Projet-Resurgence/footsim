@@ -96,18 +96,19 @@ export default function ClassementsCMF() {
         const rankEntries: TeamRankEntry[] = [];
         const players: PlayerEntry[] = [];
 
+        // listTeams already reads full team.json (including recentMatches + compHistory)
+        // Only call loadTeam for players roster
         await Promise.all(
           teams.map(async (team) => {
-            const data = await loadTeam(team.slug, token);
-            if (!data) return;
+            const roster = await loadTeam(team.slug, token);
 
             // Players
-            for (const p of data.players) {
-              players.push({ player: p, team: data.team });
+            for (const p of roster?.players ?? []) {
+              players.push({ player: p, team });
             }
 
             // Team points: palmarès bonus + match points
-            const history = data.team.compHistory ?? [];
+            const history = team.compHistory ?? [];
             let points = 0;
             let wins = 0, finals = 0, thirds = 0;
             for (const entry of history) {
@@ -117,19 +118,19 @@ export default function ClassementsCMF() {
               else if (entry.result === 'third') thirds++;
             }
 
-            const recent: RecentMatchSummary[] = data.team.recentMatches ?? [];
+            const recent: RecentMatchSummary[] = team.recentMatches ?? [];
             for (const m of recent) {
               points += m.cmfPoints ?? 0;
             }
             points = Math.round(points * 10) / 10;
 
-            // Form: last 5 matches most recent last
-            const form: MatchResult[] = recent.slice(-5).map((m) =>
+            // recentMatches[0] = most recent — display oldest→newest left→right
+            const form: MatchResult[] = recent.slice(0, 5).reverse().map((m) =>
               m.scoreFor > m.scoreAgainst ? 'W' : m.scoreFor === m.scoreAgainst ? 'D' : 'L',
             );
 
             rankEntries.push({
-              team: data.team,
+              team,
               points,
               wins,
               finals,
