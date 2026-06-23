@@ -28,7 +28,7 @@ import { moraleLabel, MORALE_DEFAULT } from '@/lib/competition/morale';
 import type { PressItem, PressMention, PressMentionPlayer, PressMentionCoach } from '@/lib/competition/press';
 import { PRESS_CATEGORY_COLOR, PRESS_CATEGORY_LABEL, generateCmfItems } from '@/lib/competition/press';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
-import { batchUpdateTeamCompHistory } from '@/lib/github/store';
+import { batchUpdateTeamCompHistory, batchUpdateTeamMedical } from '@/lib/github/store';
 import { commitFiles, readJson as ghReadJson } from '@/lib/github/api';
 import { resyncCompetitionMatchHistory } from '@/lib/github/matches';
 import type { Injury, Suspension } from '@/lib/competition/injuries';
@@ -57,6 +57,7 @@ export default function CompetitionDetail() {
   const [deleting, setDeleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [resyncing, setResyncing] = useState(false);
+  const [syncingMedical, setSyncingMedical] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'bracket' | 'rounds' | 'stats' | 'presse' | 'medical' | 'suspensions'>('overview');
   const [knockoutDraw, setKnockoutDraw] = useState<DrawResult | null>(null);
   const [lpmDraw, setLpmDraw] = useState<LPMPair[] | null>(null);
@@ -256,6 +257,26 @@ export default function CompetitionDetail() {
       toast('error', String(err));
     } finally {
       setResyncing(false);
+    }
+  }
+
+  async function handleSyncMedical() {
+    if (!pat || !current) return;
+    setSyncingMedical(true);
+    try {
+      const teamSnap = current.teamSnapshot ?? {};
+      const slugs = current.teamIds.map((tid) => teamSnap[tid]?.slug).filter(Boolean) as string[];
+      const teamIdBySlug: Record<string, string> = {};
+      for (const tid of current.teamIds) {
+        const slug = teamSnap[tid]?.slug;
+        if (slug) teamIdBySlug[slug] = tid;
+      }
+      await batchUpdateTeamMedical(slugs, teamIdBySlug, current.injuries ?? [], current.suspensions ?? [], pat);
+      toast('success', 'État médical synchronisé sur les équipes.');
+    } catch (err) {
+      toast('error', String(err));
+    } finally {
+      setSyncingMedical(false);
     }
   }
 
@@ -755,11 +776,22 @@ export default function CompetitionDetail() {
           )}
 
           {activeTab === 'medical' && (
-            <MedicalTab
-              injuries={current.injuries ?? []}
-              teamMap={teamMap}
-              playerStats={current.playerStats ?? {}}
-            />
+            <div className="space-y-4">
+              {current.status === 'completed' && isAdmin && pat && (
+                <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3">
+                  <span className="text-xs text-muted">Synchroniser l'état médical sur les fiches équipes (blessés restants après cette compétition)</span>
+                  <Button size="sm" variant="ghost" onClick={handleSyncMedical} disabled={syncingMedical}>
+                    {syncingMedical ? <Spinner className="mr-2 h-3 w-3" /> : null}
+                    Resync médical
+                  </Button>
+                </div>
+              )}
+              <MedicalTab
+                injuries={current.injuries ?? []}
+                teamMap={teamMap}
+                playerStats={current.playerStats ?? {}}
+              />
+            </div>
           )}
 
           {activeTab === 'suspensions' && (
