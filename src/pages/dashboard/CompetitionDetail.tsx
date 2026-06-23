@@ -247,6 +247,7 @@ export default function CompetitionDetail() {
       const { synced } = await resyncCompetitionMatchHistory(current, pat, {
         compKind: current.kind,
         compScope: current.scope,
+        compImportance: current.importance,
         teamStrengths: strengths,
       });
       const processed = current.matches.filter(m => m.status === 'completed' && m.result != null).length;
