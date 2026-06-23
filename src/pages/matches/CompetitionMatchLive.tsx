@@ -684,10 +684,18 @@ export default function CompetitionMatchLive() {
         playerStats: updatedPlayerStats,
       };
 
+      // Teams qualified for the new phase (used for favoris)
+      const qualifiedForNewPhase = [...new Set(
+        updatedMatches
+          .filter((m) => m.phase === newPhase && m.status !== 'completed')
+          .flatMap((m) => [m.homeTeamId, m.awayTeamId])
+          .filter((id): id is string => !!id),
+      )];
+
       // Fin de phase (groupe ou knockout complet) → articles bilan + nouveau début de phase
       if (prevPhaseDone && newPhase !== prevPhase) {
         newPressItems.push(...generateCmfItems({ ...cmfBase, seed: cmfSeed + '-fin', phase: prevPhase, moment: 'fin' }));
-        newPressItems.push(...generateCmfItems({ ...cmfBase, seed: cmfSeed + '-debut2', phase: newPhase, moment: 'debut' }));
+        newPressItems.push(...generateCmfItems({ ...cmfBase, seed: cmfSeed + '-debut2', phase: newPhase, moment: 'debut', qualifiedTeamIds: qualifiedForNewPhase.length > 0 ? qualifiedForNewPhase : undefined }));
       } else if (phaseMatchesDone && newPhase === prevPhase && !allDone) {
         newPressItems.push(...generateCmfItems({ ...cmfBase, seed: cmfSeed + '-fin2', phase: newPhase, moment: 'fin' }));
       }

@@ -2141,6 +2141,8 @@ export type CmfOpts = {
   standings: Record<string, import('./types').Standing>;
   playerStats: Record<string, import('./types').PlayerCompStats>;
   winner?: string;
+  /** If provided, favoris are restricted to these team IDs (qualified teams for the new phase) */
+  qualifiedTeamIds?: string[];
 };
 
 // Phase labels
@@ -2302,7 +2304,7 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
   const isLPM = opts.format === 'lpm';
   const isCDM = !!(opts.competitionName && /coupe du monde|world cup/i.test(opts.competitionName));
   const isGroupPhase = opts.phase === 'group' || opts.phase === 'league';
-  const teamIds = Object.keys(opts.standings);
+  const teamIds = opts.qualifiedTeamIds ?? Object.keys(opts.standings);
   const favTeams = opts.moment !== 'debut' ? [] : topTeams(teamIds, opts.teamSnapshot, opts.standings, opts.playerStats, 3);
 
   // Count: LPM always gets 3 articles (Format LPM article must always appear); others 2 or 3
