@@ -89,7 +89,7 @@ export type PressItem = {
   cmfSnapshot?: {
     phase: string;
     moment: 'debut' | 'fin' | 'palmares';
-    favoriteTeams: { teamId: string; teamName: string; overall: number }[];
+    favoriteTeams: { teamId: string; teamName: string; overall: number; cote?: number }[];
     topScorer?: { playerName: string; teamId: string; teamName: string; goals: number; overall: number };
     topAssister?: { playerName: string; teamId: string; teamName: string; assists: number; overall: number };
     bestPlayer?: { playerName: string; teamId: string; teamName: string; avgRating: number; overall: number };
@@ -1984,38 +1984,36 @@ const CMF_PALMARES_LPM = [
   },
 ];
 
-const SUFFIX_FAVORIS = (teams: { teamName: string; overall: number }[]) => {
-  if (teams.length === 0) return '';
-  const list = teams.map((t, i) => `${i + 1}. **${t.teamName}** (indice ${t.overall})`).join(', ');
-  return `\n\nFavoris selon les indices de force : ${list}.`;
-};
 
-const SUFFIX_TOP_SCORER = (p: { playerName: string; teamName: string; goals: number }) =>
-  `\n\n🥇 Meilleur buteur : **${p.playerName}** (${p.teamName}) — ${p.goals} but${p.goals > 1 ? 's' : ''}.`;
-
-const SUFFIX_TOP_ASSISTER = (p: { playerName: string; teamName: string; assists: number }) =>
-  `\n\n🎯 Meilleur passeur : **${p.playerName}** (${p.teamName}) — ${p.assists} passe${p.assists > 1 ? 's' : ''} décisive${p.assists > 1 ? 's' : ''}.`;
-
-const SUFFIX_BEST_PLAYER = (p: { playerName: string; teamName: string; avgRating: number }) =>
-  `\n\n⭐ Meilleur joueur : **${p.playerName}** (${p.teamName}) — note moyenne ${p.avgRating.toFixed(2)}.`;
-
-const SUFFIX_BEST_GK = (p: { playerName: string; teamName: string; cleanSheets: number }) =>
-  `\n\n🧤 Meilleur gardien : **${p.playerName}** (${p.teamName}) — ${p.cleanSheets} clean sheet${p.cleanSheets > 1 ? 's' : ''}.`;
 
 function topTeams(
   teamIds: string[],
   teamSnapshot: Record<string, { name: string; flag: string; slug?: string }>,
-  standings: Record<string, import('./types').Standing>,
+  _standings: Record<string, import('./types').Standing>,
+  playerStats: Record<string, import('./types').PlayerCompStats>,
   count = 3,
-): { teamId: string; teamName: string; overall: number }[] {
-  return teamIds
-    .map((tid) => ({
-      teamId: tid,
-      teamName: teamSnapshot[tid]?.name ?? tid,
-      overall: standings[tid]?.points ?? 0,
-    }))
+): { teamId: string; teamName: string; overall: number; cote: number }[] {
+  const teamOverall: Record<string, number[]> = {};
+  for (const p of Object.values(playerStats)) {
+    if (!teamOverall[p.teamId]) teamOverall[p.teamId] = [];
+    teamOverall[p.teamId].push(p.overall);
+  }
+  const avgOverall = (tid: string) => {
+    const arr = teamOverall[tid];
+    if (!arr || arr.length === 0) return 50;
+    return Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);
+  };
+  const all = teamIds.map((tid) => ({ teamId: tid, teamName: teamSnapshot[tid]?.name ?? tid, overall: avgOverall(tid) }));
+  // Cote bookmaker : P(team) ∝ overall² / sum(overall²), cote = 1/P rounded to 2 decimals, min 1.01
+  const totalSq = all.reduce((s, t) => s + t.overall * t.overall, 0) || 1;
+  return all
     .sort((a, b) => b.overall - a.overall)
-    .slice(0, count);
+    .slice(0, count)
+    .map((t) => {
+      const prob = (t.overall * t.overall) / totalSq;
+      const cote = prob > 0 ? Math.max(1.01, Math.round((1 / prob) * 100) / 100) : 99;
+      return { ...t, cote };
+    });
 }
 
 function topScorerFromStats(stats: Record<string, import('./types').PlayerCompStats>) {
@@ -2049,7 +2047,7 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
   const isCDM = !!(opts.competitionName && /coupe du monde|world cup/i.test(opts.competitionName));
   const isGroupPhase = opts.phase === 'group' || opts.phase === 'league';
   const teamIds = Object.keys(opts.standings);
-  const favTeams = opts.moment !== 'debut' ? [] : topTeams(teamIds, opts.teamSnapshot, opts.standings, 3);
+  const favTeams = opts.moment !== 'debut' ? [] : topTeams(teamIds, opts.teamSnapshot, opts.standings, opts.playerStats, 3);
 
   // Count: 2 or 3 articles
   const count = 2 + (r() < 0.5 ? 1 : 0);
@@ -2067,7 +2065,6 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
       tpl = pick(opts.phase === 'group' ? CMF_DEBUT_GROUP : CMF_DEBUT_LEAGUE, r);
       const h = (tpl as typeof CMF_DEBUT_LEAGUE[0]).headline(opts.competitionName);
       let b = (tpl as typeof CMF_DEBUT_LEAGUE[0]).body(opts.competitionName);
-      b += SUFFIX_FAVORIS(favTeams);
       items.push({
         id: crypto.randomUUID(), round: opts.round, teamId: null, category: 'cmf',
         headline: h, body: b, createdAt: new Date().toISOString(),
@@ -2077,7 +2074,6 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
       const ktpl = pick(CMF_DEBUT_KNOCKOUT, r);
       const h = ktpl.headline(opts.phase, opts.competitionName);
       let b = ktpl.body(opts.phase, opts.competitionName);
-      b += SUFFIX_FAVORIS(favTeams);
       items.push({
         id: crypto.randomUUID(), round: opts.round, teamId: null, category: 'cmf',
         headline: h, body: b, createdAt: new Date().toISOString(),
@@ -2099,10 +2095,6 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
           : hasStats
             ? `Premiers bilans individuels — les tendances de début de compétition.`
             : `La CMF distinguera les meilleurs acteurs. Pronostics basés sur les effectifs en présence.`;
-      if (scorer) b2 += SUFFIX_TOP_SCORER(scorer);
-      if (assister) b2 += SUFFIX_TOP_ASSISTER(assister);
-      if (best) b2 += SUFFIX_BEST_PLAYER(best);
-      if (gk) b2 += SUFFIX_BEST_GK(gk);
       items.push({
         id: crypto.randomUUID(), round: opts.round, teamId: null, category: 'cmf',
         headline: `Pronostics CMF — ${PHASE_LABEL[opts.phase] ?? opts.phase} de la ${opts.competitionName}`,
@@ -2139,11 +2131,10 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
     const assister = topAssisterFromStats(opts.playerStats);
     const best = bestPlayerFromStats(opts.playerStats);
     const gk = bestGKFromStats(opts.playerStats);
-    const favCurrent = topTeams(teamIds, opts.teamSnapshot, opts.standings, 3);
+    const favCurrent = topTeams(teamIds, opts.teamSnapshot, opts.standings, opts.playerStats, 3);
 
     const tpl = pick(CMF_FIN_PHASE, r);
     let b = tpl.body(opts.phase);
-    b += SUFFIX_FAVORIS(favCurrent);
     items.push({
       id: crypto.randomUUID(), round: opts.round, teamId: null, category: 'cmf',
       headline: tpl.headline(opts.phase, opts.competitionName),
@@ -2153,10 +2144,6 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
 
     if (count >= 2) {
       let b2 = `Bilan individuel à l'issue de la ${PHASE_LABEL[opts.phase] ?? opts.phase} :`;
-      if (scorer) b2 += SUFFIX_TOP_SCORER(scorer);
-      if (assister) b2 += SUFFIX_TOP_ASSISTER(assister);
-      if (best) b2 += SUFFIX_BEST_PLAYER(best);
-      if (gk) b2 += SUFFIX_BEST_GK(gk);
       items.push({
         id: crypto.randomUUID(), round: opts.round, teamId: null, category: 'cmf',
         headline: `Statistiques individuelles — bilan de la ${PHASE_LABEL[opts.phase] ?? opts.phase}`,
@@ -2219,10 +2206,6 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
     // Distinctions individuelles
     if (count >= 2) {
       let b2 = `La CMF a décerné ses trophées individuels pour cette édition de la ${opts.competitionName} :`;
-      if (scorer) b2 += SUFFIX_TOP_SCORER(scorer);
-      if (assister) b2 += SUFFIX_TOP_ASSISTER(assister);
-      if (best) b2 += SUFFIX_BEST_PLAYER(best);
-      if (gk) b2 += SUFFIX_BEST_GK(gk);
       if (!scorer && !assister && !best && !gk) b2 += '\n\nAucune statistique individuelle enregistrée pour cette édition.';
       items.push({
         id: crypto.randomUUID(), round: opts.round, teamId: null, category: 'cmf',

@@ -1515,9 +1515,12 @@ function PressTab({
                               <div className="text-[10px] text-muted uppercase tracking-wide">Favoris</div>
                               <div className="flex flex-wrap gap-1.5">
                                 {item.cmfSnapshot.favoriteTeams.map((ft, i) => (
-                                  <div key={ft.teamId} className="flex items-center gap-1 rounded border border-border bg-bg px-2 py-0.5">
+                                  <div key={ft.teamId} className="flex items-center gap-1.5 rounded border border-border bg-bg px-2 py-0.5">
                                     {teamMap[ft.teamId]?.flag && <img src={teamMap[ft.teamId].flag} alt="" className="h-3.5 w-3.5 object-cover rounded-sm shrink-0" />}
                                     <span className="text-[10px] font-medium">{i + 1}. {ft.teamName}</span>
+                                    {ft.cote !== undefined && (
+                                      <span className="text-[10px] font-bold text-yellow-400 ml-0.5">{ft.cote.toFixed(2)}</span>
+                                    )}
                                   </div>
                                 ))}
                               </div>
