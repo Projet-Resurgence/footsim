@@ -173,14 +173,22 @@ export default function CompetitionDetail() {
     try {
       await save(current, pat);
 
-      // When competition is completed, append compHistory — one Git commit for all teams
+      // When competition is completed, append/update compHistory — one Git commit for all teams
       if (current.status === 'completed') {
-        const participating = teams.filter((t) => current.teamIds.includes(t.id));
+        const snapshot = current.teamSnapshot ?? {};
+        // Use teamSnapshot slugs — avoids dependency on Zustand store load state
+        const participatingEntries = current.teamIds
+          .map((tid) => ({ tid, slug: snapshot[tid]?.slug }))
+          .filter((x): x is { tid: string; slug: string } => !!x.slug);
+
         const reads = await Promise.all(
-          participating.map(async (t) => ({ t, existing: await ghReadJson<import('@/lib/types').Team>(`data/teams/${t.slug}/team.json`, pat) })),
+          participatingEntries.map(async ({ tid, slug }) => ({
+            tid, slug,
+            existing: await ghReadJson<import('@/lib/types').Team>(`data/teams/${slug}/team.json`, pat),
+          })),
         );
         const files: Array<{ path: string; content: unknown }> = [];
-        for (const { t, existing } of reads) {
+        for (const { tid, slug, existing } of reads) {
           if (!existing) continue;
           const team = existing.data;
           const prev = team.compHistory ?? [];
@@ -193,19 +201,18 @@ export default function CompetitionDetail() {
             kind: current.kind,
             scope: current.scope,
             importance: current.importance,
-            result: deriveTeamResult(t.id, current),
-            phase: deriveTeamPhase(t.id, current),
+            result: deriveTeamResult(tid, current),
+            phase: deriveTeamPhase(tid, current),
           };
           const next = existingIdx >= 0
             ? prev.map((e, i) => i === existingIdx ? entry : e)
             : [...prev, entry];
-          // Only write if something actually changed
           const changed = existingIdx < 0 || JSON.stringify(prev[existingIdx]) !== JSON.stringify(entry);
           if (!changed) continue;
-          files.push({ path: `data/teams/${t.slug}/team.json`, content: { ...team, compHistory: next } });
+          files.push({ path: `data/teams/${slug}/team.json`, content: { ...team, compHistory: next } });
         }
         if (files.length > 0) {
-          await commitFiles(files, `chore(teams): add ${current.name} to palmares (${files.length} équipes)`, pat);
+          await commitFiles(files, `chore(teams): update palmares ${current.name} (${files.length} équipes)`, pat);
         }
       }
 
