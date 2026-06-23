@@ -137,14 +137,12 @@ export function generatePlayers(opts: GenerateOptions): Player[] {
 export function reratePlayers(players: Player[], opts: RerateOptions & { previousStrength?: number }): Player[] {
   const targetMean = 6 + opts.globalStrength / 10;
   const baseMean = 6 + (opts.previousStrength ?? opts.globalStrength) / 10;
-  const delta = targetMean - baseMean; // points per stat on average
-  if (Math.abs(delta) < 0.001) return players; // no-op
+  const delta = targetMean - baseMean;
+  if (Math.abs(delta) < 0.001) return players;
 
   return players.map((player) => {
     const posWeights = POSITION_STAT_WEIGHTS[player.position] ?? {};
-    const totalPosWeight = Object.values(posWeights).reduce((s, w) => s + w, 0);
 
-    // Flat stat map
     const flat: Record<string, number> = {
       ...player.stats.technical,
       ...player.stats.mental,
@@ -154,29 +152,39 @@ export function reratePlayers(players: Player[], opts: RerateOptions & { previou
     const statKeys = Object.keys(flat);
     const n = statKeys.length;
 
-    // Total points to distribute across all stats
-    const totalDelta = delta * n;
+    // Total integer points to distribute (can be negative)
+    const totalPoints = Math.round(delta * n);
 
-    // Each stat gets a share proportional to its position weight (non-weighted stats share the remainder equally)
-    const weightedKeys = new Set(Object.keys(posWeights));
-    const unweightedCount = statKeys.filter((k) => !weightedKeys.has(k)).length;
-    // Weighted stats get 70% of delta, unweighted get 30% (if delta > 0, else inverse)
-    const weightedPool = totalDelta * (delta > 0 ? 0.7 : 0.3);
-    const unweightedPool = totalDelta - weightedPool;
-
-    const newFlat: Record<string, number> = {};
-    for (const k of statKeys) {
-      const posW = posWeights[k] ?? 0;
-      let statDelta: number;
-      if (posW > 0 && totalPosWeight > 0) {
-        statDelta = (posW / totalPosWeight) * weightedPool;
-      } else {
-        statDelta = unweightedCount > 0 ? unweightedPool / unweightedCount : 0;
-      }
-      newFlat[k] = clamp(Math.round(flat[k] + statDelta), 1, 20);
+    if (totalPoints === 0) {
+      // Delta too small to produce any integer change — no-op for this player
+      return player;
     }
 
-    // Rebuild stats groups
+    // Build priority order: sort stats by position weight desc, then by current value asc (boost weakest first among equals)
+    const sorted = [...statKeys].sort((a, b) => {
+      const wDiff = (posWeights[b] ?? 0) - (posWeights[a] ?? 0);
+      if (wDiff !== 0) return wDiff;
+      return flat[a] - flat[b];
+    });
+
+    // Distribute |totalPoints| points one-by-one along priority order, cycling if needed
+    const newFlat = { ...flat };
+    const sign = totalPoints > 0 ? 1 : -1;
+    let remaining = Math.abs(totalPoints);
+    let idx = 0;
+    while (remaining > 0) {
+      const k = sorted[idx % sorted.length];
+      const cur = newFlat[k];
+      const next = clamp(cur + sign, 1, 20);
+      if (next !== cur) {
+        newFlat[k] = next;
+        remaining--;
+      }
+      idx++;
+      // Safety: if all stats are clamped, break
+      if (idx > sorted.length * 20) break;
+    }
+
     const stats = {
       technical: Object.fromEntries(
         Object.keys(player.stats.technical).map((k) => [k, newFlat[k]])
