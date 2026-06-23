@@ -499,23 +499,30 @@ export default function MultiplexLive() {
           }
         }
 
-        // Win streak + forme press
+        // Win streak + forme press — basé sur pressItems AVANT ce round
         const isWin = goalsFor > goalsAgainst;
         if (isWin) {
-          const pastItems = [...(current.pressItems ?? []), ...updatedPressItems];
-          const teamMatchItems = pastItems
+          const prevItems = current.pressItems ?? [];
+          const teamPrevMatchItems = prevItems
             .filter((p) => p.teamId === tid && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite'].includes(p.category))
             .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt));
           let streak = 1;
-          for (const p of teamMatchItems) {
-            if (p.round === current.currentRound) continue;
+          for (const p of teamPrevMatchItems) {
             if (p.category === 'victoire' || p.category === 'exploit') streak++;
             else break;
           }
-          const recentMatchSnaps = pastItems
+          const currentSnap: NonNullable<import('@/lib/competition/press').PressItem['matchSnapshot']> = {
+            homeTeamId: homeId,
+            awayTeamId: awayId,
+            homeTeamName: nameFor(homeId),
+            awayTeamName: nameFor(awayId),
+            homeScore: slot.state.score.home,
+            awayScore: slot.state.score.away,
+          };
+          const prevWinSnaps = prevItems
             .filter((p) => p.teamId === tid && p.matchSnapshot && (p.category === 'victoire' || p.category === 'exploit'))
             .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt))
-            .slice(0, 3)
+            .slice(0, 2)
             .map((p) => p.matchSnapshot!);
           const formeItem = generateFormePressItem({
             round: current.currentRound,
@@ -523,7 +530,7 @@ export default function MultiplexLive() {
             teamName: nameFor(tid),
             winStreak: streak,
             seed: `${baseSeed}-${tid}-forme`,
-            matchSnapshots: recentMatchSnaps,
+            matchSnapshots: [currentSnap, ...prevWinSnaps],
             players: teamPlayers,
             coach: teamCoach ?? undefined,
           });
@@ -612,7 +619,7 @@ export default function MultiplexLive() {
       const cm = current.matches.find((m) => m.id === slot.compMatchId);
       if (!cm?.homeTeamId || !cm?.awayTeamId) continue;
       const drameH = (() => { let h = 0; const s = `${current.id}-r${roundNum}-${slot.compMatchId}-drame`; for (let i = 0; i < s.length; i++) { h = Math.imul(31, h) + s.charCodeAt(i) | 0; } return () => { h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b); h ^= h >>> 16; return (h >>> 0) / 0xffffffff; }; })();
-      if (drameH() < 0.005) {
+      if (drameH() < 0.002) {
         const sn = {
           homeTeamId: cm.homeTeamId, awayTeamId: cm.awayTeamId,
           homeTeamName: current.teamSnapshot?.[cm.homeTeamId]?.name ?? cm.homeTeamId,

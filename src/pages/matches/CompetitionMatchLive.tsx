@@ -530,24 +530,32 @@ export default function CompetitionMatchLive() {
           }
         }
 
-        // Win streak — compte les victoires consécutives (victoire/exploit) pour ce team
+        // Win streak — basé sur pressItems AVANT ce round (snap!.pressItems uniquement)
         const isWin = goalsFor > goalsAgainst;
         if (isWin) {
-          const pastItems = [...(snap!.pressItems ?? []), ...newPressItems];
-          const teamMatchItems = pastItems
+          const prevItems = snap!.pressItems ?? [];
+          const teamPrevMatchItems = prevItems
             .filter((p) => p.teamId === tid && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite'].includes(p.category))
             .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt));
+          // streak = 1 (ce match) + victoires consécutives passées
           let streak = 1;
-          for (const p of teamMatchItems) {
-            if (p.round === round) continue; // skip current match items already pushed
+          for (const p of teamPrevMatchItems) {
             if (p.category === 'victoire' || p.category === 'exploit') streak++;
             else break;
           }
-          // Collect recent match snaps for link cards
-          const recentMatchSnaps = pastItems
+          // Cards : match courant en tête + jusqu'à 2 victoires précédentes
+          const currentSnap: NonNullable<import('@/lib/competition/press').PressItem['matchSnapshot']> = {
+            homeTeamId: compMatch.homeTeamId!,
+            awayTeamId: compMatch.awayTeamId!,
+            homeTeamName: nameFor(compMatch.homeTeamId!),
+            awayTeamName: nameFor(compMatch.awayTeamId!),
+            homeScore: matchState!.score.home,
+            awayScore: matchState!.score.away,
+          };
+          const prevWinSnaps = prevItems
             .filter((p) => p.teamId === tid && p.matchSnapshot && (p.category === 'victoire' || p.category === 'exploit'))
             .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt))
-            .slice(0, 3)
+            .slice(0, 2)
             .map((p) => p.matchSnapshot!);
           const formeItem = generateFormePressItem({
             round,
@@ -555,7 +563,7 @@ export default function CompetitionMatchLive() {
             teamName: tname,
             winStreak: streak,
             seed: seed + tid + round + 'forme',
-            matchSnapshots: recentMatchSnaps,
+            matchSnapshots: [currentSnap, ...prevWinSnaps],
             players: teamPlayers,
             coach: teamCoach ?? undefined,
           });
@@ -650,7 +658,7 @@ export default function CompetitionMatchLive() {
         },
         motm: motmResult ?? undefined,
       };
-      if (drameRng() < 0.005) {
+      if (drameRng() < 0.002) {
         const drameItem = generateDrameItem({ round, seed: `${seed}-drame-evt`, matchId: compMatch.id, matchSnapshot: matchSnap });
         newPressItems.push(drameItem);
         newPressItems.push(generateCmfCommunique({ round, seed: `${seed}-cmf-drame`, type: 'drame', matchId: compMatch.id, matchSnapshot: matchSnap }));
