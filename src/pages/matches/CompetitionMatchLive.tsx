@@ -21,7 +21,7 @@ import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary } from '@/lib/competition/types';
 import { resolveActiveTactic } from '@/lib/localTactics';
 import { updateMorale, initMorale, MORALE_DEFAULT } from '@/lib/competition/morale';
-import { generateMatchPressItem, generateMoralePressItem, generatePresidencyReboundItem, generateDrameItem, generateDrameHommageItem, generateCmfItems, generateCmfCommunique } from '@/lib/competition/press';
+import { generateMatchPressItem, generateMoralePressItem, generatePresidencyReboundItem, generateDrameItem, generateDrameHommageItem, generateCmfItems, generateCmfCommunique, generateFormePressItem, generateCoachScandalItem } from '@/lib/competition/press';
 import { createMatchInjury, createSuspension, decrementInjuries, decrementSuspensions, unavailableIds } from '@/lib/competition/injuries';
 
 import type { Team } from '@/lib/types';
@@ -528,6 +528,50 @@ export default function CompetitionMatchLive() {
           if (moraleItem.presidentDestitue) {
             updatedPendingRebound[tid] = round + 1;
           }
+        }
+
+        // Win streak — compte les victoires consécutives (victoire/exploit) pour ce team
+        const isWin = goalsFor > goalsAgainst;
+        if (isWin) {
+          const pastItems = [...(snap!.pressItems ?? []), ...newPressItems];
+          const teamMatchItems = pastItems
+            .filter((p) => p.teamId === tid && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite'].includes(p.category))
+            .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt));
+          let streak = 1;
+          for (const p of teamMatchItems) {
+            if (p.round === round) continue; // skip current match items already pushed
+            if (p.category === 'victoire' || p.category === 'exploit') streak++;
+            else break;
+          }
+          // Collect recent match snaps for link cards
+          const recentMatchSnaps = pastItems
+            .filter((p) => p.teamId === tid && p.matchSnapshot && (p.category === 'victoire' || p.category === 'exploit'))
+            .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt))
+            .slice(0, 3)
+            .map((p) => p.matchSnapshot!);
+          const formeItem = generateFormePressItem({
+            round,
+            teamId: tid,
+            teamName: tname,
+            winStreak: streak,
+            seed: seed + tid + round + 'forme',
+            matchSnapshots: recentMatchSnaps,
+            players: teamPlayers,
+            coach: teamCoach ?? undefined,
+          });
+          if (formeItem) newPressItems.push(formeItem);
+        }
+
+        // Scandale coach (alcoolique / drogué)
+        if (teamCoach) {
+          const coachScandal = generateCoachScandalItem({
+            round,
+            teamId: tid,
+            teamName: tname,
+            coach: teamCoach,
+            seed: seed + tid + round + 'cscandal',
+          });
+          if (coachScandal) newPressItems.push(coachScandal);
         }
       }
 

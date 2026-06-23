@@ -1484,29 +1484,34 @@ function PressTab({
                         </p>
                       )}
                       {item.matchId && item.matchSnapshot && (
-                        <button
-                          onClick={() => setMatchPopup(item.matchSnapshot!)}
-                          className="mt-2 w-full flex items-center gap-2 rounded-md border border-border bg-bg px-3 py-2 hover:bg-border/30 transition-colors group text-left"
-                        >
-                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                            {teamMap[item.matchSnapshot.homeTeamId]?.flag && (
-                              <img src={teamMap[item.matchSnapshot.homeTeamId].flag} alt="" className="h-5 w-5 object-cover rounded-sm shrink-0" />
-                            )}
-                            <span className="text-xs font-medium truncate">{item.matchSnapshot.homeTeamName}</span>
-                          </div>
-                          <div className="shrink-0 px-2 py-0.5 rounded bg-surface border border-border text-xs font-bold tabular-nums">
-                            {item.matchSnapshot.homeScore} – {item.matchSnapshot.awayScore}
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
-                            <span className="text-xs font-medium truncate">{item.matchSnapshot.awayTeamName}</span>
-                            {teamMap[item.matchSnapshot.awayTeamId]?.flag && (
-                              <img src={teamMap[item.matchSnapshot.awayTeamId].flag} alt="" className="h-5 w-5 object-cover rounded-sm shrink-0" />
-                            )}
-                          </div>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted group-hover:text-text transition-colors ml-1">
-                            <path d="M5 12h14M12 5l7 7-7 7"/>
-                          </svg>
-                        </button>
+                        <div className="mt-2 space-y-1">
+                          {[item.matchSnapshot, ...(item.extraMatchSnapshots ?? [])].map((snap, si) => (
+                            <button
+                              key={si}
+                              onClick={() => setMatchPopup(snap)}
+                              className="w-full flex items-center gap-2 rounded-md border border-border bg-bg px-3 py-2 hover:bg-border/30 transition-colors group text-left"
+                            >
+                              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                {teamMap[snap.homeTeamId]?.flag && (
+                                  <img src={teamMap[snap.homeTeamId].flag} alt="" className="h-5 w-5 object-cover rounded-sm shrink-0" />
+                                )}
+                                <span className="text-xs font-medium truncate">{snap.homeTeamName}</span>
+                              </div>
+                              <div className="shrink-0 px-2 py-0.5 rounded bg-surface border border-border text-xs font-bold tabular-nums">
+                                {snap.homeScore} – {snap.awayScore}
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
+                                <span className="text-xs font-medium truncate">{snap.awayTeamName}</span>
+                                {teamMap[snap.awayTeamId]?.flag && (
+                                  <img src={teamMap[snap.awayTeamId].flag} alt="" className="h-5 w-5 object-cover rounded-sm shrink-0" />
+                                )}
+                              </div>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted group-hover:text-text transition-colors ml-1">
+                                <path d="M5 12h14M12 5l7 7-7 7"/>
+                              </svg>
+                            </button>
+                          ))}
+                        </div>
                       )}
                       {item.cmfSnapshot && (
                         <div className="mt-2 space-y-2">

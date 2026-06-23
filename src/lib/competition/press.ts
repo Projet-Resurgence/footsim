@@ -85,6 +85,8 @@ export type PressItem = {
       rating: number;
     };
   };
+  /** Additional match snapshots for forme articles (up to 2 extra link cards) */
+  extraMatchSnapshots?: NonNullable<PressItem['matchSnapshot']>[];
   /** CMF article data — favorite teams + top player predictions */
   cmfSnapshot?: {
     phase: string;
@@ -1685,6 +1687,253 @@ export function generatePresidencyReboundItem(opts: {
     body: pick(REBOUND_BODIES, r).replace(/{team}/g, opts.teamName),
     moraleBoost: 20 + Math.floor(r() * 11), // +20 à +30
     createdAt: new Date().toISOString(),
+  };
+}
+
+// ── Forme — séries de victoires ──────────────────────────────────────────────
+
+const FORME_HEADLINES_3 = [
+  '{team} : trois victoires de suite — la série est lancée',
+  '{team} enchaîne les victoires : le groupe trouve son rythme',
+  'Série en cours pour {team} — trois matchs, trois succès',
+  '{team} en route : troisième victoire consécutive !',
+  'La dynamique {team} est impressionnante — trois victoires d\'affilée',
+  '{team} ne s\'arrête plus : troisième succès de rang',
+];
+
+const FORME_HEADLINES_5 = [
+  '{team} : cinq victoires consécutives — qui peut les arrêter ?',
+  'La machine {team} est en marche — 5 matchs sans défaite !',
+  '{team} inarrêtable : cinq victoires de suite, le groupe est sur un nuage',
+  'Série historique pour {team} : cinq succès d\'affilée',
+  '{team} en état de grâce — cinq victoires consécutives, personne ne les arrête',
+  'Cinq sur cinq pour {team} — cette équipe est en feu',
+];
+
+const FORME_HEADLINES_8 = [
+  '{team} : HUIT victoires consécutives — une série légendaire',
+  '{streak} victoires d\'affilée pour {team} — le groupe entre dans l\'histoire',
+  'Phénomène {team} : {streak} succès de suite, les adversaires tremblent',
+  '{team} {streak} victoires, aucune défaite — qui osera les défier ?',
+  'Série XXL pour {team} : {streak} victoires consécutives, le groupe vole',
+];
+
+const FORME_BODIES_3 = [
+  'Trois matchs, trois victoires. {team} est dans une dynamique positive qui commence à faire parler dans les couloirs de la compétition. Le groupe semble soudé, les automatismes se mettent en place, et les résultats suivent.',
+  'La régularité est la marque des grandes équipes. {team} en donne une belle illustration avec trois succès consécutifs. Le collectif tourne bien, la confiance est là — et ça se voit sur le terrain.',
+  'Depuis trois journées, {team} ne connaît pas la défaite. La série est courte, mais la tendance est claire : ce groupe monte en puissance. Les prochains adversaires sont prévenus.',
+  'Trois victoires de suite pour {team}. Les joueurs arrivent à l\'entraînement avec le sourire, les séances sont intenses, et le coach commence à faire confiance à un groupe de base stable. Les bases sont là.',
+];
+
+const FORME_BODIES_5 = [
+  'Cinq victoires de suite — à ce niveau de la compétition, c\'est une performance rare. {team} s\'impose comme l\'une des équipes à surveiller. Le vestiaire est en feu, le coach parle de "confiance maximale", et les supporters commencent à y croire sérieusement.',
+  'On ne peut plus parler de coïncidence. {team} enchaîne les succès depuis cinq journées, et chaque victoire renforce un peu plus la cohésion du groupe. "On joue pour les uns pour les autres" résumait un joueur après le match. Ça ressemble à une équipe qui peut aller loin.',
+  'Cinq sur cinq. {team} surfe sur une vague de confiance impressionnante. L\'équipe concède peu, marque régulièrement, et semble gérer les moments compliqués avec une maturité inattendue. La série mérite d\'être regardée de près.',
+  'La série continue. Cinq victoires consécutives pour {team}, qui s\'installe durablement dans les hauteurs du classement. Les concurrents commencent à regarder avec inquiétude. À raison.',
+];
+
+const FORME_BODIES_8 = [
+  '{streak} victoires de suite pour {team} — une série qui entre dans la légende de cette compétition. Le groupe ne tremble plus, les doutes semblent appartenir au passé. Chaque match est abordé avec la même intensité, la même concentration. Quelque chose de spécial est en train de se construire.',
+  'Il faut remonter loin pour trouver une pareille série dans cette compétition. {team} aligne {streak} victoires consécutives avec une régularité déconcertante. L\'entraîneur reste prudent en conférence de presse, mais les yeux brillent. Ce groupe a quelque chose — et tout le monde le sent.',
+  '{streak} sans défaite. {team} est entré dans une dimension à part. Les stats sont impressionnantes, le collectif tourne à plein régime, et même les matchs difficiles sont gagnés dans le dur. C\'est le signe d\'une grande équipe.',
+];
+
+const FORME_PLAYER_SUFFIXES = [
+  `{player} incarne parfaitement cette dynamique — son niveau en ce moment est exceptionnel.`,
+  `On retiendra notamment les performances de {player} sur cette série, impressionnant depuis plusieurs matchs.`,
+  `{player} est en état de grâce depuis le début de cette série — ses coéquipiers lui font confiance les yeux fermés.`,
+  `Un nom ressort particulièrement dans cette série : {player}. Décisif, régulier, impérial.`,
+];
+
+const FORME_COACH_SUFFIXES = [
+  `Le travail de {coach} mérite d\'être salué : la tactique est claire, le groupe est soudé, les résultats suivent.`,
+  `{coach} a trouvé la bonne formule — et le groupe y croit. La confiance collective, ça se mérite.`,
+  `On ne peut pas ignorer le rôle de {coach} dans cette série. La dynamique de groupe qu\'il a instaurée est visible sur le terrain.`,
+  `La méthode {coach} fonctionne. Série de victoires, collectif soudé, moral au beau fixe — c\'est rarement le fruit du hasard.`,
+];
+
+/**
+ * Generates a "forme" press article when a team is on a win streak (≥ 3).
+ * @param matchSnapshots - up to last 3 matches (most recent first), shown as link cards
+ */
+export function generateFormePressItem(opts: {
+  round: number;
+  teamId: string;
+  teamName: string;
+  winStreak: number;
+  seed: string;
+  matchSnapshots?: NonNullable<PressItem['matchSnapshot']>[];
+  players?: Player[];
+  coach?: Coach;
+}): PressItem | null {
+  if (opts.winStreak < 3) return null;
+  const r = rng(opts.seed + 'forme');
+  // Only trigger at thresholds or with decaying probability
+  const isLegendary = opts.winStreak >= 8;
+  const isMajor = opts.winStreak >= 5;
+  // At streak=3: 60%, 4: 40%, 5+: always
+  const chance = isMajor ? 1 : opts.winStreak === 4 ? 0.40 : 0.60;
+  if (r() >= chance) return null;
+
+  const streakStr = String(opts.winStreak);
+  const headsPool = isLegendary ? FORME_HEADLINES_8 : isMajor ? FORME_HEADLINES_5 : FORME_HEADLINES_3;
+  const bodiesPool = isLegendary ? FORME_BODIES_8 : isMajor ? FORME_BODIES_5 : FORME_BODIES_3;
+
+  let headline = pick(headsPool, r)
+    .replace(/{team}/g, opts.teamName)
+    .replace(/{streak}/g, streakStr);
+  let body = pick(bodiesPool, r)
+    .replace(/{team}/g, opts.teamName)
+    .replace(/{streak}/g, streakStr);
+
+  const mentions: PressMention[] = [];
+
+  // Player mention
+  const nonGK = opts.players?.filter((p) => p.position !== 'GK') ?? [];
+  const pool = nonGK.length > 0 ? nonGK : (opts.players ?? []);
+  const top5 = pool.slice().sort((a, b) => b.overall - a.overall).slice(0, 5);
+  const featured = top5.length > 0 ? pick(top5, r) : null;
+  if (featured && r() < 0.65) {
+    const pname = `${featured.firstName} ${featured.lastName}`;
+    body += ' ' + pick(FORME_PLAYER_SUFFIXES, r).replace(/{player}/g, pname);
+    mentions.push({
+      type: 'player',
+      name: pname,
+      overall: featured.overall,
+      position: featured.position,
+      stats: {
+        technical: featured.stats.technical as unknown as Record<string, number>,
+        mental: featured.stats.mental as unknown as Record<string, number>,
+        physical: featured.stats.physical as unknown as Record<string, number>,
+        ...(featured.stats.goalkeeping ? { goalkeeping: featured.stats.goalkeeping as unknown as Record<string, number> } : {}),
+      },
+    });
+  }
+
+  // Coach mention
+  if (opts.coach && r() < 0.55) {
+    const cname = `${opts.coach.firstName} ${opts.coach.lastName}`;
+    body += ' ' + pick(FORME_COACH_SUFFIXES, r).replace(/{coach}/g, cname);
+    mentions.push({
+      type: 'coach',
+      name: cname,
+      overall: opts.coach.overall,
+      stats: opts.coach.stats,
+      positiveTraits: opts.coach.positiveTraits,
+      negativeTraits: opts.coach.negativeTraits,
+    });
+  }
+
+  // Use the most recent match as the primary matchSnapshot for the card
+  const primarySnap = opts.matchSnapshots?.[0];
+  // Extra snaps for linking (up to 2 more)
+  const extraSnaps = opts.matchSnapshots?.slice(1, 3) ?? [];
+
+  return {
+    id: crypto.randomUUID(),
+    round: opts.round,
+    teamId: opts.teamId,
+    category: 'forme',
+    headline,
+    body,
+    createdAt: new Date().toISOString(),
+    mentions: mentions.length > 0 ? mentions : undefined,
+    matchSnapshot: primarySnap,
+    extraMatchSnapshots: extraSnaps.length > 0 ? extraSnaps : undefined,
+  };
+}
+
+// ── Scandale coach — alcoolique / drogué ──────────────────────────────────────
+
+const COACH_ALCOOL_PAIRS: [string, string][] = [
+  [
+    'SCANDALE : {coach}, sélectionneur de {team}, aperçu ivre avant le match',
+    'Des images circulent depuis hier soir sur les réseaux. On y voit {coach}, le sélectionneur de {team}, dans un état d\'ivresse avancée dans un bar du centre-ville, la veille d\'un match important. L\'entourage de l\'équipe n\'a pas encore réagi officiellement. La fédération a été saisie.',
+  ],
+  [
+    '{team} : {coach} convoqué par la fédération après une soirée très arrosée',
+    'La fédération de {team} a convoqué son sélectionneur {coach} pour s\'expliquer sur son comportement lors d\'une soirée privée qui a dégénéré. Des photos compromettantes ont fuité. La fédération parle d\'"enquête interne". Le groupe, lui, fait profil bas.',
+  ],
+  [
+    'L\'alcoolisme de {coach} refait surface — {team} dans l\'embarras',
+    'Ce n\'est pas la première fois que le nom de {coach} est associé à des problèmes d\'alcool. Mais les récents incidents ont rendu la situation impossible à ignorer. Plusieurs membres du staff auraient alerté la direction. {coach} nie. La fédération de {team} cherche ses mots.',
+  ],
+  [
+    '{team} : le sélectionneur {coach} au cœur d\'une polémique pour état d\'ivresse',
+    'Selon plusieurs témoins, {coach} aurait dirigé la conférence de presse d\'après-match dans un état préoccupant. La vidéo, vue des milliers de fois, fait le tour des réseaux. Le coach n\'a pas voulu commenter. La fédération "examine la situation".',
+  ],
+  [
+    'Révélations : {coach} lutte contre l\'alcool depuis des années — {team} au courant ?',
+    'Un proche du staff de {team} a brisé l\'omertà : {coach} souffrirait d\'une dépendance à l\'alcool depuis plusieurs années. L\'entourage le savait, personne n\'a agi. Les performances récentes de l\'équipe alimentent les questions. Le groupe est déstabilisé.',
+  ],
+];
+
+const COACH_DROGUE_PAIRS: [string, string][] = [
+  [
+    'CHOC : le sélectionneur de {team}, {coach}, positif à un test aléatoire',
+    'La nouvelle est tombée comme un coup de massue : {coach}, sélectionneur de {team}, aurait été contrôlé positif lors d\'un test aléatoire organisé par la fédération internationale. Les détails de la substance détectée n\'ont pas été communiqués. La fédération de {team} est en état de choc.',
+  ],
+  [
+    '{team} : {coach} au cœur d\'un scandale de stupéfiants',
+    'Le sélectionneur {coach} est au cœur d\'une enquête après qu\'une descente de police dans un hôtel de la délégation ait permis la saisie de substances illicites. Son implication directe n\'est pas encore établie, mais la presse s\'emballe. La fédération a suspendu les déclarations publiques.',
+  ],
+  [
+    'Exclusif — {coach} : la face cachée du sélectionneur de {team}',
+    'Une longue enquête journalistique révèle un portrait sombre de {coach}. Addictions, comportements erratiques lors des entraînements, nuits blanches : le staff parle d\'un homme "à la dérive". {team} a pourtant continué à lui faire confiance. Jusqu\'à quand ?',
+  ],
+  [
+    '{team} : le sélectionneur {coach} mis en cause dans une affaire de stupéfiants',
+    'Plusieurs sources internes à la délégation de {team} évoquent des comportements troublants de la part du coach {coach}. Des membres du staff auraient alerté la direction plusieurs semaines avant que l\'affaire ne sorte. La fédération nie avoir été informée. La presse, elle, ne lâche pas.',
+  ],
+  [
+    'Scandale {team} : {coach} aperçu en compagnie de personnes mises en examen pour trafic',
+    'Des clichés compromettants associent le sélectionneur {coach} à des individus connus des services judiciaires. L\'enquête est ouverte. Le sélectionneur n\'a pas répondu aux sollicitations de la presse. La fédération de {team} a déclaré "ne pas commenter des éléments non établis".',
+  ],
+];
+
+/**
+ * Generates a coach scandal article if coach has 'alcoolique' or 'drogue' trait.
+ * ~2% chance per match. Returns null if not triggered.
+ */
+export function generateCoachScandalItem(opts: {
+  round: number;
+  teamId: string;
+  teamName: string;
+  coach: Coach;
+  seed: string;
+}): PressItem | null {
+  const hasAlcool = opts.coach.negativeTraits.includes('alcoolique');
+  const hasDrogue = opts.coach.negativeTraits.includes('drogue');
+  if (!hasAlcool && !hasDrogue) return null;
+
+  const r = rng(opts.seed + 'coachscandal');
+  if (r() >= 0.02) return null;
+
+  const coachName = `${opts.coach.firstName} ${opts.coach.lastName}`;
+  const pairs = hasAlcool && hasDrogue
+    ? (r() < 0.5 ? COACH_ALCOOL_PAIRS : COACH_DROGUE_PAIRS)
+    : hasAlcool ? COACH_ALCOOL_PAIRS : COACH_DROGUE_PAIRS;
+
+  const [hTpl, bTpl] = pick(pairs, r);
+  const headline = hTpl.replace(/{team}/g, opts.teamName).replace(/{coach}/g, coachName);
+  const body = bTpl.replace(/{team}/g, opts.teamName).replace(/{coach}/g, coachName);
+
+  return {
+    id: crypto.randomUUID(),
+    round: opts.round,
+    teamId: opts.teamId,
+    category: 'scandale',
+    headline,
+    body,
+    createdAt: new Date().toISOString(),
+    mentions: [{
+      type: 'coach',
+      name: coachName,
+      overall: opts.coach.overall,
+      stats: opts.coach.stats,
+      positiveTraits: opts.coach.positiveTraits,
+      negativeTraits: opts.coach.negativeTraits,
+    }],
   };
 }
 
