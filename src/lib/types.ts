@@ -306,6 +306,10 @@ export type Team = {
   compHistory?: import('@/lib/competition/types').CompHistoryEntry[];
   /** Last N match results — appended by saveMatch */
   recentMatches?: import('@/lib/github/matches').RecentMatchSummary[];
+  /** Active injuries carried over from previous competition */
+  injuries?: import('@/lib/competition/injuries').Injury[];
+  /** Active suspensions carried over from previous competition */
+  suspensions?: import('@/lib/competition/injuries').Suspension[];
 };
 
 export type LeagueClub = {

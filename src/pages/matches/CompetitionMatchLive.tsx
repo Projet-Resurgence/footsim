@@ -17,6 +17,7 @@ import { useCredentials } from '@/stores/credentials';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { saveMatch } from '@/lib/github/matches';
 import type { SaveMatchMeta } from '@/lib/github/matches';
+import { batchUpdateTeamMedical } from '@/lib/github/store';
 import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary } from '@/lib/competition/types';
@@ -716,6 +717,21 @@ export default function CompetitionMatchLive() {
 
       // Résultat appliqué en mémoire + localStorage — sauvegarde GitHub manuelle
       setCurrent(updated);
+
+      // Fin de compétition : persister l'état médical sur chaque team.json
+      if (allDone && pat) {
+        const teamSnap = snap!.teamSnapshot ?? {};
+        const slugs = snap!.teamIds.map((tid) => teamSnap[tid]?.slug).filter(Boolean) as string[];
+        const teamIdBySlug: Record<string, string> = {};
+        for (const tid of snap!.teamIds) {
+          const slug = teamSnap[tid]?.slug;
+          if (slug) teamIdBySlug[slug] = tid;
+        }
+        batchUpdateTeamMedical(slugs, teamIdBySlug, updatedInjuries, updatedSuspensions, pat).catch(() => {
+          // non-bloquant — la compétition est déjà enregistrée
+        });
+      }
+
       toast('success', revealed ? 'Scandale ! Résultats mis à jour.' : 'Résultat enregistré localement.');
     }
     persist();

@@ -24,6 +24,7 @@ import type { MatchRules } from '@/lib/sim/types';
 import { DEFAULT_RULES } from '@/lib/sim/types';
 import { buildPots, conductDraw, isEvenTeamCount } from '@/lib/competition/draw';
 import { DrawCeremony } from '@/components/competition/DrawCeremony';
+import type { Injury, Suspension } from '@/lib/competition/injuries';
 
 const PRESETS_KEY = 'footsim.competition.presets';
 
@@ -212,6 +213,16 @@ export default function CompetitionNew() {
         if (t) teamSnapshot[id] = { name: t.name, flag: t.flag, slug: t.slug, globalStrength: t.globalStrength };
       }
 
+      // Collect carry-over injuries/suspensions from participating teams
+      const carryInjuries: Injury[] = [];
+      const carrySuspensions: Suspension[] = [];
+      for (const tid of teamIds) {
+        const t = teams.find((x) => x.id === tid);
+        if (!t) continue;
+        if (t.injuries) carryInjuries.push(...t.injuries);
+        if (t.suspensions) carrySuspensions.push(...t.suspensions);
+      }
+
       const comp: Competition = {
         id,
         name: name.trim(),
@@ -231,6 +242,8 @@ export default function CompetitionNew() {
         createdAt: new Date().toISOString(),
         teamSnapshot,
         hostTeamId: ((format === 'lpm' || format === 'groups_knockout') && hostTeamId && teamIds.includes(hostTeamId)) ? hostTeamId : undefined,
+        injuries: carryInjuries.length > 0 ? carryInjuries : undefined,
+        suspensions: carrySuspensions.length > 0 ? carrySuspensions : undefined,
       };
 
       saveLocal(comp);

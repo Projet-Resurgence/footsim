@@ -1,5 +1,6 @@
 import type { Player, Team } from '@/lib/types';
 import type { CompHistoryEntry } from '@/lib/competition/types';
+import type { Injury, Suspension } from '@/lib/competition/injuries';
 import { readJson, writeJson, commitFiles, listDir, deleteFile } from './api';
 
 const TEAM_PATH = (slug: string) => `data/teams/${slug}/team.json`;
@@ -101,6 +102,33 @@ export async function batchUpdateTeamCompHistory(
     : `chore(teams): remove comp ${opts.compId} from palmares (${files.length} équipes)`;
 
   await commitFiles(files, msg, token);
+}
+
+/**
+ * Persist remaining injuries/suspensions for each team after a competition ends.
+ * Each team only gets its own entries (filtered by teamId).
+ */
+export async function batchUpdateTeamMedical(
+  slugs: string[],
+  teamIdBySlug: Record<string, string>,
+  injuries: Injury[],
+  suspensions: Suspension[],
+  token: string,
+): Promise<void> {
+  if (slugs.length === 0) return;
+  const reads = await Promise.all(slugs.map((slug) => readJson<Team>(TEAM_PATH(slug), token)));
+  const files: Array<{ path: string; content: Team }> = [];
+  for (let i = 0; i < slugs.length; i++) {
+    const existing = reads[i];
+    if (!existing) continue;
+    const team = existing.data;
+    const tid = teamIdBySlug[slugs[i]];
+    const teamInjuries = injuries.filter((inj) => inj.teamId === tid);
+    const teamSuspensions = suspensions.filter((sus) => sus.teamId === tid);
+    files.push({ path: TEAM_PATH(slugs[i]), content: { ...team, injuries: teamInjuries, suspensions: teamSuspensions } });
+  }
+  if (files.length === 0) return;
+  await commitFiles(files, `chore(teams): persist medical state post-compétition (${files.length} équipes)`, token);
 }
 
 export async function listTeams(token: string | null): Promise<Team[]> {
