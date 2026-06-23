@@ -258,10 +258,11 @@ export async function resyncCompetitionMatchHistory(
   token: string,
   meta?: { compKind?: CompetitionKind; compScope?: CompetitionScope; teamStrengths?: Record<string, number> },
 ): Promise<{ synced: number; skipped: number }> {
-  const completedMatches = comp.matches.filter((m) => m.status === 'completed' && m.matchFileId);
+  // matchFileId may be absent on old matches — fall back to match id
+  const completedMatches = comp.matches.filter((m) => m.status === 'completed' && (m.matchFileId || m.id));
 
   const stored = await Promise.all(
-    completedMatches.map((m) => readJson<StoredMatch>(MATCH_PATH(m.matchFileId!), token)),
+    completedMatches.map((m) => readJson<StoredMatch>(MATCH_PATH(m.matchFileId ?? m.id), token)),
   );
 
   const bySlug = new Map<string, RecentMatchSummary[]>();
