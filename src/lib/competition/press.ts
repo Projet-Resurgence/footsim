@@ -1883,7 +1883,7 @@ export type CmfOpts = {
   format: string;
   phase: string;
   moment: 'debut' | 'fin' | 'palmares';
-  teamSnapshot: Record<string, { name: string; flag: string; slug?: string }>;
+  teamSnapshot: Record<string, { name: string; flag: string; slug?: string; globalStrength?: number }>;
   standings: Record<string, import('./types').Standing>;
   playerStats: Record<string, import('./types').PlayerCompStats>;
   winner?: string;
@@ -1988,7 +1988,7 @@ const CMF_PALMARES_LPM = [
 
 function topTeams(
   teamIds: string[],
-  teamSnapshot: Record<string, { name: string; flag: string; slug?: string }>,
+  teamSnapshot: Record<string, { name: string; flag: string; slug?: string; globalStrength?: number }>,
   _standings: Record<string, import('./types').Standing>,
   playerStats: Record<string, import('./types').PlayerCompStats>,
   count = 3,
@@ -1999,6 +1999,8 @@ function topTeams(
     teamOverall[p.teamId].push(p.overall);
   }
   const avgOverall = (tid: string) => {
+    const gs = teamSnapshot[tid]?.globalStrength;
+    if (gs !== undefined && gs > 0) return gs;
     const arr = teamOverall[tid];
     if (!arr || arr.length === 0) return 50;
     return Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);

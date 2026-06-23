@@ -117,10 +117,10 @@ export default function CompetitionNew() {
         groups = result.groups;
       }
 
-      const teamSnapshot: Record<string, { name: string; flag: string; slug?: string }> = {};
+      const teamSnapshot: Record<string, { name: string; flag: string; slug?: string; globalStrength?: number }> = {};
       for (const id of teamIds) {
         const t = teams.find((x) => x.id === id);
-        if (t) teamSnapshot[id] = { name: t.name, flag: t.flag, slug: t.slug };
+        if (t) teamSnapshot[id] = { name: t.name, flag: t.flag, slug: t.slug, globalStrength: t.globalStrength };
       }
 
       const comp: Competition = {

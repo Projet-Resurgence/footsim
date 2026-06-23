@@ -136,7 +136,7 @@ export type Competition = {
   winner?: string;
   disqualifiedTeamIds?: string[];
   /** Name + flag + slug snapshot so match pages can load rosters without fetching all teams. */
-  teamSnapshot?: Record<string, { name: string; flag: string; slug?: string }>;
+  teamSnapshot?: Record<string, { name: string; flag: string; slug?: string; globalStrength?: number }>;
   /** Morale per teamId — 1 to 100, starts at 50 */
   morale?: Record<string, number>;
   /** Press articles generated after each match */
