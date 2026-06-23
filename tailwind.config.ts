@@ -11,9 +11,9 @@ export default {
         text: 'var(--text)',
         muted: 'var(--muted)',
         border: 'var(--border)',
-        accent: 'var(--accent)',
-        danger: 'var(--danger)',
-        warning: 'var(--warning)',
+        accent: 'rgb(var(--accent-rgb) / <alpha-value>)',
+        danger: 'rgb(var(--danger-rgb) / <alpha-value>)',
+        warning: 'rgb(var(--warning-rgb) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

@@ -9,8 +9,11 @@
   --muted: #8A8A85;
   --border: #E8E6E1;
   --accent: #1F8B4C;
+  --accent-rgb: 31 139 76;
   --danger: #C73E3E;
+  --danger-rgb: 199 62 62;
   --warning: #D9A93C;
+  --warning-rgb: 217 169 60;
   --pitch: #1F8B4C;
   --pitch-line: rgba(255,255,255,0.7);
 }
@@ -22,8 +25,11 @@ html.dark {
   --muted: #8A8E97;
   --border: #232730;
   --accent: #2FAE65;
+  --accent-rgb: 47 174 101;
   --danger: #E26A6A;
+  --danger-rgb: 226 106 106;
   --warning: #E0B85A;
+  --warning-rgb: 224 184 90;
   --pitch: #154d2c;
   --pitch-line: rgba(255,255,255,0.45);
 }
