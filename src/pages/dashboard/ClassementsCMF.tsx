@@ -7,7 +7,8 @@ import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { listTeams, loadTeam } from '@/lib/github/store';
 import { POSITION_LABEL, CULTURE_LABEL } from '@/lib/types';
 import type { Team, Position } from '@/lib/types';
-import type { CompHistoryEntry, CompetitionKind, CompetitionScope } from '@/lib/competition/types';
+import type { CompHistoryEntry, CompetitionKind, CompetitionScope, CompetitionImportance } from '@/lib/competition/types';
+import { calcCmfMatchPoints } from '@/lib/github/matches';
 import type { RecentMatchSummary } from '@/lib/github/matches';
 
 // ─── Points system ────────────────────────────────────────────────────────────
@@ -33,11 +34,33 @@ const KIND_MULT: Record<CompetitionKind, number> = {
   amicale: 0.8,
 };
 
+const IMPORTANCE_MULT: Record<CompetitionImportance, number> = {
+  mineur: 0.6,
+  regional: 0.8,
+  national: 1.0,
+  prestige: 1.4,
+  continental: 1.8,
+  mondial: 2.5,
+};
+
 function entryPoints(entry: CompHistoryEntry): number {
   const base = RESULT_BASE[entry.result] ?? 10;
   const scope = SCOPE_MULT[entry.scope ?? 'autre'];
   const kind = KIND_MULT[entry.kind ?? 'amicale'];
-  return Math.round(base * scope * kind);
+  const importance = IMPORTANCE_MULT[entry.importance ?? 'national'];
+  return Math.round(base * scope * kind * importance);
+}
+
+function matchPoints(m: RecentMatchSummary): number {
+  if (m.opponentStrength == null) return m.cmfPoints ?? 0;
+  return calcCmfMatchPoints({
+    scoreFor: m.scoreFor,
+    scoreAgainst: m.scoreAgainst,
+    opponentStrength: m.opponentStrength,
+    compKind: m.compKind,
+    compScope: m.compScope,
+    compImportance: m.compImportance,
+  });
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -120,7 +143,7 @@ export default function ClassementsCMF() {
 
             const recent: RecentMatchSummary[] = team.recentMatches ?? [];
             for (const m of recent) {
-              points += m.cmfPoints ?? 0;
+              points += matchPoints(m);
             }
             points = Math.round(points * 10) / 10;
 
@@ -316,7 +339,7 @@ function ExplicationsTab() {
           Chaque match de compétition simulé rapporte des points selon la formule :
         </p>
         <div className="rounded-lg border border-border bg-surface p-4 font-mono text-xs leading-relaxed">
-          pts = base × multiplicateur_portée × multiplicateur_statut × facteur_adversaire
+          pts = base × multiplicateur_portée × multiplicateur_statut × multiplicateur_importance × facteur_adversaire
         </div>
 
         <div className="space-y-4">
@@ -381,6 +404,39 @@ function ExplicationsTab() {
           </div>
 
           <div>
+            <div className="font-medium mb-2">Multiplicateur d'importance</div>
+            <p className="text-muted leading-relaxed mb-2 text-xs">
+              Défini manuellement sur chaque compétition. Permet de distinguer un tournoi mineur d'une Coupe du Monde.
+              Si non défini, le niveau <strong className="text-text">National</strong> s'applique par défaut (×1.0).
+            </p>
+            <table className="w-full text-xs border border-border rounded-lg overflow-hidden">
+              <thead className="bg-bg text-muted uppercase tracking-wide">
+                <tr>
+                  <th className="px-4 py-2 text-left">Importance</th>
+                  <th className="px-4 py-2 text-left text-muted">Exemple</th>
+                  <th className="px-4 py-2 text-right">Multiplicateur</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['Mineur', 'Tournoi amical test', '×0.6'],
+                  ['Régional', 'Coupe régionale officielle', '×0.8'],
+                  ['National', 'Championnat / Coupe nationale', '×1.0'],
+                  ['Prestige (LPM)', 'Ligue Préliminaire Mondiale', '×1.4'],
+                  ['Continental', 'Euro, CAN, Copa América…', '×1.8'],
+                  ['Mondial', 'Coupe du Monde', '×2.5'],
+                ].map(([imp, ex, m]) => (
+                  <tr key={imp} className="border-t border-border">
+                    <td className="px-4 py-2 font-medium">{imp}</td>
+                    <td className="px-4 py-2 text-muted">{ex}</td>
+                    <td className="px-4 py-2 text-right font-bold text-accent">{m}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div>
             <div className="font-medium mb-2">Facteur adversaire</div>
             <p className="text-muted leading-relaxed mb-2">
               Inspiré du classement FIFA : battre une équipe forte rapporte plus, perdre contre une équipe faible coûte plus.
@@ -407,8 +463,8 @@ function ExplicationsTab() {
         </div>
 
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 text-xs text-muted leading-relaxed">
-          <strong className="text-text">Exemple :</strong> Victoire contre une équipe force 80 dans une compétition internationale officielle :<br />
-          <span className="font-mono">3 × 2.0 × 1.5 × √(80/50) = 3 × 2.0 × 1.5 × 1.265 ≈ <strong className="text-accent">11.4 pts</strong></span>
+          <strong className="text-text">Exemple :</strong> Victoire contre une équipe force 80 dans une Coupe du Monde (internationale, officielle, importance mondiale) :<br />
+          <span className="font-mono">3 × 2.0 × 1.5 × 2.5 × √(80/50) ≈ <strong className="text-accent">28.5 pts</strong></span>
         </div>
       </section>
 

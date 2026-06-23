@@ -10,6 +10,14 @@ export type CompMatchStatus = 'pending' | 'completed';
 export type CompetitionKind = 'amicale' | 'officielle';
 /** Portée géographique/institutionnelle */
 export type CompetitionScope = 'internationale' | 'continentale' | 'regionale' | 'nationale' | 'autre';
+/** Importance de la compétition — influence le multiplicateur de points CMF */
+export type CompetitionImportance =
+  | 'mineur'       // ×0.6 — tournois amicaux mineurs, phases de test
+  | 'regional'     // ×0.8 — compétitions régionales officielles
+  | 'national'     // ×1.0 — championnat / coupe nationale standard
+  | 'prestige'     // ×1.4 — LPM ou compétition maison de premier plan
+  | 'continental'  // ×1.8 — Euro, Copa América, CAN, etc.
+  | 'mondial';     // ×2.5 — Coupe du Monde
 
 export const COMPETITION_KIND_LABEL: Record<CompetitionKind, string> = {
   amicale: 'Amicale',
@@ -22,6 +30,24 @@ export const COMPETITION_SCOPE_LABEL: Record<CompetitionScope, string> = {
   regionale: 'Régionale',
   nationale: 'Nationale',
   autre: 'Autre',
+};
+
+export const COMPETITION_IMPORTANCE_LABEL: Record<CompetitionImportance, string> = {
+  mineur: 'Mineur',
+  regional: 'Régional',
+  national: 'National',
+  prestige: 'Prestige (LPM)',
+  continental: 'Continental (Euro, CAN…)',
+  mondial: 'Mondial (Coupe du Monde)',
+};
+
+export const IMPORTANCE_MULT: Record<CompetitionImportance, number> = {
+  mineur: 0.6,
+  regional: 0.8,
+  national: 1.0,
+  prestige: 1.4,
+  continental: 1.8,
+  mondial: 2.5,
 };
 
 export type MatchStatSnapshot = {
@@ -132,6 +158,7 @@ export type CompHistoryEntry = {
   format: CompetitionFormat;
   kind?: CompetitionKind;
   scope?: CompetitionScope;
+  importance?: CompetitionImportance;
   result: 'winner' | 'finalist' | 'third' | 'semi' | 'participant';
   /** Phase reached (e.g. 'F', 'SF', 'QF', 'R16', 'group') */
   phase?: string;
@@ -147,6 +174,8 @@ export type Competition = {
   kind?: CompetitionKind;
   /** Portée géographique */
   scope?: CompetitionScope;
+  /** Importance CMF — multiplicateur de points */
+  importance?: CompetitionImportance;
   teamIds: string[];
   matches: CompMatch[];
   groups?: CompGroup[];
@@ -193,6 +222,7 @@ export type CompetitionSummary = {
   teamIds?: string[];
   kind?: CompetitionKind;
   scope?: CompetitionScope;
+  importance?: CompetitionImportance;
 };
 
 /** Pick the right MatchRules for a given match phase. */

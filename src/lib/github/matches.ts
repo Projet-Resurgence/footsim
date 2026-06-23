@@ -1,12 +1,11 @@
 import type { MatchState, MatchInput } from '@/lib/sim/types';
 import type { Team } from '@/lib/types';
-import type { CompetitionKind, CompetitionScope } from '@/lib/competition/types';
+import type { CompetitionKind, CompetitionScope, CompetitionImportance } from '@/lib/competition/types';
 import { readJson, writeJson } from './api';
 
 // ─── CMF match point formula ─────────────────────────────────────────────────
-// Base: W=3, D=1, L=0  ×  scope multiplier  ×  kind multiplier  ×  opp factor
+// Base: W=3, D=1, L=0  ×  scope multiplier  ×  kind multiplier  ×  importance multiplier  ×  opp factor
 // Opp factor = sqrt(oppStrength / 50) clamped [0.5, 2.0]
-// Mirrors FIFA ranking logic: beating a strong team = more pts; losing to weak = bigger loss
 
 const SCOPE_MATCH_MULT: Record<CompetitionScope, number> = {
   internationale: 2.0,
@@ -19,6 +18,14 @@ const KIND_MATCH_MULT: Record<CompetitionKind, number> = {
   officielle: 1.5,
   amicale: 0.8,
 };
+const IMPORTANCE_MATCH_MULT: Record<CompetitionImportance, number> = {
+  mineur: 0.6,
+  regional: 0.8,
+  national: 1.0,
+  prestige: 1.4,
+  continental: 1.8,
+  mondial: 2.5,
+};
 
 export function calcCmfMatchPoints(opts: {
   scoreFor: number;
@@ -26,12 +33,14 @@ export function calcCmfMatchPoints(opts: {
   opponentStrength: number;
   compKind?: CompetitionKind;
   compScope?: CompetitionScope;
+  compImportance?: CompetitionImportance;
 }): number {
   const base = opts.scoreFor > opts.scoreAgainst ? 3 : opts.scoreFor === opts.scoreAgainst ? 1 : 0;
   const scope = SCOPE_MATCH_MULT[opts.compScope ?? 'autre'];
   const kind = KIND_MATCH_MULT[opts.compKind ?? 'amicale'];
+  const importance = IMPORTANCE_MATCH_MULT[opts.compImportance ?? 'national'];
   const oppFactor = Math.min(2.0, Math.max(0.5, Math.sqrt(opts.opponentStrength / 50)));
-  return Math.round(base * scope * kind * oppFactor * 10) / 10;
+  return Math.round(base * scope * kind * importance * oppFactor * 10) / 10;
 }
 
 export type StoredMatch = {
@@ -76,6 +85,7 @@ export type RecentMatchSummary = {
   opponentStrength?: number;
   compKind?: import('@/lib/competition/types').CompetitionKind;
   compScope?: import('@/lib/competition/types').CompetitionScope;
+  compImportance?: import('@/lib/competition/types').CompetitionImportance;
 };
 
 const MATCH_PATH = (id: string) => `data/matches/${id}.json`;
@@ -86,6 +96,7 @@ const RECENT_LIMIT = 20;
 export type SaveMatchMeta = {
   compKind?: CompetitionKind;
   compScope?: CompetitionScope;
+  compImportance?: CompetitionImportance;
   homeStrength?: number;
   awayStrength?: number;
 };
@@ -121,6 +132,7 @@ export async function saveMatch(
     opponentStrength: meta?.awayStrength ?? 50,
     compKind: meta?.compKind,
     compScope: meta?.compScope,
+    compImportance: meta?.compImportance,
   });
   const awayCmf = calcCmfMatchPoints({
     scoreFor: state.score.away,
@@ -128,6 +140,7 @@ export async function saveMatch(
     opponentStrength: meta?.homeStrength ?? 50,
     compKind: meta?.compKind,
     compScope: meta?.compScope,
+    compImportance: meta?.compImportance,
   });
 
   await Promise.all([
@@ -145,6 +158,7 @@ export async function saveMatch(
       opponentStrength: meta?.awayStrength,
       compKind: meta?.compKind,
       compScope: meta?.compScope,
+      compImportance: meta?.compImportance,
     }, token),
     appendRecent(input.away.team, {
       matchId: state.matchId,
@@ -160,6 +174,7 @@ export async function saveMatch(
       opponentStrength: meta?.homeStrength,
       compKind: meta?.compKind,
       compScope: meta?.compScope,
+      compImportance: meta?.compImportance,
     }, token),
   ]);
 
@@ -256,10 +271,11 @@ async function doAppendRecent(team: Team, summary: RecentMatchSummary, token: st
 export async function resyncCompetitionMatchHistory(
   comp: import('@/lib/competition/types').Competition,
   token: string,
-  meta?: { compKind?: CompetitionKind; compScope?: CompetitionScope; teamStrengths?: Record<string, number> },
+  meta?: { compKind?: CompetitionKind; compScope?: CompetitionScope; compImportance?: CompetitionImportance; teamStrengths?: Record<string, number> },
 ): Promise<{ synced: number; skipped: number }> {
   const compKind = meta?.compKind ?? comp.kind;
   const compScope = meta?.compScope ?? comp.scope;
+  const compImportance = meta?.compImportance ?? comp.importance;
   const snapshot = comp.teamSnapshot ?? {};
 
   const completedMatches = comp.matches.filter(
@@ -288,16 +304,16 @@ export async function resyncCompetitionMatchHistory(
       opponentSlug: awaySlug, opponentName: awayName,
       homeTeamId: homeId, awayTeamId: awayId,
       homeAway: 'home', scoreFor: scoreHome, scoreAgainst: scoreAway,
-      opponentStrength: awayStrength, compKind, compScope,
-      cmfPoints: calcCmfMatchPoints({ scoreFor: scoreHome, scoreAgainst: scoreAway, opponentStrength: awayStrength, compKind, compScope }),
+      opponentStrength: awayStrength, compKind, compScope, compImportance,
+      cmfPoints: calcCmfMatchPoints({ scoreFor: scoreHome, scoreAgainst: scoreAway, opponentStrength: awayStrength, compKind, compScope, compImportance }),
     };
     const awaySummary: RecentMatchSummary = {
       matchId: m.id, playedAt,
       opponentSlug: homeSlug, opponentName: homeName,
       homeTeamId: homeId, awayTeamId: awayId,
       homeAway: 'away', scoreFor: scoreAway, scoreAgainst: scoreHome,
-      opponentStrength: homeStrength, compKind, compScope,
-      cmfPoints: calcCmfMatchPoints({ scoreFor: scoreAway, scoreAgainst: scoreHome, opponentStrength: homeStrength, compKind, compScope }),
+      opponentStrength: homeStrength, compKind, compScope, compImportance,
+      cmfPoints: calcCmfMatchPoints({ scoreFor: scoreAway, scoreAgainst: scoreHome, opponentStrength: homeStrength, compKind, compScope, compImportance }),
     };
 
     const hl = bySlug.get(homeSlug) ?? []; hl.push(homeSummary); bySlug.set(homeSlug, hl);

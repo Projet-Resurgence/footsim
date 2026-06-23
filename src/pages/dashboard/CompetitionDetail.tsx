@@ -19,8 +19,8 @@ import { needsKnockoutDraw, getQualifiersByRank, seedKnockoutWithOrder, sortStan
 import { LPMDrawCeremony, type LPMPair } from '@/components/competition/LPMDrawCeremony';
 import { buildKnockoutPots, conductKnockoutDraw } from '@/lib/competition/draw';
 import type { DrawResult } from '@/lib/competition/draw';
-import type { Competition, CompMatch, PlayerCompStats, CompHistoryEntry, CompetitionKind, CompetitionScope } from '@/lib/competition/types';
-import { COMPETITION_KIND_LABEL, COMPETITION_SCOPE_LABEL } from '@/lib/competition/types';
+import type { Competition, CompMatch, PlayerCompStats, CompHistoryEntry, CompetitionKind, CompetitionScope, CompetitionImportance } from '@/lib/competition/types';
+import { COMPETITION_KIND_LABEL, COMPETITION_SCOPE_LABEL, COMPETITION_IMPORTANCE_LABEL } from '@/lib/competition/types';
 import type { CorruptionDeal } from '@/lib/sim/types';
 import type { Team } from '@/lib/types';
 import { env } from '@/lib/env';
@@ -191,6 +191,7 @@ export default function CompetitionDetail() {
             format: current.format,
             kind: current.kind,
             scope: current.scope,
+            importance: current.importance,
             result: deriveTeamResult(t.id, current),
             phase: deriveTeamPhase(t.id, current),
           };
@@ -2046,6 +2047,19 @@ function CompletedMetaEditor({
               <option value="">— Non défini —</option>
               {(Object.keys(COMPETITION_SCOPE_LABEL) as CompetitionScope[]).map((s) => (
                 <option key={s} value={s}>{COMPETITION_SCOPE_LABEL[s]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm sm:col-span-2">
+            <span className="mb-1 block text-muted">Importance CMF</span>
+            <select
+              className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
+              value={current.importance ?? ''}
+              onChange={(e) => setCurrent({ ...current, importance: (e.target.value || undefined) as CompetitionImportance | undefined })}
+            >
+              <option value="">— Non défini (National par défaut) —</option>
+              {(Object.keys(COMPETITION_IMPORTANCE_LABEL) as CompetitionImportance[]).map((i) => (
+                <option key={i} value={i}>{COMPETITION_IMPORTANCE_LABEL[i]}</option>
               ))}
             </select>
           </label>

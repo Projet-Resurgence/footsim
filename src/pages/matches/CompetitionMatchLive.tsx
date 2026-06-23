@@ -835,6 +835,7 @@ export default function CompetitionMatchLive() {
                     const matchMeta: SaveMatchMeta = {
                       compKind: current.kind,
                       compScope: current.scope,
+                      compImportance: current.importance,
                       homeStrength: current.teamSnapshot?.[matchInput.home.team.id]?.globalStrength ?? matchInput.home.team.globalStrength,
                       awayStrength: current.teamSnapshot?.[matchInput.away.team.id]?.globalStrength ?? matchInput.away.team.globalStrength,
                     };
