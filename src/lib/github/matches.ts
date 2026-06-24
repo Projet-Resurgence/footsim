@@ -36,12 +36,16 @@ function participantSizeMult(count: number | undefined): number {
   return 1.5;
 }
 
-function goalDiffPenalty(scoreFor: number, scoreAgainst: number): number {
-  if (scoreFor >= scoreAgainst) return 0;
-  const gap = scoreAgainst - scoreFor;
-  if (gap >= 5) return -1.5;
-  if (gap >= 3) return -1.0;
-  return -0.5; // gap === 2
+function goalDiffBonus(scoreFor: number, scoreAgainst: number): number {
+  const gap = scoreFor - scoreAgainst;
+  if (gap >= 4) return 1.0;
+  if (gap >= 2) return 0.5;
+  if (gap >= 1) return 0;
+  const loss = -gap;
+  if (loss >= 5) return -2.0;
+  if (loss >= 3) return -1.0;
+  if (loss >= 2) return -0.5;
+  return 0;
 }
 
 export function calcCmfMatchPoints(opts: {
@@ -57,10 +61,10 @@ export function calcCmfMatchPoints(opts: {
   const scope = SCOPE_MATCH_MULT[opts.compScope ?? 'autre'];
   const kind = KIND_MATCH_MULT[opts.compKind ?? 'amicale'];
   const importance = IMPORTANCE_MATCH_MULT[opts.compImportance ?? 'tournoi'];
-  const oppFactor = Math.min(2.0, Math.max(0.5, Math.sqrt(opts.opponentStrength / 50)));
+  const oppFactor = Math.min(2.5, Math.max(0.4, Math.pow(opts.opponentStrength / 50, 0.75)));
   const sizeMult = participantSizeMult(opts.participantCount);
-  const penalty = goalDiffPenalty(opts.scoreFor, opts.scoreAgainst);
-  return Math.max(0, Math.round((base * scope * kind * importance * oppFactor * sizeMult + penalty) * 10) / 10);
+  const bonus = goalDiffBonus(opts.scoreFor, opts.scoreAgainst);
+  return Math.max(0, Math.round((base * scope * kind * importance * oppFactor * sizeMult + bonus) * 10) / 10);
 }
 
 export type StoredMatch = {

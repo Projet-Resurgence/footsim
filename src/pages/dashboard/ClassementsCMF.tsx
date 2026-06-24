@@ -356,7 +356,7 @@ function ExplicationsTab() {
           Chaque match de compétition simulé rapporte des points selon la formule :
         </p>
         <div className="rounded-lg border border-border bg-surface p-4 font-mono text-xs leading-relaxed">
-          pts = base × multiplicateur_portée × multiplicateur_statut × multiplicateur_importance × facteur_adversaire × multiplicateur_participants + pénalité_écart
+          pts = base × multiplicateur_portée × multiplicateur_statut × multiplicateur_importance × facteur_adversaire × multiplicateur_participants + bonus_écart
         </div>
 
         <div className="space-y-4">
@@ -376,13 +376,16 @@ function ExplicationsTab() {
                     <td className="px-4 py-2 text-right font-bold text-accent">{p}</td>
                   </tr>
                 ))}
-                <tr className="border-t border-border bg-danger/5">
+                <tr className="border-t border-border bg-accent/5">
                   <td className="px-4 py-2 text-muted" colSpan={2}>
-                    <span className="font-medium text-danger">Pénalité écart de buts (défaite uniquement)</span>
+                    <span className="font-medium text-text">Bonus/malus écart de buts</span>
                     <div className="mt-1 space-y-0.5 text-xs">
-                      <div>Écart 2 buts → <span className="font-bold text-danger">−0.5 pt</span></div>
-                      <div>Écart 3–4 buts → <span className="font-bold text-danger">−1.0 pt</span></div>
-                      <div>Écart 5+ buts → <span className="font-bold text-danger">−1.5 pt</span></div>
+                      <div>Victoire 2–3 buts → <span className="font-bold text-accent">+0.5 pt</span></div>
+                      <div>Victoire 4+ buts → <span className="font-bold text-accent">+1.0 pt</span></div>
+                      <div>Défaite 2 buts → <span className="font-bold text-danger">−0.5 pt</span></div>
+                      <div>Défaite 3–4 buts → <span className="font-bold text-danger">−1.0 pt</span></div>
+                      <div>Défaite 5+ buts → <span className="font-bold text-danger">−2.0 pts</span></div>
+                      <div className="mt-1 text-muted">Points toujours ≥ 0 (jamais négatif)</div>
                     </div>
                   </td>
                 </tr>
@@ -400,7 +403,7 @@ function ExplicationsTab() {
                 </tr>
               </thead>
               <tbody>
-                {[['Internationale', '×2.0'], ['Continentale', '×1.6'], ['Nationale', '×1.2'], ['Régionale', '×1.0'], ['Autre', '×0.8']].map(([s, m]) => (
+                {[['Internationale', '×1.5'], ['Continentale', '×1.3'], ['Régionale', '×1.0'], ['Autre', '×0.8']].map(([s, m]) => (
                   <tr key={s} className="border-t border-border">
                     <td className="px-4 py-2">{s}</td>
                     <td className="px-4 py-2 text-right font-bold text-accent">{m}</td>
@@ -420,7 +423,7 @@ function ExplicationsTab() {
                 </tr>
               </thead>
               <tbody>
-                {[['Officielle', '×1.2'], ['Amicale', '×0.4']].map(([k, m]) => (
+                {[['Officielle', '×1.2'], ['Amicale', '×0.2']].map(([k, m]) => (
                   <tr key={k} className="border-t border-border">
                     <td className="px-4 py-2">{k}</td>
                     <td className="px-4 py-2 text-right font-bold text-accent">{m}</td>
@@ -434,7 +437,7 @@ function ExplicationsTab() {
             <div className="font-medium mb-2">Multiplicateur d'importance</div>
             <p className="text-muted leading-relaxed mb-2 text-xs">
               Défini manuellement sur chaque compétition. Permet de distinguer un tournoi mineur d'une Coupe du Monde.
-              Si non défini, le niveau <strong className="text-text">National</strong> s'applique par défaut (×1.0).
+              Si non défini, le niveau <strong className="text-text">Tournoi international</strong> s'applique par défaut (×0.8).
             </p>
             <table className="w-full text-xs border border-border rounded-lg overflow-hidden">
               <thead className="bg-bg text-muted uppercase tracking-wide">
@@ -448,7 +451,7 @@ function ExplicationsTab() {
                 {[
                   ['Mineur', 'Tournoi amical test', '×0.4'],
                   ['Régional', 'Coupe régionale officielle', '×0.6'],
-                  ['National', 'Championnat / Coupe nationale', '×0.8'],
+                  ['Tournoi international', 'Tournoi entre sélections', '×0.8'],
                   ['Prestige (LPM)', 'Ligue Préliminaire Mondiale', '×1.1'],
                   ['Continental', 'Euro, CAN, Copa América…', '×1.4'],
                   ['Mondial', 'Coupe du Monde', '×2.0'],
@@ -466,15 +469,15 @@ function ExplicationsTab() {
           <div>
             <div className="font-medium mb-2">Facteur adversaire</div>
             <p className="text-muted leading-relaxed mb-2">
-              Inspiré du classement FIFA : battre une équipe forte rapporte plus, perdre contre une équipe faible coûte plus.
-              Calculé depuis la force globale de l'adversaire (1–100) :
+              Inspiré du classement FIFA et adapté au CMF : battre une équipe forte rapporte plus, perdre contre une équipe faible coûte plus.
+              Calculé depuis la force globale de l'adversaire (1–100) — la même échelle que le classement CMF :
             </p>
             <div className="rounded-lg border border-border bg-surface p-4 font-mono text-xs">
-              facteur = √(force_adverse / 50) — clampé entre 0.5 et 2.0
+              facteur = (force_adverse / 50)^0.75 — clampé entre 0.4 et 2.5
             </div>
             <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-muted">
               <div className="rounded border border-border bg-surface px-3 py-2 text-center">
-                <div className="font-bold text-text">×0.71</div>
+                <div className="font-bold text-text">×0.59</div>
                 <div>Force 25</div>
               </div>
               <div className="rounded border border-border bg-surface px-3 py-2 text-center">
@@ -482,7 +485,7 @@ function ExplicationsTab() {
                 <div>Force 50</div>
               </div>
               <div className="rounded border border-border bg-surface px-3 py-2 text-center">
-                <div className="font-bold text-text">×1.41</div>
+                <div className="font-bold text-text">×1.68</div>
                 <div>Force 100</div>
               </div>
             </div>
@@ -523,11 +526,11 @@ function ExplicationsTab() {
         </div>
 
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 text-xs text-muted leading-relaxed">
-          <strong className="text-text">Exemple :</strong> Victoire contre une équipe force 80 dans une Coupe du Monde à 32 équipes (internationale, officielle, mondiale) :<br />
-          <span className="font-mono">3 × 2.0 × 1.2 × 2.0 × √(80/50) × 1.30 ≈ <strong className="text-accent">23.7 pts</strong></span>
+          <strong className="text-text">Exemple :</strong> Victoire 3–0 contre une équipe force 80 dans une Coupe du Monde à 32 équipes (internationale, officielle, mondiale) :<br />
+          <span className="font-mono">(3 × 1.5 × 1.2 × 2.0 × (80/50)^0.75 × 1.30) + 1.0 ≈ <strong className="text-accent">22.1 pts</strong></span>
           <br /><br />
-          <strong className="text-text">Exemple :</strong> Défaite 0–3 contre une équipe force 60 dans un match amical 1v1 (nationale, amicale, national) :<br />
-          <span className="font-mono">0 × 1.2 × 0.4 × 0.8 × √(60/50) × 0.70 − 1.0 = <strong className="text-danger">−1.0 pt</strong></span>
+          <strong className="text-text">Exemple :</strong> Défaite 0–3 contre une équipe force 60 dans un amical 1v1 (internationale, amicale, tournoi) :<br />
+          <span className="font-mono">max(0, 0 × 1.5 × 0.2 × 0.8 × √(60/50) × 0.70 − 1.0) = <strong className="text-accent">0 pt</strong></span>
         </div>
       </section>
 
