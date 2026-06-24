@@ -370,7 +370,7 @@ function ExplicationsTab() {
                 </tr>
               </thead>
               <tbody>
-                {[['Victoire', '3'], ['Match nul', '1'], ['Défaite', '0']].map(([r, p]) => (
+                {[['Victoire', '3'], ['Match nul', '1'], ['Défaite', '−1']].map(([r, p]) => (
                   <tr key={r} className="border-t border-border">
                     <td className="px-4 py-2">{r}</td>
                     <td className="px-4 py-2 text-right font-bold text-accent">{p}</td>
@@ -385,7 +385,7 @@ function ExplicationsTab() {
                       <div>Défaite 2 buts → <span className="font-bold text-danger">−0.5 pt</span></div>
                       <div>Défaite 3–4 buts → <span className="font-bold text-danger">−1.0 pt</span></div>
                       <div>Défaite 5+ buts → <span className="font-bold text-danger">−2.0 pts</span></div>
-                      <div className="mt-1 text-muted">Points par match peuvent être négatifs — le total CMF est clampé à 0</div>
+                      <div className="mt-1 text-muted">Le total CMF est clampé à 0</div>
                     </div>
                   </td>
                 </tr>

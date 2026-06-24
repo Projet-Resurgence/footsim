@@ -57,7 +57,7 @@ export function calcCmfMatchPoints(opts: {
   compImportance?: CompetitionImportance;
   participantCount?: number;
 }): number {
-  const base = opts.scoreFor > opts.scoreAgainst ? 3 : opts.scoreFor === opts.scoreAgainst ? 1 : 0;
+  const base = opts.scoreFor > opts.scoreAgainst ? 3 : opts.scoreFor === opts.scoreAgainst ? 1 : -1;
   const scope = SCOPE_MATCH_MULT[opts.compScope ?? 'autre'];
   const kind = KIND_MATCH_MULT[opts.compKind ?? 'amicale'];
   const importance = IMPORTANCE_MATCH_MULT[opts.compImportance ?? 'tournoi'];
