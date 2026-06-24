@@ -131,6 +131,31 @@ export async function batchUpdateTeamMedical(
   await commitFiles(files, `chore(teams): persist medical state post-compétition (${files.length} équipes)`, token);
 }
 
+/**
+ * Remove recentMatches entries whose matchId is in the given set, from each team.
+ */
+export async function batchRemoveTeamRecentMatches(
+  slugs: string[],
+  matchIds: Set<string>,
+  token: string,
+  compId: string,
+): Promise<void> {
+  if (slugs.length === 0 || matchIds.size === 0) return;
+  const reads = await Promise.all(slugs.map((slug) => readJson<Team>(TEAM_PATH(slug), token)));
+  const files: Array<{ path: string; content: Team }> = [];
+  for (let i = 0; i < slugs.length; i++) {
+    const existing = reads[i];
+    if (!existing) continue;
+    const team = existing.data;
+    const before = team.recentMatches ?? [];
+    const after = before.filter((m) => !matchIds.has(m.matchId));
+    if (after.length === before.length) continue;
+    files.push({ path: TEAM_PATH(slugs[i]), content: { ...team, recentMatches: after } });
+  }
+  if (files.length === 0) return;
+  await commitFiles(files, `chore(teams): remove recentMatches for comp ${compId} (${files.length} équipes)`, token);
+}
+
 export async function listTeams(token: string | null): Promise<Team[]> {
   const slugs = await listDir('data/teams', token);
   const results = await Promise.all(slugs.map((slug) => readJson<Team>(TEAM_PATH(slug), token)));

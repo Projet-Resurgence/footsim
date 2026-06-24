@@ -1540,7 +1540,7 @@ function HistoriqueTab({
                   <td className="px-3 py-2 text-center tabular-nums font-mono">{m.scoreFor}–{m.scoreAgainst}</td>
                   <td className={`px-3 py-2 text-center font-bold ${resultColor}`}>{result}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-xs text-accent">
-                    {m.cmfPoints != null ? `+${m.cmfPoints}` : '—'}
+                    {m.cmfPoints != null ? (m.cmfPoints > 0 ? `+${m.cmfPoints}` : m.cmfPoints) : '—'}
                   </td>
                   <td className="px-3 py-2 text-right text-xs text-muted">
                     {m.compImportance ?? '—'}

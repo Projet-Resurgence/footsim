@@ -28,7 +28,7 @@ import { moraleLabel, MORALE_DEFAULT } from '@/lib/competition/morale';
 import type { PressItem, PressMention, PressMentionPlayer, PressMentionCoach } from '@/lib/competition/press';
 import { PRESS_CATEGORY_COLOR, PRESS_CATEGORY_LABEL, generateCmfItems } from '@/lib/competition/press';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
-import { batchUpdateTeamCompHistory, batchUpdateTeamMedical } from '@/lib/github/store';
+import { batchUpdateTeamCompHistory, batchUpdateTeamMedical, batchRemoveTeamRecentMatches } from '@/lib/github/store';
 import { commitFiles, readJson as ghReadJson } from '@/lib/github/api';
 import { resyncCompetitionMatchHistory } from '@/lib/github/matches';
 import type { Injury, Suspension } from '@/lib/competition/injuries';
@@ -300,9 +300,13 @@ export default function CompetitionDetail() {
     setDeleting(true);
     try {
       await remove(current.id, pat);
-      // Strip compHistory entries from all participating teams (single commit)
-      const participating = teams.filter((t) => current.teamIds.includes(t.id));
-      await batchUpdateTeamCompHistory(participating.map((t) => t.slug), pat, { mode: 'remove', compId: current.id });
+      const snapshot = current.teamSnapshot ?? {};
+      const participatingSlugs = current.teamIds.map((tid) => snapshot[tid]?.slug).filter((s): s is string => !!s);
+      // Strip compHistory entries
+      await batchUpdateTeamCompHistory(participatingSlugs, pat, { mode: 'remove', compId: current.id });
+      // Strip recentMatches entries for all matches in this competition
+      const compMatchIds = new Set(current.matches.map((m) => m.id).filter(Boolean));
+      await batchRemoveTeamRecentMatches(participatingSlugs, compMatchIds, pat, current.id);
       navigate(backTo);
     } catch (err) {
       toast('error', String(err));

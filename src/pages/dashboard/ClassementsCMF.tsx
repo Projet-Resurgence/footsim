@@ -7,11 +7,12 @@ import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { listTeams, loadTeam } from '@/lib/github/store';
 import { POSITION_LABEL, CULTURE_LABEL } from '@/lib/types';
 import { env } from '@/lib/env';
-import type { Team, Position } from '@/lib/types';
+import type { Team, Position, Player, Formation } from '@/lib/types';
 import type { CompHistoryEntry, CompetitionKind, CompetitionScope, CompetitionImportance } from '@/lib/competition/types';
 import { calcCmfMatchPoints } from '@/lib/github/matches';
 import type { RecentMatchSummary } from '@/lib/github/matches';
-import { TeamTacticLink } from '@/components/team/TeamTacticCard';
+import { pickXI } from '@/lib/sim/lineup';
+import { PlayerView } from '@/components/team/PlayerView';
 
 // ─── Points system ────────────────────────────────────────────────────────────
 
@@ -71,6 +72,7 @@ type MatchResult = 'W' | 'D' | 'L';
 
 type TeamRankEntry = {
   team: Team;
+  players: Player[];
   points: number;
   wins: number;
   finals: number;
@@ -99,6 +101,7 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [teamEntries, setTeamEntries] = useState<TeamRankEntry[]>([]);
   const [playerEntries, setPlayerEntries] = useState<PlayerEntry[]>([]);
+  const [viewingPlayer, setViewingPlayer] = useState<Player | null>(null);
 
   // player filters
   const [posFilter, setPosFilter] = useState<string>('all');
@@ -115,9 +118,11 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
         // Only load players roster if token is available (players.json requires auth)
         await Promise.all(
           teams.map(async (team) => {
+            let teamPlayers: Player[] = [];
             if (token) {
               const roster = await loadTeam(team.slug, token);
-              for (const p of roster?.players ?? []) {
+              teamPlayers = roster?.players ?? [];
+              for (const p of teamPlayers) {
                 players.push({ player: p, team });
               }
             }
@@ -139,13 +144,13 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
             }
             points = Math.round(points * 10) / 10;
 
-            // recentMatches[0] = most recent — display oldest→newest left→right
             const form: MatchResult[] = recent.slice(0, 5).reverse().map((m) =>
               m.scoreFor > m.scoreAgainst ? 'W' : m.scoreFor === m.scoreAgainst ? 'D' : 'L',
             );
 
             rankEntries.push({
               team,
+              players: teamPlayers,
               points,
               wins,
               finals,
@@ -186,6 +191,7 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
   const shownPlayers = filteredPlayers.slice(0, playerLimit);
 
   return (
+    <>
     <div className="max-w-5xl space-y-6">
       {!embedded && (
         <div className="flex items-start justify-between gap-4">
@@ -221,7 +227,7 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
       </div>
 
       {tab === 'equipes' && (
-        <TeamRanking entries={teamEntries} token={token} />
+        <TeamRanking entries={teamEntries} token={token} onPlayerClick={setViewingPlayer} />
       )}
 
       {tab === 'explications' && (
@@ -281,9 +287,7 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
                           {team.flag && (
                             <img src={team.flag} alt="" className="h-5 w-5 rounded-sm object-cover shrink-0" />
                           )}
-                          <TeamTacticLink team={team} token={token} className="truncate max-w-[120px] text-sm hover:text-accent hover:underline transition-colors cursor-pointer text-left">
-                            {team.name}
-                          </TeamTacticLink>
+                          <span className="truncate max-w-[120px] text-sm">{team.name}</span>
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-muted text-xs">
@@ -310,6 +314,10 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
         </div>
       )}
     </div>
+    {viewingPlayer && (
+      <PlayerView player={viewingPlayer} onClose={() => setViewingPlayer(null)} />
+    )}
+  </>
   );
 }
 
@@ -577,91 +585,177 @@ const SCOPE_SHORT: Record<string, string> = {
   internationale: 'Intl', continentale: 'Cont', nationale: 'Nat', regionale: 'Rég', autre: 'Autre',
 };
 
-function ExpandedTeamDetail({ entry }: { entry: TeamRankEntry }) {
+function LineupSection({ players, formation, lineup, onPlayerClick }: {
+  players: Player[];
+  formation: Formation;
+  lineup?: string[];
+  onPlayerClick: (p: Player) => void;
+}) {
+  const byId = new Map(players.map((p) => [p.id, p]));
+  let starters: Player[];
+  if (lineup && lineup.length === 11) {
+    const resolved = lineup.map((id) => byId.get(id)).filter(Boolean) as Player[];
+    starters = resolved.length === 11 ? resolved : pickXI(players, formation).lineup;
+  } else {
+    starters = pickXI(players, formation).lineup;
+  }
+  const starterIds = new Set(starters.map((p) => p.id));
+  const bench = players
+    .filter((p) => !starterIds.has(p.id))
+    .sort((a, b) => b.overall - a.overall)
+    .slice(0, 12);
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted flex items-center justify-between">
+          <span>XI titulaires · {formation}</span>
+          <span className="text-accent font-mono">{starters.length}/11</span>
+        </div>
+        <table className="w-full text-sm">
+          <tbody>
+            {starters.map((p, i) => (
+              <tr
+                key={p.id}
+                className="border-t border-border hover:bg-accent/10 cursor-pointer transition-colors"
+                onClick={() => onPlayerClick(p)}
+              >
+                <td className="w-8 px-3 py-2 text-center text-xs text-muted tabular-nums">{i + 1}</td>
+                <td className="px-3 py-2">
+                  <span className="rounded bg-border/40 px-1.5 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span>
+                </td>
+                <td className="px-3 py-2 font-medium">{p.firstName} {p.lastName}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-bold text-accent">{p.overall}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {bench.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+          <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">
+            Banc ({bench.length})
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {bench.map((p) => (
+                <tr
+                  key={p.id}
+                  className="border-t border-border hover:bg-accent/10 cursor-pointer transition-colors"
+                  onClick={() => onPlayerClick(p)}
+                >
+                  <td className="px-3 py-2">
+                    <span className="rounded bg-border/40 px-1.5 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span>
+                  </td>
+                  <td className="px-3 py-2 text-text/80">{p.firstName} {p.lastName}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">{p.overall}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExpandedTeamDetail({ entry, onPlayerClick }: { entry: TeamRankEntry; onPlayerClick: (p: Player) => void }) {
   const history = entry.team.compHistory ?? [];
   const recent: RecentMatchSummary[] = (entry.team.recentMatches ?? []).slice(0, 10);
-
-  // Palmarès points breakdown
   const palmaresTotal = history.reduce((s, e) => s + entryPoints(e), 0);
   const matchTotal = recent.reduce((s, m) => s + matchPoints(m), 0);
 
+  const activeTactic = (entry.team.savedTactics ?? []).find(
+    (t) => t.id === entry.team.activeTacticId
+  ) ?? (entry.team.savedTactics ?? [])[0];
+
   return (
-    <div className="grid gap-6 md:grid-cols-2">
+    <div className="space-y-5">
+      {/* ── Compo ── */}
+      {entry.players.length > 0 && (
+        <LineupSection
+          players={entry.players}
+          formation={activeTactic?.formation ?? entry.team.formation}
+          lineup={activeTactic?.lineup}
+          onPlayerClick={onPlayerClick}
+        />
+      )}
 
-      {/* ── Palmarès ── */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-xs uppercase tracking-widest text-muted">Palmarès</span>
-          <span className="text-xs tabular-nums text-accent font-bold">+{Math.round(palmaresTotal)} pts bonus</span>
+      {/* ── Séparateur ── */}
+      <div className="border-t border-border" />
+
+      {/* ── Palmarès + Matchs ── */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-widest text-muted">Palmarès</span>
+            <span className="text-xs tabular-nums text-accent font-bold">+{Math.round(palmaresTotal)} pts bonus</span>
+          </div>
+          {history.length === 0 ? (
+            <p className="text-xs text-muted py-2">Aucun résultat de compétition enregistré.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {[...history].sort((a, b) => (b.year ?? 0) - (a.year ?? 0)).map((e, i) => {
+                const badge = RESULT_BADGE[e.result];
+                const pts = entryPoints(e);
+                return (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className="text-muted w-8 tabular-nums shrink-0">{e.year ?? '—'}</span>
+                    <span className={`rounded border px-1.5 py-0.5 font-medium shrink-0 ${badge.cls}`}>{badge.label}</span>
+                    <span className="truncate text-muted flex-1">{e.compName}</span>
+                    <span className="text-[10px] text-muted shrink-0">{SCOPE_SHORT[e.scope ?? 'autre'] ?? e.scope}</span>
+                    <span className="tabular-nums font-bold text-accent shrink-0">+{pts}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-        {history.length === 0 ? (
-          <p className="text-xs text-muted py-2">Aucun résultat de compétition enregistré.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {[...history].sort((a, b) => (b.year ?? 0) - (a.year ?? 0)).map((e, i) => {
-              const badge = RESULT_BADGE[e.result];
-              const pts = entryPoints(e);
-              return (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <span className="text-muted w-8 tabular-nums shrink-0">{e.year ?? '—'}</span>
-                  <span className={`rounded border px-1.5 py-0.5 font-medium shrink-0 ${badge.cls}`}>{badge.label}</span>
-                  <span className="truncate text-muted flex-1">{e.compName}</span>
-                  <span className="text-[10px] text-muted shrink-0">{SCOPE_SHORT[e.scope ?? 'autre'] ?? e.scope}</span>
-                  <span className="tabular-nums font-bold text-accent shrink-0">+{pts}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
-      {/* ── Matchs récents ── */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-xs uppercase tracking-widest text-muted">10 derniers matchs</span>
-          <span className="text-xs tabular-nums text-accent font-bold">+{Math.round(matchTotal * 10) / 10} pts match</span>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-widest text-muted">10 derniers matchs</span>
+            <span className="text-xs tabular-nums text-accent font-bold">+{Math.round(matchTotal * 10) / 10} pts match</span>
+          </div>
+          {recent.length === 0 ? (
+            <p className="text-xs text-muted py-2">Aucun match de compétition enregistré.</p>
+          ) : (
+            <div className="space-y-1">
+              {recent.map((m, i) => {
+                const won = m.scoreFor > m.scoreAgainst;
+                const drew = m.scoreFor === m.scoreAgainst;
+                const resultCls = won ? 'text-green-400 font-bold' : drew ? 'text-yellow-400 font-bold' : 'text-danger font-bold';
+                const resultLetter = won ? 'V' : drew ? 'N' : 'D';
+                const pts = matchPoints(m);
+                return (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className={`w-4 text-center shrink-0 ${resultCls}`}>{resultLetter}</span>
+                    <span className="font-mono tabular-nums shrink-0 text-muted w-8">{m.scoreFor}–{m.scoreAgainst}</span>
+                    <span className="truncate text-muted flex-1">vs {m.opponentName}</span>
+                    <span className="text-[10px] text-muted shrink-0">{m.homeAway === 'home' ? 'D' : 'E'}</span>
+                    <span className={`tabular-nums shrink-0 font-medium ${pts > 0 ? 'text-accent' : 'text-muted'}`}>
+                      {pts > 0 ? `+${pts}` : pts}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {entry.form.length > 0 && (
+            <div className="flex items-center gap-1 pt-1 border-t border-border">
+              <span className="text-[10px] text-muted mr-1">Forme :</span>
+              {entry.form.map((r, i) => <FormIcon key={i} result={r} />)}
+            </div>
+          )}
         </div>
-        {recent.length === 0 ? (
-          <p className="text-xs text-muted py-2">Aucun match de compétition enregistré.</p>
-        ) : (
-          <div className="space-y-1">
-            {recent.map((m, i) => {
-              const won = m.scoreFor > m.scoreAgainst;
-              const drew = m.scoreFor === m.scoreAgainst;
-              const resultCls = won ? 'text-green-400 font-bold' : drew ? 'text-yellow-400 font-bold' : 'text-danger font-bold';
-              const resultLetter = won ? 'V' : drew ? 'N' : 'D';
-              const pts = matchPoints(m);
-              return (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <span className={`w-4 text-center shrink-0 ${resultCls}`}>{resultLetter}</span>
-                  <span className="font-mono tabular-nums shrink-0 text-muted w-8">{m.scoreFor}–{m.scoreAgainst}</span>
-                  <span className="truncate text-muted flex-1">vs {m.opponentName}</span>
-                  <span className="text-[10px] text-muted shrink-0">{m.homeAway === 'home' ? 'D' : 'E'}</span>
-                  <span className={`tabular-nums shrink-0 font-medium ${pts > 0 ? 'text-accent' : 'text-muted'}`}>
-                    {pts > 0 ? `+${pts}` : pts}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Mini form bar */}
-        {entry.form.length > 0 && (
-          <div className="flex items-center gap-1 pt-1 border-t border-border">
-            <span className="text-[10px] text-muted mr-1">Forme :</span>
-            {entry.form.map((r, i) => <FormIcon key={i} result={r} />)}
-          </div>
-        )}
       </div>
-
     </div>
   );
 }
 
 // ─── Team ranking sub-component ───────────────────────────────────────────────
 
-function TeamRanking({ entries, token }: { entries: TeamRankEntry[]; token: string | null }) {
+function TeamRanking({ entries, onPlayerClick }: { entries: TeamRankEntry[]; token: string | null; onPlayerClick: (p: Player) => void }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   if (entries.length === 0) {
@@ -696,14 +790,13 @@ function TeamRanking({ entries, token }: { entries: TeamRankEntry[]; token: stri
               rank === 3 ? 'text-orange-500 font-bold' :
               'text-muted';
             const isOpen = expanded === e.team.id;
-            const history = e.team.compHistory ?? [];
 
             return (
               <>
                 <tr
                   key={e.team.id}
                   className="border-t border-border hover:bg-border/10 transition-colors cursor-pointer"
-                  onClick={() => history.length > 0 && setExpanded(isOpen ? null : e.team.id)}
+                  onClick={() => setExpanded(isOpen ? null : e.team.id)}
                 >
                   <td className={`px-3 py-2.5 text-center tabular-nums text-sm ${rankColor}`}>{rank}</td>
                   <td className="px-4 py-2.5">
@@ -711,12 +804,8 @@ function TeamRanking({ entries, token }: { entries: TeamRankEntry[]; token: stri
                       {e.team.flag && (
                         <img src={e.team.flag} alt="" className="h-6 w-6 rounded-sm object-cover shrink-0" />
                       )}
-                      <TeamTacticLink team={e.team} token={token} className="font-medium truncate hover:text-accent hover:underline transition-colors cursor-pointer text-left">
-                        {e.team.name}
-                      </TeamTacticLink>
-                      {history.length > 0 && (
-                        <span className="text-xs text-muted ml-1">{isOpen ? '▲' : '▼'}</span>
-                      )}
+                      <span className="font-medium truncate">{e.team.name}</span>
+                      <span className="text-xs text-muted ml-1">{isOpen ? '▲' : '▼'}</span>
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-center tabular-nums">{e.wins || '—'}</td>
@@ -737,7 +826,7 @@ function TeamRanking({ entries, token }: { entries: TeamRankEntry[]; token: stri
                   <tr key={`${e.team.id}-detail`} className="border-t border-border bg-bg/30">
                     <td />
                     <td colSpan={7} className="px-4 py-4">
-                      <ExpandedTeamDetail entry={e} />
+                      <ExpandedTeamDetail entry={e} onPlayerClick={onPlayerClick} />
                     </td>
                   </tr>
                 )}
