@@ -874,6 +874,7 @@ export default function CompetitionMatchLive() {
                       compImportance: current.importance,
                       homeStrength: current.teamSnapshot?.[matchInput.home.team.id]?.globalStrength ?? matchInput.home.team.globalStrength,
                       awayStrength: current.teamSnapshot?.[matchInput.away.team.id]?.globalStrength ?? matchInput.away.team.globalStrength,
+                      participantCount: current.teamIds?.length,
                     };
                     await saveMatch(matchInput, matchState, pat, matchMeta);
                     toast('success', 'Match sauvegardé sur GitHub.');

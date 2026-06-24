@@ -4,8 +4,9 @@ import type { CompetitionKind, CompetitionScope, CompetitionImportance, GoalEven
 import { readJson, writeJson } from './api';
 
 // ─── CMF match point formula ─────────────────────────────────────────────────
-// Base: W=3, D=1, L=0  ×  scope multiplier  ×  kind multiplier  ×  importance multiplier  ×  opp factor
+// Base: W=3, D=1, L=0  ×  scope multiplier  ×  kind multiplier  ×  importance multiplier  ×  opp factor  ×  size multiplier
 // Opp factor = sqrt(oppStrength / 50) clamped [0.5, 2.0]
+// Size multiplier = based on participant count (more teams = higher stakes)
 
 const SCOPE_MATCH_MULT: Record<CompetitionScope, number> = {
   internationale: 2.0,
@@ -27,6 +28,15 @@ const IMPORTANCE_MATCH_MULT: Record<CompetitionImportance, number> = {
   mondial: 2.0,
 };
 
+function participantSizeMult(count: number | undefined): number {
+  if (!count || count <= 2) return 0.7;
+  if (count <= 4) return 0.85;
+  if (count <= 8) return 1.0;
+  if (count <= 16) return 1.15;
+  if (count <= 32) return 1.3;
+  return 1.5;
+}
+
 function goalDiffPenalty(scoreFor: number, scoreAgainst: number): number {
   if (scoreFor >= scoreAgainst) return 0;
   const gap = scoreAgainst - scoreFor;
@@ -42,14 +52,16 @@ export function calcCmfMatchPoints(opts: {
   compKind?: CompetitionKind;
   compScope?: CompetitionScope;
   compImportance?: CompetitionImportance;
+  participantCount?: number;
 }): number {
   const base = opts.scoreFor > opts.scoreAgainst ? 3 : opts.scoreFor === opts.scoreAgainst ? 1 : 0;
   const scope = SCOPE_MATCH_MULT[opts.compScope ?? 'autre'];
   const kind = KIND_MATCH_MULT[opts.compKind ?? 'amicale'];
   const importance = IMPORTANCE_MATCH_MULT[opts.compImportance ?? 'national'];
   const oppFactor = Math.min(2.0, Math.max(0.5, Math.sqrt(opts.opponentStrength / 50)));
+  const sizeMult = participantSizeMult(opts.participantCount);
   const penalty = goalDiffPenalty(opts.scoreFor, opts.scoreAgainst);
-  return Math.round((base * scope * kind * importance * oppFactor + penalty) * 10) / 10;
+  return Math.round((base * scope * kind * importance * oppFactor * sizeMult + penalty) * 10) / 10;
 }
 
 export type StoredMatch = {
@@ -112,6 +124,7 @@ export type SaveMatchMeta = {
   compImportance?: CompetitionImportance;
   homeStrength?: number;
   awayStrength?: number;
+  participantCount?: number;
 };
 
 export async function saveMatch(
@@ -146,6 +159,7 @@ export async function saveMatch(
     compKind: meta?.compKind,
     compScope: meta?.compScope,
     compImportance: meta?.compImportance,
+    participantCount: meta?.participantCount,
   });
   const awayCmf = calcCmfMatchPoints({
     scoreFor: state.score.away,
@@ -154,6 +168,7 @@ export async function saveMatch(
     compKind: meta?.compKind,
     compScope: meta?.compScope,
     compImportance: meta?.compImportance,
+    participantCount: meta?.participantCount,
   });
 
   const allPlayers = [...input.home.players, ...input.away.players];
@@ -356,7 +371,7 @@ export async function resyncCompetitionMatchHistory(
       homeTeamId: homeId, awayTeamId: awayId,
       homeAway: 'home', scoreFor: scoreHome, scoreAgainst: scoreAway,
       opponentStrength: awayStrength, compKind, compScope, compImportance,
-      cmfPoints: calcCmfMatchPoints({ scoreFor: scoreHome, scoreAgainst: scoreAway, opponentStrength: awayStrength, compKind, compScope, compImportance }),
+      cmfPoints: calcCmfMatchPoints({ scoreFor: scoreHome, scoreAgainst: scoreAway, opponentStrength: awayStrength, compKind, compScope, compImportance, participantCount: comp.teamIds?.length }),
     };
     const awaySummary: RecentMatchSummary = {
       matchId: m.id, playedAt,
@@ -364,7 +379,7 @@ export async function resyncCompetitionMatchHistory(
       homeTeamId: homeId, awayTeamId: awayId,
       homeAway: 'away', scoreFor: scoreAway, scoreAgainst: scoreHome,
       opponentStrength: homeStrength, compKind, compScope, compImportance,
-      cmfPoints: calcCmfMatchPoints({ scoreFor: scoreAway, scoreAgainst: scoreHome, opponentStrength: homeStrength, compKind, compScope, compImportance }),
+      cmfPoints: calcCmfMatchPoints({ scoreFor: scoreAway, scoreAgainst: scoreHome, opponentStrength: homeStrength, compKind, compScope, compImportance, participantCount: comp.teamIds?.length }),
     };
 
     const hl = bySlug.get(homeSlug) ?? []; hl.push(homeSummary); bySlug.set(homeSlug, hl);

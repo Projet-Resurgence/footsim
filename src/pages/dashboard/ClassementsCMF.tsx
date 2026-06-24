@@ -344,7 +344,7 @@ function ExplicationsTab() {
           Chaque match de compétition simulé rapporte des points selon la formule :
         </p>
         <div className="rounded-lg border border-border bg-surface p-4 font-mono text-xs leading-relaxed">
-          pts = base × multiplicateur_portée × multiplicateur_statut × multiplicateur_importance × facteur_adversaire + pénalité_écart
+          pts = base × multiplicateur_portée × multiplicateur_statut × multiplicateur_importance × facteur_adversaire × multiplicateur_participants + pénalité_écart
         </div>
 
         <div className="space-y-4">
@@ -475,14 +475,47 @@ function ExplicationsTab() {
               </div>
             </div>
           </div>
+
+          <div>
+            <div className="font-medium mb-2">Multiplicateur de participants</div>
+            <p className="text-muted leading-relaxed mb-2">
+              Plus une compétition regroupe d'équipes, plus elle est prestigieuse — et plus les points gagnés valent.
+              Ce facteur valorise les performances dans les grands tournois face à des adversaires plus nombreux.
+            </p>
+            <table className="w-full text-xs border border-border rounded-lg overflow-hidden">
+              <thead className="bg-bg text-muted uppercase tracking-wide">
+                <tr>
+                  <th className="px-4 py-2 text-left">Nombre d'équipes</th>
+                  <th className="px-4 py-2 text-left text-muted">Exemple</th>
+                  <th className="px-4 py-2 text-right">Multiplicateur</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['2 équipes', '1v1 / duel direct', '×0.70'],
+                  ['3–4 équipes', 'Mini-tournoi', '×0.85'],
+                  ['5–8 équipes', 'Petit groupe', '×1.00'],
+                  ['9–16 équipes', 'Championnat standard', '×1.15'],
+                  ['17–32 équipes', 'Grand tournoi', '×1.30'],
+                  ['33+ équipes', 'Compétition mondiale', '×1.50'],
+                ].map(([n, ex, m]) => (
+                  <tr key={n} className="border-t border-border">
+                    <td className="px-4 py-2 font-medium">{n}</td>
+                    <td className="px-4 py-2 text-muted">{ex}</td>
+                    <td className="px-4 py-2 text-right font-bold text-accent">{m}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 text-xs text-muted leading-relaxed">
-          <strong className="text-text">Exemple :</strong> Victoire contre une équipe force 80 dans une Coupe du Monde (internationale, officielle, importance mondiale) :<br />
-          <span className="font-mono">3 × 2.0 × 1.2 × 2.0 × √(80/50) ≈ <strong className="text-accent">18.2 pts</strong></span>
+          <strong className="text-text">Exemple :</strong> Victoire contre une équipe force 80 dans une Coupe du Monde à 32 équipes (internationale, officielle, mondiale) :<br />
+          <span className="font-mono">3 × 2.0 × 1.2 × 2.0 × √(80/50) × 1.30 ≈ <strong className="text-accent">23.7 pts</strong></span>
           <br /><br />
-          <strong className="text-text">Exemple :</strong> Défaite 0–3 contre une équipe force 60 dans un match amical (nationale, amicale, national) :<br />
-          <span className="font-mono">0 × 1.2 × 0.4 × 0.8 × √(60/50) − 1.0 = <strong className="text-danger">−1.0 pt</strong></span>
+          <strong className="text-text">Exemple :</strong> Défaite 0–3 contre une équipe force 60 dans un match amical 1v1 (nationale, amicale, national) :<br />
+          <span className="font-mono">0 × 1.2 × 0.4 × 0.8 × √(60/50) × 0.70 − 1.0 = <strong className="text-danger">−1.0 pt</strong></span>
         </div>
       </section>
 
