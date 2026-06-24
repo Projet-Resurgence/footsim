@@ -879,7 +879,10 @@ function RoundsView({
             ? (roundMatches[0]?.leg === 1 ? 'Barrages · Aller' : 'Barrages · Retour')
             : phase === 'group'
             ? `Poules — J${round}`
-            : `Tour ${round}${phase ? ` · ${phase}` : ''}`;
+            : (() => {
+                const KO_LABEL: Record<string, string> = { R64: '32èmes', R32: '16èmes', R16: '8èmes', QF: 'Quarts', SF: 'Demies', '3rd': '3ème place', F: 'Finale' };
+                return KO_LABEL[phase ?? ''] ?? `Tour ${round}${phase ? ` · ${phase}` : ''}`;
+              })();
 
         return (
           <div
