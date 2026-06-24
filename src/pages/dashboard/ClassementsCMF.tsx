@@ -507,11 +507,11 @@ function ExplicationsTab() {
               </thead>
               <tbody>
                 {[
-                  ['2 équipes', '1v1 / duel direct', '×0.70'],
-                  ['3–4 équipes', 'Mini-tournoi', '×0.85'],
-                  ['5–8 équipes', 'Petit groupe', '×1.00'],
-                  ['9–16 équipes', 'Championnat standard', '×1.15'],
-                  ['17–32 équipes', 'Grand tournoi', '×1.30'],
+                  ['2 équipes', '1v1 / duel direct', '×0.20'],
+                  ['3–4 équipes', 'Mini-tournoi', '×0.40'],
+                  ['5–8 équipes', 'Petit groupe', '×0.65'],
+                  ['9–16 équipes', 'Championnat standard', '×1.00'],
+                  ['17–32 équipes', 'Grand tournoi', '×1.15'],
                   ['33+ équipes', 'Compétition mondiale', '×1.50'],
                 ].map(([n, ex, m]) => (
                   <tr key={n} className="border-t border-border">

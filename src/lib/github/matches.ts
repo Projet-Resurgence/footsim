@@ -28,12 +28,12 @@ const IMPORTANCE_MATCH_MULT: Record<CompetitionImportance, number> = {
 };
 
 function participantSizeMult(count: number | undefined): number {
-  if (!count || count <= 2) return 0.7;
-  if (count <= 4) return 0.85;
-  if (count <= 8) return 1.0;
-  if (count <= 16) return 1.15;
-  if (count <= 32) return 1.3;
-  return 1.5;
+  if (!count || count <= 2) return 0.20;
+  if (count <= 4) return 0.40;
+  if (count <= 8) return 0.65;
+  if (count <= 16) return 1.00;
+  if (count <= 32) return 1.15;
+  return 1.50;
 }
 
 function goalDiffBonus(scoreFor: number, scoreAgainst: number): number {
