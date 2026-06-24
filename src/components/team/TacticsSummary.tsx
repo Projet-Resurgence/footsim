@@ -98,40 +98,53 @@ const MINIMAP_LAYOUT: Record<Formation, { x: number; y: number }[]> = {
   ],
 };
 
-function TacticMinimap({ formation, lineup, players }: { formation: Formation; lineup: string[]; players: Player[] }) {
+function TacticMinimap({ formation, lineup, players, tokenPositions }: { formation: Formation; lineup: string[]; players: Player[]; tokenPositions?: Record<string, { x: number; y: number }> }) {
   const slots = MINIMAP_LAYOUT[formation];
-  if (!slots) return null;
   const playerMap = new Map(players.map((p) => [p.id, p]));
+
+  // Build dots: if tokenPositions available use them (one dot per lineup player), else fall back to formation layout
+  const dots: { cx: number; cy: number; filled: boolean }[] = [];
+  if (tokenPositions && lineup.length > 0) {
+    for (const id of lineup) {
+      const tok = tokenPositions[id];
+      if (tok) {
+        dots.push({ cx: tok.x, cy: (tok.y / 100) * 140, filled: !!playerMap.get(id) });
+      }
+    }
+    // If some lineup players had no token, fall back to layout for those
+    if (dots.length < lineup.length && slots) {
+      const covered = new Set(lineup.filter((id) => tokenPositions[id]));
+      lineup.forEach((id, i) => {
+        if (!covered.has(id) && slots[i]) {
+          dots.push({ cx: slots[i].x, cy: (slots[i].y / 100) * 140, filled: !!playerMap.get(id) });
+        }
+      });
+    }
+  } else if (slots) {
+    slots.forEach((slot, i) => {
+      const id = lineup[i];
+      dots.push({ cx: slot.x, cy: (slot.y / 100) * 140, filled: !!(id && playerMap.get(id)) });
+    });
+  }
+
+  if (dots.length === 0) return null;
 
   return (
     <svg viewBox="0 0 100 140" width="80" height="112" className="shrink-0 rounded overflow-hidden">
-      {/* Pitch bg */}
       <rect width="100" height="140" fill="var(--pitch)" />
-      {/* Centre line */}
       <line x1="5" y1="70" x2="95" y2="70" stroke="var(--pitch-line)" strokeWidth="0.8" opacity="0.5" />
-      {/* Centre circle */}
       <circle cx="50" cy="70" r="12" stroke="var(--pitch-line)" strokeWidth="0.8" fill="none" opacity="0.4" />
-      {/* Top penalty area */}
       <rect x="25" y="5" width="50" height="20" stroke="var(--pitch-line)" strokeWidth="0.8" fill="none" opacity="0.4" />
-      {/* Bottom penalty area */}
       <rect x="25" y="115" width="50" height="20" stroke="var(--pitch-line)" strokeWidth="0.8" fill="none" opacity="0.4" />
-      {/* Player dots */}
-      {slots.map((slot, i) => {
-        const id = lineup[i];
-        const p = id ? playerMap.get(id) : undefined;
-        const cx = (slot.x / 100) * 100;
-        const cy = (slot.y / 100) * 140;
-        return (
-          <g key={i}>
-            <circle
-              cx={cx} cy={cy} r={4.5}
-              fill={p ? 'white' : 'rgba(255,255,255,0.25)'}
-              stroke={p ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.3)'}
-              strokeWidth="0.8"
-            />
-          </g>
-        );
-      })}
+      {dots.map((d, i) => (
+        <circle
+          key={i}
+          cx={d.cx} cy={d.cy} r={4.5}
+          fill={d.filled ? 'white' : 'rgba(255,255,255,0.25)'}
+          stroke={d.filled ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.3)'}
+          strokeWidth="0.8"
+        />
+      ))}
     </svg>
   );
 }
@@ -208,7 +221,7 @@ function TacticCard({
 
       {/* Minimap + Lineup */}
       <div className="flex gap-2">
-        <TacticMinimap formation={tactic.formation} lineup={tactic.lineup} players={players} />
+        <TacticMinimap formation={tactic.formation} lineup={tactic.lineup} players={players} tokenPositions={tactic.tokenPositions} />
         <div className="flex-1 min-w-0">
           {groups.length > 0 ? (
             <div className="space-y-1">
