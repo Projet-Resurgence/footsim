@@ -69,13 +69,21 @@ function posFromCoords(x: number, y: number): Position {
 
 function deriveFormation(tokens: TokenState[]): string {
   const positions = tokens.map((t) => posFromCoords(t.x, t.y));
-  const defPositions = new Set<Position>(['LB', 'CB', 'RB']);
-  const midPositions = new Set<Position>(['DM', 'LM', 'CM', 'RM', 'AM']);
-  const attPositions = new Set<Position>(['LW', 'ST', 'RW']);
-  const def = positions.filter((p) => defPositions.has(p)).length;
-  const mid = positions.filter((p) => midPositions.has(p)).length;
-  const att = positions.filter((p) => attPositions.has(p)).length;
-  return `${def}-${mid}-${att}`;
+  const def = positions.filter((p) => ['LB', 'CB', 'RB'].includes(p)).length;
+  const dm  = positions.filter((p) => p === 'DM').length;
+  const mid = positions.filter((p) => ['LM', 'CM', 'RM'].includes(p)).length;
+  const am  = positions.filter((p) => p === 'AM').length;
+  const att = positions.filter((p) => ['LW', 'ST', 'RW'].includes(p)).length;
+
+  // Build layers: only include non-zero groups
+  const layers = [
+    ...(dm  > 0 ? [dm]  : []),
+    ...(mid > 0 ? [mid] : []),
+    ...(am  > 0 ? [am]  : []),
+  ];
+  // If all mid-tier is zero, fall back to single mid count
+  if (layers.length === 0) return `${def}-0-${att}`;
+  return `${def}-${layers.join('-')}-${att}`;
 }
 
 function derivePositions(tokens: TokenState[]): Position[] {
@@ -126,27 +134,29 @@ export type FormationEditorResult = {
 type Props = {
   players: Player[];
   initialLineup?: string[];
+  /** Outfield slot positions from current formation (10 slots, GK excluded) */
+  initialSlots?: { x: number; y: number }[];
   onSave: (result: FormationEditorResult) => void;
   onCancel: () => void;
 };
 
-// default positions for outfield players on a blank pitch
-function defaultOutfieldPositions(players: Player[]): TokenState[] {
+// default positions for outfield players
+function defaultOutfieldPositions(players: Player[], slots?: { x: number; y: number }[]): TokenState[] {
   const outfield = players.filter((p) => p.position !== 'GK').slice(0, 10);
-  // spread them across a 4-3-3-like default
-  const defaults = [
+  const fallback = [
     { x: 12, y: 70 }, { x: 34, y: 72 }, { x: 66, y: 72 }, { x: 88, y: 70 },
     { x: 22, y: 50 }, { x: 50, y: 47 }, { x: 78, y: 50 },
     { x: 12, y: 23 }, { x: 50, y: 18 }, { x: 88, y: 23 },
   ];
+  const coords = slots ?? fallback;
   return outfield.map((p, i) => ({
     id: p.id,
-    x: defaults[i]?.x ?? 50,
-    y: defaults[i]?.y ?? 50,
+    x: coords[i]?.x ?? 50,
+    y: coords[i]?.y ?? 50,
   }));
 }
 
-export function FormationEditor({ players, initialLineup, onSave, onCancel }: Props) {
+export function FormationEditor({ players, initialLineup, initialSlots, onSave, onCancel }: Props) {
   const pitchRef = useRef<HTMLDivElement>(null);
   const [tokens, setTokens] = useState<TokenState[]>(() => {
     const gk = players.find((p) => p.position === 'GK');
@@ -158,12 +168,12 @@ export function FormationEditor({ players, initialLineup, onSave, onCancel }: Pr
       const gkPlayer = lineupPlayers.find((p) => p.position === 'GK');
       const outfieldPlayers = lineupPlayers.filter((p) => p.position !== 'GK');
       const gkToken: TokenState = { id: gkPlayer?.id ?? gk?.id ?? '', x: 50, y: 88 };
-      const outfieldTokens = defaultOutfieldPositions(outfieldPlayers.length > 0 ? outfieldPlayers : outfield);
+      const outfieldTokens = defaultOutfieldPositions(outfieldPlayers.length > 0 ? outfieldPlayers : outfield, initialSlots);
       return [gkToken, ...outfieldTokens];
     }
 
     const gkToken: TokenState = { id: gk?.id ?? '', x: 50, y: 88 };
-    const outfieldTokens = defaultOutfieldPositions(outfield);
+    const outfieldTokens = defaultOutfieldPositions(outfield, initialSlots);
     return [gkToken, ...outfieldTokens];
   });
 

@@ -9,11 +9,12 @@ import { useCompetition } from '@/stores/competition';
 import { useTeams } from '@/stores/teams';
 import { useCredentials } from '@/stores/credentials';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
-import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification } from '@/lib/competition/scheduler';
+import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary } from '@/lib/competition/types';
 import { accumulateMatchStats, computeAwards, computeMotm } from '@/lib/competition/statsAccumulator';
 import { CorruptionPanel } from '@/components/match/CorruptionPanel';
+import { isRevealed } from '@/lib/sim/corruption';
 import { resolveActiveTactic } from '@/lib/localTactics';
 import { updateMorale, initMorale, MORALE_DEFAULT } from '@/lib/competition/morale';
 import { generateMatchPressItem, generateMoralePressItem, generatePresidencyReboundItem, generateDrameItem, generateDrameHommageItem, generateCmfItems, generateCmfCommunique, generateFormePressItem, generateCoachScandalItem } from '@/lib/competition/press';
@@ -395,6 +396,12 @@ export default function MultiplexLive() {
           && tidRank > dangerThreshold;
 
         const isWorldCup = !!(current.name && /coupe du monde|world cup/i.test(current.name));
+        const slotCorruption = slot.state!.corruption;
+        const slotCorruptionActive = (slotCorruption?.accepted ?? false) && slotCorruption?.side !== 'both';
+        const slotCorruptionRevealed = slotCorruptionActive && isRevealed();
+        const cheatingTeamId = slotCorruptionActive
+          ? (slotCorruption!.side === 'home' ? homeId : awayId)
+          : null;
         const { item: matchPress, dopingSuspension, teamDisqualified, refereeCorruption } = generateMatchPressItem({
           seed: `${baseSeed}-${tid}`,
           round: current.currentRound,
@@ -415,6 +422,8 @@ export default function MultiplexLive() {
           players: teamPlayers,
           coach: teamCoach,
           isWorldCup,
+          corruptionEnabled: cheatingTeamId === tid,
+          corruptionRevealed: slotCorruptionRevealed,
           matchId: slot.compMatchId,
           matchSnapshot: {
             homeTeamId: homeId,
@@ -500,6 +509,7 @@ export default function MultiplexLive() {
             matchId: slot.compMatchId,
             matchSnapshot: slotMatchSnap,
           })];
+          updatedStandings = applyPointsPenalty(updatedStandings, tid);
         }
         const moralePress = generateMoralePressItem({
           seed: `${baseSeed}-${tid}-m`,

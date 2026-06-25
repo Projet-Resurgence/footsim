@@ -421,6 +421,8 @@ export default function MyTeam() {
               <tr>
                 <th className="px-4 py-2 font-medium">Nom</th>
                 <th className="px-4 py-2 font-medium">Poste</th>
+                <th className="px-4 py-2 font-medium text-right">Âge</th>
+                <th className="px-4 py-2 font-medium text-right">Pied</th>
                 <th className="px-4 py-2 font-medium text-right">Overall</th>
               </tr>
             </thead>
@@ -437,6 +439,8 @@ export default function MyTeam() {
                     <td className="px-4 py-2">
                       <span className="rounded bg-border/40 px-2 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span>
                     </td>
+                    <td className="px-4 py-2 text-right">{p.age}</td>
+                    <td className="px-4 py-2 text-right">{p.preferredFoot === 'right' ? 'D' : p.preferredFoot === 'left' ? 'G' : 'D/G'}</td>
                     <td className="px-4 py-2 text-right font-medium">{p.overall}</td>
                   </tr>
                 ))}

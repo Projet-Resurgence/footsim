@@ -179,7 +179,7 @@ const BIG_WIN_BODIES = [
 const MANITA_HEADLINES = [
   'MANITA : {team} signe la performance de la saison',
   'GOLEADA : {team} signe un résultat historique dans cette compétition',
-  '5-0 : {team} entre dans une autre dimension — la compétition est prévenue',
+  '{score} : {team} entre dans une autre dimension — la compétition est prévenue',
   'MASSACRE : {team} inflige une correction historique',
 ];
 const MANITA_BODIES = [
@@ -1194,6 +1194,10 @@ export function generateMatchPressItem(opts: {
   coach?: Coach;
   /** True if this match is part of a Coupe du Monde competition */
   isWorldCup?: boolean;
+  /** True if a corruption deal was active on this match (CorruptionDeal.accepted) */
+  corruptionEnabled?: boolean;
+  /** True if the corruption was revealed (DCP check passed) — required to generate corruption scandal press */
+  corruptionRevealed?: boolean;
   /** ID of the CompMatch that generated this press item */
   matchId?: string;
   /** Match snapshot for the clickable match card */
@@ -1201,6 +1205,8 @@ export function generateMatchPressItem(opts: {
 }): MatchPressResult {
   const r = rng(opts.seed);
   const diff = opts.goalsFor - opts.goalsAgainst;
+  const scoreStr = `${opts.goalsFor}-${opts.goalsAgainst}`;
+  const sub = (s: string) => s.replace(/{team}/g, opts.teamName).replace(/{score}/g, scoreStr);
   const isBigWin = diff >= 3;
   const isManita = diff >= 5;
   const isBigLoss = diff <= -3;
@@ -1238,8 +1244,9 @@ export function generateMatchPressItem(opts: {
   const teamDopingChance = baseAllowed && !isPlayerDoping ? 0.0001 : 0;
   const isTeamDoping = r() < teamDopingChance;
 
-  // Scandale classique : 3% sur défaite, 0.8% sinon
-  const scandalChance = isPlayerDoping || isTeamDoping ? 0 : (diff < 0 ? 0.03 : 0.008);
+  // Scandale classique : seulement si corruption activée ET révélée (DCP)
+  const corruptionActive = opts.corruptionEnabled && opts.corruptionRevealed;
+  const scandalChance = (isPlayerDoping || isTeamDoping || !corruptionActive) ? 0 : (diff < 0 ? 0.03 : 0.008);
   const scandalize = r() < scandalChance;
 
   // Presse hostile : uniquement sur défaite, jamais si autre événement spécial
@@ -1256,14 +1263,14 @@ export function generateMatchPressItem(opts: {
   if (isTeamDoping) {
     category = 'scandale';
     const [h, b] = pick(TEAM_DOPING_PAIRS, r);
-    headline = h.replace(/{team}/g, opts.teamName);
-    body = b.replace(/{team}/g, opts.teamName);
+    headline = sub(h);
+    body = sub(b);
     teamDisqualified = true;
   } else if (scandalize && isWorldCup) {
     category = 'scandale';
     const [h, b] = pick(WC_SCANDAL_PAIRS, r);
-    headline = h.replace(/{team}/g, opts.teamName);
-    body = b.replace(/{team}/g, opts.teamName);
+    headline = sub(h);
+    body = sub(b);
   } else if (isPlayerDoping) {
     category = 'scandale';
     // Pick a specific player (non-GK, from pool already computed)
@@ -1271,8 +1278,8 @@ export function generateMatchPressItem(opts: {
     const victimName = dopingVictim ? `${dopingVictim.firstName} ${dopingVictim.lastName}` : null;
     const [hTpl, bTpl] = pick(DOPING_PAIRS, r);
     const fallback = 'un joueur';
-    headline = hTpl.replace(/{team}/g, opts.teamName).replace(/{player}/g, victimName ?? fallback);
-    body = bTpl.replace(/{team}/g, opts.teamName).replace(/{player}/g, victimName ?? fallback);
+    headline = sub(hTpl).replace(/{player}/g, victimName ?? fallback);
+    body = sub(bTpl).replace(/{player}/g, victimName ?? fallback);
     dopingSuspension = createSuspension(
       opts.teamId,
       dopingVictim?.id ?? `doping-${opts.teamId}`,
@@ -1322,35 +1329,35 @@ export function generateMatchPressItem(opts: {
         }
         refereeCorruption = { kind: penaltyKind, penalty };
         const [h, b] = pick(templatePairs, r);
-        headline = h.replace(/{team}/g, opts.teamName);
-        body = b.replace(/{team}/g, opts.teamName);
+        headline = sub(h);
+        body = sub(b);
       } else {
         // Arbitre révèle seul — communiqué CMF corruption sans sanction immédiate
         refereeCorruption = { kind: 'revealed' };
         const [h, b] = pick(REFEREE_REVEALS_PAIRS, r);
-        headline = h.replace(/{team}/g, opts.teamName);
-        body = b.replace(/{team}/g, opts.teamName);
+        headline = sub(h);
+        body = sub(b);
       }
     } else {
       const [h, b] = pick(SCANDAL_PAIRS, r);
-      headline = h.replace(/{team}/g, opts.teamName);
-      body = b.replace(/{team}/g, opts.teamName);
+      headline = sub(h);
+      body = sub(b);
     }
   } else if (isCritique) {
     category = 'critique';
     if (isHumiliation) {
       const allL3H = [...CRITIQUE_HEADLINES_L3, ...CRITIQUE_HEADLINES_L3_EXTRA];
       const allL3B = [...CRITIQUE_BODIES_L3, ...CRITIQUE_BODIES_L3_EXTRA];
-      headline = pick(allL3H, r).replace(/{team}/g, opts.teamName);
-      body = pick(allL3B, r).replace(/{team}/g, opts.teamName);
+      headline = sub(pick(allL3H, r));
+      body = sub(pick(allL3B, r));
       moraleShock = -(18 + Math.floor(r() * 8)); // -18 à -25
     } else if (isBrutalLoss) {
-      headline = pick(CRITIQUE_HEADLINES_L2, r).replace(/{team}/g, opts.teamName);
-      body = pick(CRITIQUE_BODIES_L2, r).replace(/{team}/g, opts.teamName);
+      headline = sub(pick(CRITIQUE_HEADLINES_L2, r));
+      body = sub(pick(CRITIQUE_BODIES_L2, r));
       moraleShock = -(12 + Math.floor(r() * 6)); // -12 à -17
     } else {
-      headline = pick(CRITIQUE_HEADLINES_L1, r).replace(/{team}/g, opts.teamName);
-      body = pick(CRITIQUE_BODIES_L1, r).replace(/{team}/g, opts.teamName);
+      headline = sub(pick(CRITIQUE_HEADLINES_L1, r));
+      body = sub(pick(CRITIQUE_BODIES_L1, r));
       moraleShock = -(8 + Math.floor(r() * 5)); // -8 à -12
     }
     // Suffix coach critique
@@ -1403,40 +1410,40 @@ export function generateMatchPressItem(opts: {
       category = isBigWin ? 'exploit' : 'victoire';
       moraleBoost = isBigWin ? (8 + Math.floor(r() * 7)) : (4 + Math.floor(r() * 5));
       if (isWorldCup && isBigWin && r() < 0.65) {
-        headline = pick(WC_EXPLOIT_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(WC_EXPLOIT_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(WC_EXPLOIT_HEADLINES, r));
+        body = sub(pick(WC_EXPLOIT_BODIES, r));
       } else if (isWorldCup && wcWinHeads[phase] && r() < 0.70) {
-        headline = pick(wcWinHeads[phase], r).replace(/{team}/g, opts.teamName);
-        body = pick(wcWinBodies[phase] ?? BIG_WIN_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(wcWinHeads[phase], r));
+        body = sub(pick(wcWinBodies[phase] ?? BIG_WIN_BODIES, r));
       } else if (r() < 0.5 && koWinHeads.length) {
-        headline = pick(koWinHeads, r).replace(/{team}/g, opts.teamName);
-        body = pick(koWinBodies.length ? koWinBodies : BIG_WIN_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(koWinHeads, r));
+        body = sub(pick(koWinBodies.length ? koWinBodies : BIG_WIN_BODIES, r));
       } else {
-        headline = pick(isManita ? MANITA_HEADLINES : isBigWin ? BIG_WIN_HEADLINES : WIN_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(isManita ? MANITA_BODIES : isBigWin ? BIG_WIN_BODIES : WIN_BODIES, r).replace(/{team}/g, opts.teamName);
-        body += ` En ${phaseLabel}, chaque erreur se paie cash — {team} n'en a pas commis.`.replace(/{team}/g, opts.teamName);
+        headline = sub(pick(isManita ? MANITA_HEADLINES : isBigWin ? BIG_WIN_HEADLINES : WIN_HEADLINES, r));
+        body = sub(pick(isManita ? MANITA_BODIES : isBigWin ? BIG_WIN_BODIES : WIN_BODIES, r));
+        body += sub(` En ${phaseLabel}, chaque erreur se paie cash — {team} n'en a pas commis.`);
       }
     } else if (diff < 0) {
       category = isBigLoss ? 'crise' : 'defaite';
       if (isWorldCup && isBigLoss && r() < 0.65) {
-        headline = pick(WC_CRITIQUE_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(WC_CRITIQUE_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(WC_CRITIQUE_HEADLINES, r));
+        body = sub(pick(WC_CRITIQUE_BODIES, r));
         moraleShock = -(12 + Math.floor(r() * 8));
       } else if (isWorldCup && wcLossHeads[phase] && r() < 0.70) {
-        headline = pick(wcLossHeads[phase], r).replace(/{team}/g, opts.teamName);
-        body = pick(wcLossBodies[phase] ?? HEAVY_LOSS_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(wcLossHeads[phase], r));
+        body = sub(pick(wcLossBodies[phase] ?? HEAVY_LOSS_BODIES, r));
       } else if (r() < 0.5 && koLossHeads.length) {
-        headline = pick(koLossHeads, r).replace(/{team}/g, opts.teamName);
-        body = pick(koLossBodies.length ? koLossBodies : HEAVY_LOSS_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(koLossHeads, r));
+        body = sub(pick(koLossBodies.length ? koLossBodies : HEAVY_LOSS_BODIES, r));
       } else {
-        headline = pick(isBigLoss ? HEAVY_LOSS_HEADLINES : LOSS_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(isBigLoss ? HEAVY_LOSS_BODIES : LOSS_BODIES, r).replace(/{team}/g, opts.teamName);
-        body += ` En ${phaseLabel}, il n'y a pas de lendemain. {team} le sait désormais.`.replace(/{team}/g, opts.teamName);
+        headline = sub(pick(isBigLoss ? HEAVY_LOSS_HEADLINES : LOSS_HEADLINES, r));
+        body = sub(pick(isBigLoss ? HEAVY_LOSS_BODIES : LOSS_BODIES, r));
+        body += sub(` En ${phaseLabel}, il n'y a pas de lendemain. {team} le sait désormais.`);
       }
     } else {
       category = 'neutralite';
-      headline = pick(DRAW_HEADLINES, r).replace(/{team}/g, opts.teamName);
-      body = pick(DRAW_BODIES, r).replace(/{team}/g, opts.teamName);
+      headline = sub(pick(DRAW_HEADLINES, r));
+      body = sub(pick(DRAW_BODIES, r));
     }
   } else {
     // ── Phase de groupe ou ligue ─────────────────────────────────────────────
@@ -1449,73 +1456,73 @@ export function generateMatchPressItem(opts: {
       category = 'crise';
       moraleShock = -(10 + Math.floor(r() * 8));
       if (isLPMEliminated) {
-        headline = pick(LPM_ELIMINATED_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(LPM_ELIMINATED_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(LPM_ELIMINATED_HEADLINES, r));
+        body = sub(pick(LPM_ELIMINATED_BODIES, r));
       } else if (isWorldCup) {
-        headline = pick(WC_ELIMINATED_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(WC_ELIMINATED_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(WC_ELIMINATED_HEADLINES, r));
+        body = sub(pick(WC_ELIMINATED_BODIES, r));
       } else {
-        headline = pick(ELIMINATED_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(ELIMINATED_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(ELIMINATED_HEADLINES, r));
+        body = sub(pick(ELIMINATED_BODIES, r));
       }
     } else if (diff > 0) {
       category = isBigWin ? 'exploit' : 'victoire';
       moraleBoost = isBigWin ? (8 + Math.floor(r() * 7)) : (4 + Math.floor(r() * 5));
       if (isWorldCup && isBigWin && r() < 0.65) {
-        headline = pick(WC_EXPLOIT_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(WC_EXPLOIT_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(WC_EXPLOIT_HEADLINES, r));
+        body = sub(pick(WC_EXPLOIT_BODIES, r));
       } else if (isWorldCup && r() < 0.55) {
-        headline = pick(isBigWin ? WC_EXPLOIT_HEADLINES : WC_GROUP_WIN_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(isBigWin ? WC_EXPLOIT_BODIES : WC_GROUP_WIN_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(isBigWin ? WC_EXPLOIT_HEADLINES : WC_GROUP_WIN_HEADLINES, r));
+        body = sub(pick(isBigWin ? WC_EXPLOIT_BODIES : WC_GROUP_WIN_BODIES, r));
       } else {
-        headline = pick(isManita ? MANITA_HEADLINES : isBigWin ? BIG_WIN_HEADLINES : WIN_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(isManita ? MANITA_BODIES : isBigWin ? BIG_WIN_BODIES : WIN_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(isManita ? MANITA_HEADLINES : isBigWin ? BIG_WIN_HEADLINES : WIN_HEADLINES, r));
+        body = sub(pick(isManita ? MANITA_BODIES : isBigWin ? BIG_WIN_BODIES : WIN_BODIES, r));
       }
       // Contexte classement — seulement si encore en course
       if (!opts.isEliminated) {
         if (opts.rank === 1 && r() < 0.6) {
-          body += ' ' + pick(STANDINGS_LEADER_WIN, r).replace(/{team}/g, opts.teamName);
+          body += ' ' + sub(pick(STANDINGS_LEADER_WIN, r));
         } else if (opts.rank && opts.rank >= 2 && r() < 0.5) {
-          body += ' ' + pick(STANDINGS_CLIMB_WIN, r).replace(/{team}/g, opts.teamName);
+          body += ' ' + sub(pick(STANDINGS_CLIMB_WIN, r));
         }
       }
     } else if (diff < 0) {
       category = isBigLoss ? 'crise' : 'defaite';
       if (isWorldCup && isBigLoss && r() < 0.65) {
-        headline = pick(WC_CRITIQUE_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(WC_CRITIQUE_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(WC_CRITIQUE_HEADLINES, r));
+        body = sub(pick(WC_CRITIQUE_BODIES, r));
         moraleShock = -(12 + Math.floor(r() * 8));
       } else if (isWorldCup && r() < 0.55) {
-        headline = pick(WC_GROUP_LOSS_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(WC_GROUP_LOSS_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(WC_GROUP_LOSS_HEADLINES, r));
+        body = sub(pick(WC_GROUP_LOSS_BODIES, r));
       } else {
-        headline = pick(isBigLoss ? HEAVY_LOSS_HEADLINES : LOSS_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(isBigLoss ? HEAVY_LOSS_BODIES : LOSS_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(isBigLoss ? HEAVY_LOSS_HEADLINES : LOSS_HEADLINES, r));
+        body = sub(pick(isBigLoss ? HEAVY_LOSS_BODIES : LOSS_BODIES, r));
       }
       // Suffixes standings/danger seulement si encore en course et réellement en danger
       if (!opts.isEliminated) {
         if (opts.isInDangerZone || isLPMDanger) {
-          body += ' ' + pick(DANGER_ZONE_BODIES, r).replace(/{team}/g, opts.teamName);
+          body += ' ' + sub(pick(DANGER_ZONE_BODIES, r));
         } else if (opts.standing && opts.rank && opts.totalTeams && opts.rank > Math.ceil(opts.totalTeams / 2)) {
           // Seulement si team est dans la moitié basse du tableau
           const ptsPerGame = opts.standing.played > 0 ? opts.standing.points / opts.standing.played : 0;
           if (ptsPerGame < 1 && opts.standing.played >= 2 && r() < 0.55) {
-            body += ' ' + pick(STANDINGS_ELIMINATED_RISK, r).replace(/{team}/g, opts.teamName);
+            body += ' ' + sub(pick(STANDINGS_ELIMINATED_RISK, r));
           }
         }
       }
     } else {
       category = 'neutralite';
       if (isWorldCup && r() < 0.60) {
-        headline = pick(WC_GROUP_DRAW_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(WC_GROUP_DRAW_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(WC_GROUP_DRAW_HEADLINES, r));
+        body = sub(pick(WC_GROUP_DRAW_BODIES, r));
       } else {
-        headline = pick(DRAW_HEADLINES, r).replace(/{team}/g, opts.teamName);
-        body = pick(DRAW_BODIES, r).replace(/{team}/g, opts.teamName);
+        headline = sub(pick(DRAW_HEADLINES, r));
+        body = sub(pick(DRAW_BODIES, r));
       }
       // Nul en danger zone = mauvaise nouvelle (seulement si encore en course)
       if (!opts.isEliminated && (opts.isInDangerZone || isLPMDanger)) {
-        body += ' ' + pick(STANDINGS_DANGER_LOSS, r).replace(/{team}/g, opts.teamName);
+        body += ' ' + sub(pick(STANDINGS_DANGER_LOSS, r));
       }
     }
   }

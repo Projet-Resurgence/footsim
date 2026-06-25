@@ -509,6 +509,19 @@ export function applyCorruptionDisqualification(
   });
 }
 
+/** Deduct 3 points from a team's standing (corruption penalty). */
+export function applyPointsPenalty(
+  standings: Record<string, import('./types').Standing>,
+  teamId: string,
+  points = 3,
+): Record<string, import('./types').Standing> {
+  if (!standings[teamId]) return standings;
+  return {
+    ...standings,
+    [teamId]: { ...standings[teamId], points: Math.max(0, standings[teamId].points - points) },
+  };
+}
+
 /** True if all group-phase matches are done and knockout has no teams yet. */
 export function needsKnockoutDraw(matches: import('./types').CompMatch[]): boolean {
   const groupMatches = matches.filter((m) => m.phase === 'group');

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { CustomTacticStyle, Formation, PlannedSub, Player, TacticStyle, Team, TeamTactics } from '@/lib/types';
 import { POSITION_LABEL, TACTIC_STYLE_LABEL } from '@/lib/types';
+
+const FOOT: Record<string, string> = { right: 'D', left: 'G', both: 'D/G' };
 import type { TacticMods } from '@/lib/sim/types';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -232,10 +234,13 @@ export function TacticsPanel({ team, players, onSave }: Props) {
   ].slice(0, 12);
 
   if (freeEditor) {
+    const formationSlots = FORMATION_LAYOUT[formation] ?? FORMATION_LAYOUT['4-3-3'];
+    const outfieldSlots = formationSlots.filter((s) => s.pos !== 'GK').map((s) => ({ x: s.x, y: s.y }));
     return (
       <FormationEditor
         players={players}
         initialLineup={lineup.filter(Boolean) as string[]}
+        initialSlots={outfieldSlots}
         onSave={applyFreeEditor}
         onCancel={() => setFreeEditor(false)}
       />
@@ -550,7 +555,7 @@ function BenchEditor({
                 className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-border/40 transition-colors"
               >
                 <span>{p.firstName} {p.lastName}</span>
-                <span className="text-xs text-muted">{POSITION_LABEL[p.position]} · {p.overall}</span>
+                <span className="text-xs text-muted">{POSITION_LABEL[p.position]} · {p.overall} · {p.age}a · {FOOT[p.preferredFoot]}</span>
               </button>
             ))}
             {availableToAdd.length === 0 && <p className="text-xs text-muted px-2 py-2">Aucun joueur disponible.</p>}
@@ -577,7 +582,7 @@ function BenchEditor({
                 className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-accent/20 transition-colors"
               >
                 <span>{p.firstName} {p.lastName}</span>
-                <span className="text-xs text-muted">{POSITION_LABEL[p.position]} · {p.overall}</span>
+                <span className="text-xs text-muted">{POSITION_LABEL[p.position]} · {p.overall} · {p.age}a · {FOOT[p.preferredFoot]}</span>
               </button>
             ))}
             {availableToSwap.length === 0 && <p className="text-xs text-muted px-2 py-2">Aucun joueur disponible.</p>}
@@ -603,7 +608,7 @@ function BenchEditor({
               >
                 {p.firstName} {p.lastName}
               </button>
-              <span className="text-xs text-muted tabular-nums">{p.overall}</span>
+              <span className="text-xs text-muted tabular-nums">{p.overall} · {p.age}a · {FOOT[p.preferredFoot]}</span>
             </div>
           ))}
         </div>
@@ -635,15 +640,16 @@ function budgetCost(mods: TacticMods): number {
   }, 0);
 }
 
-function ModSlider({ label, value, onChange, budgetLeft }: { label: string; value: number; onChange: (v: number) => void; budgetLeft: number }) {
+function ModSlider({ label, value, onChange, budgetLeft, invert }: { label: string; value: number; onChange: (v: number) => void; budgetLeft: number; invert?: boolean }) {
   const pct = Math.round((value - 1) * 100);
-  const color = pct > 0 ? 'text-green-400' : pct < 0 ? 'text-danger' : 'text-muted';
+  const displayPct = invert ? -pct : pct;
+  const color = displayPct > 0 ? 'text-green-400' : displayPct < 0 ? 'text-danger' : 'text-muted';
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted">{label}</span>
-        <span className={`font-mono font-medium ${color}`}>{pct > 0 ? '+' : ''}{pct}%</span>
+        <span className={`font-mono font-medium ${color}`}>{displayPct > 0 ? '+' : ''}{displayPct}%</span>
       </div>
       <input
         type="range"
@@ -711,7 +717,7 @@ function CustomStyleEditor({
       </div>
       <div className="space-y-3">
         {(Object.keys(MOD_LABELS) as (keyof TacticMods)[]).map((k) => (
-          <ModSlider key={k} label={MOD_LABELS[k]} value={mods[k]} onChange={(v) => setMod(k, v)} budgetLeft={remaining} />
+          <ModSlider key={k} label={MOD_LABELS[k]} value={mods[k]} onChange={(v) => setMod(k, v)} budgetLeft={remaining} invert={k === 'foulRateMult'} />
         ))}
       </div>
       <div className="flex gap-2">
@@ -877,7 +883,7 @@ function PlayerPicker({ slotDef, players, currentId, takenIds, onPick, onClear, 
                   {matchScore === 0 && <span className="text-xs opacity-0">●</span>}
                   {p.firstName} {p.lastName}
                 </span>
-                <span className="text-xs text-muted">{POSITION_LABEL[p.position]} · {p.overall}</span>
+                <span className="text-xs text-muted">{POSITION_LABEL[p.position]} · {p.overall} · {p.age}a · {FOOT[p.preferredFoot]}</span>
               </button>
             );
           })}

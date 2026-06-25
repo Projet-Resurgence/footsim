@@ -18,7 +18,7 @@ import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { saveMatch, extractGoalsAndCards } from '@/lib/github/matches';
 import type { SaveMatchMeta } from '@/lib/github/matches';
 import { batchUpdateTeamMedical } from '@/lib/github/store';
-import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification } from '@/lib/competition/scheduler';
+import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary } from '@/lib/competition/types';
 import { resolveActiveTactic } from '@/lib/localTactics';
@@ -227,7 +227,7 @@ export default function CompetitionMatchLive() {
       if (!compMatch) return;
 
       // Check corruption revelation before applying result
-      const corruptionActive = matchState!.corruption?.accepted;
+      const corruptionActive = (matchState!.corruption?.accepted ?? false) && matchState!.corruption?.side !== 'both';
       const revealed = corruptionActive && isRevealed();
 
       const motmResult = computeMotm(
@@ -488,6 +488,9 @@ export default function CompetitionMatchLive() {
           && tidRank > dangerThreshold;
 
         const isWorldCup = !!(snap?.name && /coupe du monde|world cup/i.test(snap.name));
+        const cheatingTeamForPress = corruptionActive
+          ? (matchState!.corruption!.side === 'home' ? compMatch.homeTeamId : compMatch.awayTeamId)
+          : null;
         const { item, dopingSuspension, teamDisqualified, refereeCorruption } = generateMatchPressItem({
           round,
           teamId: tid,
@@ -508,6 +511,8 @@ export default function CompetitionMatchLive() {
           players: teamPlayers,
           coach: teamCoach,
           isWorldCup,
+          corruptionEnabled: cheatingTeamForPress === tid,
+          corruptionRevealed: revealed,
           matchId: compMatch.id,
           matchSnapshot: {
             homeTeamId: compMatch.homeTeamId!,
@@ -555,6 +560,7 @@ export default function CompetitionMatchLive() {
           newPressItems.push(generateCmfCommunique({ round, seed: `${seed}-cmf-ref-rev-${tid}`, type: 'corruption', matchId: compMatch.id, matchSnapshot: { homeTeamId: compMatch.homeTeamId!, awayTeamId: compMatch.awayTeamId!, homeTeamName: nameFor(compMatch.homeTeamId!), awayTeamName: nameFor(compMatch.awayTeamId!), homeScore: matchState!.score.home, awayScore: matchState!.score.away } }));
         } else if (refereeCorruption?.kind === 'refused_reported' && refereeCorruption.penalty === 'points') {
           newPressItems.push(generateCmfCommunique({ round, seed: `${seed}-cmf-ref-pts-${tid}`, type: 'corruption_points', matchId: compMatch.id, matchSnapshot: { homeTeamId: compMatch.homeTeamId!, awayTeamId: compMatch.awayTeamId!, homeTeamName: nameFor(compMatch.homeTeamId!), awayTeamName: nameFor(compMatch.awayTeamId!), homeScore: matchState!.score.home, awayScore: matchState!.score.away } }));
+          updatedStandings = applyPointsPenalty(updatedStandings, tid);
         }
         const moraleItem = generateMoralePressItem({
           round,
