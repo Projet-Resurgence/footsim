@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { CustomTacticStyle, Formation, PlannedSub, Player, TacticStyle, Team, TeamTactics } from '@/lib/types';
+import type { CustomTacticStyle, Formation, PlannedSub, Player, Position, TacticStyle, Team, TeamTactics } from '@/lib/types';
 import { POSITION_LABEL, TACTIC_STYLE_LABEL } from '@/lib/types';
 
 const FOOT: Record<string, string> = { right: 'D', left: 'G', both: 'D/G' };
@@ -134,7 +134,7 @@ export function TacticsPanel({ team, players, onSave }: Props) {
     setPositionMap(undefined);
   }
 
-  const [positionMap, setPositionMap] = useState<Record<string, import('@/lib/types').Position> | undefined>(
+  const [positionMap, setPositionMap] = useState<Record<string, Position> | undefined>(
     team.tactics?.positionMap,
   );
   const [tokenPositions, setTokenPositions] = useState<Record<string, { x: number; y: number }> | undefined>(
@@ -152,9 +152,16 @@ export function TacticsPanel({ team, players, onSave }: Props) {
 
   function fillBestXI() {
     const { lineup: auto } = pickXI(players, formation);
-    setLineup(auto.map((p) => p.id));
+    const ids = auto.map((p) => p.id);
+    setLineup(ids);
     setTokenPositions(undefined);
-    setPositionMap(undefined);
+    // Rebuild positionMap from formation layout slots
+    const slots = FORMATION_LAYOUT[formation] ?? FORMATION_LAYOUT['4-3-3'];
+    const newPositionMap: Record<string, Position> = {};
+    ids.forEach((id, i) => {
+      if (slots[i]) newPositionMap[id] = slots[i].pos as Position;
+    });
+    setPositionMap(Object.keys(newPositionMap).length > 0 ? newPositionMap : undefined);
   }
 
   function assignPlayer(slotIdx: number, playerId: string) {
@@ -234,8 +241,23 @@ export function TacticsPanel({ team, players, onSave }: Props) {
   ].slice(0, 12);
 
   if (freeEditor) {
-    const formationSlots = FORMATION_LAYOUT[formation] ?? FORMATION_LAYOUT['4-3-3'];
-    const outfieldSlots = formationSlots.filter((s) => s.pos !== 'GK').map((s) => ({ x: s.x, y: s.y }));
+    // If we have saved token positions from a previous free editor session, restore them.
+    // Otherwise fall back to the current formation's predefined slot coords.
+    const outfieldSlots: { x: number; y: number }[] = (() => {
+      const currentLineup = lineup.filter(Boolean) as string[];
+      if (tokenPositions && currentLineup.length > 0) {
+        // Return coords in lineup order (GK first, skip GK for outfield slots)
+        const outfieldIds = currentLineup.filter((id) => {
+          const p = players.find((pl) => pl.id === id);
+          return p && p.position !== 'GK';
+        });
+        if (outfieldIds.length > 0) {
+          return outfieldIds.map((id) => tokenPositions[id] ?? { x: 50, y: 50 });
+        }
+      }
+      const formationSlots = FORMATION_LAYOUT[formation] ?? FORMATION_LAYOUT['4-3-3'];
+      return formationSlots.filter((s) => s.pos !== 'GK').map((s) => ({ x: s.x, y: s.y }));
+    })();
     return (
       <FormationEditor
         players={players}
