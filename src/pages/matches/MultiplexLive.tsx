@@ -940,10 +940,10 @@ export default function MultiplexLive() {
 
   // Halftime tactic bar (fixed bottom)
   const halftimeBar = isHalftime && (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-warning/40 bg-bg/95 backdrop-blur shadow-lg">
+    <div className="border border-warning/40 bg-warning/5 rounded-lg flex-shrink-0">
       <div className="px-4 py-2 flex items-center justify-between gap-3">
         <span className="text-xs font-medium">
-          ⏸ {isExtraHalftime ? 'Mi-temps prol.' : 'Mi-temps'} — {halftimeSlots.length} match(s)
+          ⏸ {isExtraHalftime ? 'Mi-temps prol.' : 'Mi-temps'} — {halftimeSlots.length} match(s) en pause
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -953,7 +953,7 @@ export default function MultiplexLive() {
             {halftimeTacticOpen ? '▼ Tactiques' : '▶ Tactiques'}
           </button>
           <Button size="sm" onClick={() => { resumeAll(); setPaused(false); setHalftimeTacticOpen(false); }}>
-            ▶ Reprendre
+            ▶ Reprendre la 2e {isExtraHalftime ? 'période' : 'mi-temps'}
           </Button>
         </div>
       </div>
@@ -1015,6 +1015,8 @@ export default function MultiplexLive() {
           </div>
         )}
 
+        {halftimeBar && <div className="px-1 flex-shrink-0">{halftimeBar}</div>}
+
         {/* Grid fills all remaining space */}
         <div
           className="flex-1 min-h-0 grid gap-1 p-1"
@@ -1027,8 +1029,6 @@ export default function MultiplexLive() {
             <MatchCard key={slot.compMatchId} slot={slot} density={density} />
           ))}
         </div>
-
-        {halftimeBar}
       </div>
     );
   }
@@ -1037,7 +1037,7 @@ export default function MultiplexLive() {
   const normalCols = slots.length <= 2 ? 'md:grid-cols-2' : slots.length <= 4 ? 'md:grid-cols-2 lg:grid-cols-2' : 'md:grid-cols-2 lg:grid-cols-3';
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-8 pb-20 space-y-6">
+    <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <Link to={`/dashboard/competitions/${competitionId}`} className="text-sm text-muted hover:text-text">
@@ -1047,6 +1047,8 @@ export default function MultiplexLive() {
         </div>
         {controlsBar}
       </div>
+
+      {halftimeBar}
 
       {allFinished && (
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 flex items-center justify-between gap-3 flex-wrap">
@@ -1072,8 +1074,6 @@ export default function MultiplexLive() {
           <MatchCard key={slot.compMatchId} slot={slot} density="normal" />
         ))}
       </div>
-
-      {halftimeBar}
     </main>
   );
 }
