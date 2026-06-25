@@ -147,9 +147,12 @@ export function decrementInjuries(injuries: Injury[]): Injury[] {
     .filter((i) => i.matchesRemaining > 0);
 }
 
-export function decrementSuspensions(suspensions: Suspension[]): Suspension[] {
+export function decrementSuspensions(suspensions: Suspension[], playingTeamIds?: string[]): Suspension[] {
   return suspensions
-    .map((s) => ({ ...s, matchesRemaining: s.matchesRemaining - 1 }))
+    .map((s) => {
+      if (playingTeamIds && !playingTeamIds.includes(s.teamId)) return s;
+      return { ...s, matchesRemaining: s.matchesRemaining - 1 };
+    })
     .filter((s) => s.matchesRemaining > 0);
 }
 

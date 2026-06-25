@@ -569,7 +569,11 @@ export default function MultiplexLive() {
 
     // Injuries + suspensions accumulation
     let updatedInjuries = decrementInjuries(current.injuries ?? []);
-    let updatedSuspensions = [...decrementSuspensions(current.suspensions ?? []), ...updatedDopingSuspensions];
+    const playingTeamIds = slots.flatMap((s) => {
+      const m = current.matches.find((cm) => cm.id === s.compMatchId);
+      return [m?.homeTeamId, m?.awayTeamId].filter(Boolean) as string[];
+    });
+    let updatedSuspensions = [...decrementSuspensions(current.suspensions ?? [], playingTeamIds), ...updatedDopingSuspensions];
 
     for (const slot of slots) {
       if (!slot.state || slot.state.status !== 'fulltime') continue;

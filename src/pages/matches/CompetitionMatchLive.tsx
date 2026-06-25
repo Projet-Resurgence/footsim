@@ -440,7 +440,7 @@ export default function CompetitionMatchLive() {
 
       // Injuries from match events (init early — doping suspension appended below)
       let updatedInjuries = decrementInjuries(snap!.injuries ?? []);
-      let updatedSuspensions = decrementSuspensions(snap!.suspensions ?? []);
+      let updatedSuspensions = decrementSuspensions(snap!.suspensions ?? [], [homeTeamId, awayTeamId].filter(Boolean) as string[]);
 
       const dopingBannedTeamIds = [...(snap!.disqualifiedTeamIds ?? [])];
       let matchDopingOccurred = false;
