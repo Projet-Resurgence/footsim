@@ -18,8 +18,11 @@ type Props = {
   onPlayerClick?: (player: Player) => void;
 };
 
+const PAGE_SIZE = 50;
+
 export function StartingXI({ players, formation, lineup, positionMap, onSaveAutoXI, onPlayerClick }: Props) {
   const [saving, setSaving] = useState(false);
+  const [restPage, setRestPage] = useState(1);
   const hasCustom = !!(lineup && lineup.length === 11);
 
   const { starters, bench, rest, isAuto } = useMemo(() => {
@@ -189,9 +192,10 @@ export function StartingXI({ players, formation, lineup, positionMap, onSaveAuto
 
       {/* Reste de l'effectif */}
       {rest.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border/50 bg-surface/50">
-          <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted/70">
-            Reste de l'effectif ({rest.length})
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+          <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted flex items-center justify-between">
+            <span>Reste de l'effectif ({rest.length})</span>
+            <span className="text-muted/60">{Math.min(restPage * PAGE_SIZE, rest.length)}/{rest.length}</span>
           </div>
           <table className="w-full text-sm">
             <thead className="bg-bg text-left text-muted text-xs border-t border-border">
@@ -204,21 +208,31 @@ export function StartingXI({ players, formation, lineup, positionMap, onSaveAuto
               </tr>
             </thead>
             <tbody>
-              {rest.map((p) => (
-                <tr key={p.id} className="border-t border-border/50 hover:bg-accent/10 hover:text-accent transition-colors opacity-70 cursor-pointer" onClick={() => onPlayerClick?.(p)}>
-                  <td className="px-3 py-1.5">
-                    <span className="rounded bg-border/30 px-1.5 py-0.5 font-mono text-xs text-muted">
+              {rest.slice(0, restPage * PAGE_SIZE).map((p) => (
+                <tr key={p.id} className="border-t border-border hover:bg-accent/10 hover:text-accent transition-colors cursor-pointer" onClick={() => onPlayerClick?.(p)}>
+                  <td className="px-3 py-2">
+                    <span className="rounded bg-border/40 px-1.5 py-0.5 font-mono text-xs">
                       {POSITION_LABEL[p.position]}
                     </span>
                   </td>
-                  <td className="px-3 py-1.5 text-text/60">{p.firstName} {p.lastName}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-muted/60 text-xs">{p.age}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-muted/60 text-xs">{FOOT[p.preferredFoot] ?? 'D'}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-muted/60 text-xs">{p.overall}</td>
+                  <td className="px-3 py-2 text-text/80">{p.firstName} {p.lastName}</td>
+                  <td className={colCell}>{p.age}</td>
+                  <td className={colCell}>{FOOT[p.preferredFoot] ?? 'D'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">{p.overall}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {restPage * PAGE_SIZE < rest.length && (
+            <div className="border-t border-border px-4 py-2 text-center">
+              <button
+                onClick={() => setRestPage((p) => p + 1)}
+                className="text-xs text-muted hover:text-text transition-colors"
+              >
+                Afficher 50 de plus ({rest.length - restPage * PAGE_SIZE} restants)
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
