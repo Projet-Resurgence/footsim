@@ -152,16 +152,9 @@ export function TacticsPanel({ team, players, onSave }: Props) {
 
   function fillBestXI() {
     const { lineup: auto } = pickXI(players, formation);
-    const ids = auto.map((p) => p.id);
-    setLineup(ids);
+    setLineup(auto.map((p) => p.id));
     setTokenPositions(undefined);
-    // Rebuild positionMap from formation layout slots
-    const slots = FORMATION_LAYOUT[formation] ?? FORMATION_LAYOUT['4-3-3'];
-    const newPositionMap: Record<string, Position> = {};
-    ids.forEach((id, i) => {
-      if (slots[i]) newPositionMap[id] = slots[i].pos as Position;
-    });
-    setPositionMap(Object.keys(newPositionMap).length > 0 ? newPositionMap : undefined);
+    setPositionMap(undefined); // slot.pos from FORMATION_LAYOUT is used directly (displayPos fallback)
   }
 
   function assignPlayer(slotIdx: number, playerId: string) {
