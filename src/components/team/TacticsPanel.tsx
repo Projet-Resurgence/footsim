@@ -167,21 +167,55 @@ export function TacticsPanel({ team, players, onSave }: Props) {
   function assignPlayer(slotIdx: number, playerId: string) {
     const next = [...lineup];
     const existing = next.indexOf(playerId);
+    const evictedId = next[slotIdx]; // player being replaced
     if (existing !== -1) next[existing] = null;
     next[slotIdx] = playerId;
     setLineup(next);
     setPickingSlot(null);
-    setPositionMap(undefined); // manual slot assignment invalidates free editor position overrides
-    setTokenPositions(undefined);
+    // If we have custom token positions, transfer coords/positionMap from the replaced slot
+    if (tokenPositions) {
+      const newTokenPositions = { ...tokenPositions };
+      const newPositionMapState = positionMap ? { ...positionMap } : undefined;
+      // Give new player the slot's existing coords
+      if (evictedId && newTokenPositions[evictedId]) {
+        newTokenPositions[playerId] = newTokenPositions[evictedId];
+        delete newTokenPositions[evictedId];
+      }
+      if (newPositionMapState && evictedId && newPositionMapState[evictedId]) {
+        newPositionMapState[playerId] = newPositionMapState[evictedId];
+        delete newPositionMapState[evictedId];
+      }
+      // If player was swapped from another slot, that slot's old occupant gets the evicted player's coords
+      if (existing !== -1 && evictedId && tokenPositions[next[existing] ?? ''] === undefined) {
+        // existing slot is now null (player moved), nothing to do
+      }
+      setTokenPositions(newTokenPositions);
+      setPositionMap(newPositionMapState);
+    } else {
+      setPositionMap(undefined);
+      setTokenPositions(undefined);
+    }
   }
 
   function clearSlot(slotIdx: number) {
     const next = [...lineup];
+    const evictedId = next[slotIdx];
     next[slotIdx] = null;
     setLineup(next);
     setPickingSlot(null);
-    setPositionMap(undefined);
-    setTokenPositions(undefined);
+    if (tokenPositions && evictedId) {
+      const newTokenPositions = { ...tokenPositions };
+      delete newTokenPositions[evictedId];
+      setTokenPositions(Object.keys(newTokenPositions).length > 0 ? newTokenPositions : undefined);
+      if (positionMap) {
+        const newPM = { ...positionMap };
+        delete newPM[evictedId];
+        setPositionMap(Object.keys(newPM).length > 0 ? newPM : undefined);
+      }
+    } else {
+      setPositionMap(undefined);
+      setTokenPositions(undefined);
+    }
   }
 
   async function save() {
