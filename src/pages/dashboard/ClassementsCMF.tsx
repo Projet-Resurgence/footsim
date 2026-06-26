@@ -149,15 +149,16 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
               else if (entry.result === 'third') thirds++;
             }
 
-            const recent: RecentMatchSummary[] = [...(team.recentMatches ?? [])]
-              .sort((a, b) => b.playedAt.localeCompare(a.playedAt))
-              .slice(0, CMF_MATCH_LIMIT);
+            const sorted = [...(team.recentMatches ?? [])].sort((a, b) => b.playedAt.localeCompare(a.playedAt));
+            const recentOfficial = sorted.filter((m) => m.compKind === 'officielle').slice(0, CMF_MATCH_LIMIT);
+            const recentFriendly = sorted.filter((m) => m.compKind !== 'officielle').slice(0, CMF_MATCH_LIMIT);
+            const recent = [...recentOfficial, ...recentFriendly];
             for (const m of recent) {
               points += matchPoints(m);
             }
             points = Math.max(0, Math.round(points * 10) / 10);
 
-            const form: MatchResult[] = recent.slice(0, 5).reverse().map((m) =>
+            const form: MatchResult[] = [...sorted].slice(0, 5).reverse().map((m) =>
               m.scoreFor > m.scoreAgainst ? 'W' : m.scoreFor === m.scoreAgainst ? 'D' : 'L',
             );
 
@@ -740,13 +741,48 @@ function LineupSection({ players, formation, formationLabel, lineup, tokenPositi
   );
 }
 
+function MatchList({ matches, label }: { matches: RecentMatchSummary[]; label: string }) {
+  const total = matches.reduce((s, m) => s + matchPoints(m), 0);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs uppercase tracking-widest text-muted">{label}</span>
+        <span className="text-xs tabular-nums text-accent font-bold">{total >= 0 ? '+' : ''}{Math.round(total * 10) / 10} pts</span>
+      </div>
+      {matches.length === 0 ? (
+        <p className="text-xs text-muted py-1">Aucun match.</p>
+      ) : (
+        <div className="space-y-1">
+          {matches.map((m, i) => {
+            const won = m.scoreFor > m.scoreAgainst;
+            const drew = m.scoreFor === m.scoreAgainst;
+            const resultCls = won ? 'text-green-400 font-bold' : drew ? 'text-yellow-400 font-bold' : 'text-danger font-bold';
+            const resultLetter = won ? 'V' : drew ? 'N' : 'D';
+            const pts = matchPoints(m);
+            return (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className={`w-4 text-center shrink-0 ${resultCls}`}>{resultLetter}</span>
+                <span className="font-mono tabular-nums shrink-0 text-muted w-8">{m.scoreFor}–{m.scoreAgainst}</span>
+                <span className="truncate text-muted flex-1">vs {m.opponentName}</span>
+                <span className="text-[10px] text-muted shrink-0">{m.homeAway === 'home' ? 'D' : 'E'}</span>
+                <span className={`tabular-nums shrink-0 font-medium ${pts > 0 ? 'text-accent' : 'text-muted'}`}>
+                  {pts > 0 ? `+${pts}` : pts}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ExpandedTeamDetail({ entry, onPlayerClick }: { entry: TeamRankEntry; onPlayerClick: (p: Player) => void }) {
   const history = entry.team.compHistory ?? [];
-  const recent: RecentMatchSummary[] = [...(entry.team.recentMatches ?? [])]
-    .sort((a, b) => b.playedAt.localeCompare(a.playedAt))
-    .slice(0, CMF_MATCH_LIMIT);
+  const sorted = [...(entry.team.recentMatches ?? [])].sort((a, b) => b.playedAt.localeCompare(a.playedAt));
+  const recentOfficial = sorted.filter((m) => m.compKind === 'officielle').slice(0, CMF_MATCH_LIMIT);
+  const recentFriendly = sorted.filter((m) => m.compKind !== 'officielle').slice(0, CMF_MATCH_LIMIT);
   const palmaresTotal = history.reduce((s, e) => s + entryPoints(e), 0);
-  const matchTotal = recent.reduce((s, m) => s + matchPoints(m), 0);
 
   const activeTactic = (entry.team.savedTactics ?? []).find(
     (t) => t.id === entry.team.activeTacticId
@@ -767,12 +803,11 @@ function ExpandedTeamDetail({ entry, onPlayerClick }: { entry: TeamRankEntry; on
             <div className="space-y-1.5">
               {[...history].sort((a, b) => (b.year ?? 0) - (a.year ?? 0)).map((e, i) => {
                 const badge = RESULT_BADGE[e.result] ?? RESULT_BADGE.participant;
-                const badgeLabel = badge.label;
                 const pts = entryPoints(e);
                 return (
                   <div key={i} className="flex items-center gap-2 text-xs">
                     <span className="text-muted w-8 tabular-nums shrink-0">{e.year ?? '—'}</span>
-                    <span className={`rounded border px-1.5 py-0.5 font-medium shrink-0 ${badge.cls}`}>{badgeLabel}</span>
+                    <span className={`rounded border px-1.5 py-0.5 font-medium shrink-0 ${badge.cls}`}>{badge.label}</span>
                     <span className="truncate text-muted flex-1">{e.compName}</span>
                     <span className="text-[10px] text-muted shrink-0">{SCOPE_SHORT[e.scope ?? 'autre'] ?? e.scope}</span>
                     <span className="tabular-nums font-bold text-accent shrink-0">{pts > 0 ? '+' : ''}{pts}</span>
@@ -783,34 +818,13 @@ function ExpandedTeamDetail({ entry, onPlayerClick }: { entry: TeamRankEntry; on
           )}
         </div>
 
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase tracking-widest text-muted">10 derniers matchs</span>
-            <span className="text-xs tabular-nums text-accent font-bold">{matchTotal >= 0 ? '+' : ''}{Math.round(matchTotal * 10) / 10} pts match</span>
-          </div>
-          {recent.length === 0 ? (
-            <p className="text-xs text-muted py-2">Aucun match de compétition enregistré.</p>
-          ) : (
-            <div className="space-y-1">
-              {recent.map((m, i) => {
-                const won = m.scoreFor > m.scoreAgainst;
-                const drew = m.scoreFor === m.scoreAgainst;
-                const resultCls = won ? 'text-green-400 font-bold' : drew ? 'text-yellow-400 font-bold' : 'text-danger font-bold';
-                const resultLetter = won ? 'V' : drew ? 'N' : 'D';
-                const pts = matchPoints(m);
-                return (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    <span className={`w-4 text-center shrink-0 ${resultCls}`}>{resultLetter}</span>
-                    <span className="font-mono tabular-nums shrink-0 text-muted w-8">{m.scoreFor}–{m.scoreAgainst}</span>
-                    <span className="truncate text-muted flex-1">vs {m.opponentName}</span>
-                    <span className="text-[10px] text-muted shrink-0">{m.homeAway === 'home' ? 'D' : 'E'}</span>
-                    <span className={`tabular-nums shrink-0 font-medium ${pts > 0 ? 'text-accent' : 'text-muted'}`}>
-                      {pts > 0 ? `+${pts}` : pts}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+        <div className="space-y-4">
+          <MatchList matches={recentOfficial} label="10 derniers matchs officiels" />
+          {recentFriendly.length > 0 && (
+            <>
+              <div className="border-t border-border/40" />
+              <MatchList matches={recentFriendly} label="10 derniers matchs amicaux" />
+            </>
           )}
           {entry.form.length > 0 && (
             <div className="flex items-center gap-1 pt-1 border-t border-border">
