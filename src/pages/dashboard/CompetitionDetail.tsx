@@ -2414,7 +2414,7 @@ function CompletedMetaEditor({
             />
           </label>
           <label className="block text-sm">
-            <span className="mb-1 block text-muted">Statut</span>
+            <span className="mb-1 block text-muted">Nature (Officielle / Amicale)</span>
             <select
               className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
               value={current.kind ?? ''}
