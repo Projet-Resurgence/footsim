@@ -219,70 +219,130 @@ export default function MultiplexLive() {
     let updatedMatches = current.matches;
     let updatedStandings = current.standings;
     let updatedPlayerStats = current.playerStats ?? {};
+    let updatedDisqualifiedTeamIds: string[] = current.disqualifiedTeamIds ?? [];
+    let updatedPendingRefusalWalkover: Record<string, number> = { ...(current.pendingRefusalWalkover ?? {}) };
 
     for (const slot of slots) {
       if (!slot.state || slot.state.status !== 'fulltime') continue;
       const compMatch = current.matches.find((m) => m.id === slot.compMatchId);
       if (!compMatch) continue;
 
-      const slotMotm = computeMotm(
+      // Check pending walkover from ref refusal enquête (50%)
+      const homeId2 = compMatch.homeTeamId;
+      const awayId2 = compMatch.awayTeamId;
+      const pendingRefusal = updatedPendingRefusalWalkover;
+      const refusalCheater = (() => {
+        for (const [tid, r] of Object.entries(pendingRefusal)) {
+          if (r === compMatch.round && (homeId2 === tid || awayId2 === tid)) return tid;
+        }
+        return null;
+      })();
+      const refusalWalkover = refusalCheater !== null && Math.random() < 0.5;
+      if (refusalCheater) {
+        const { [refusalCheater]: _, ...rest } = updatedPendingRefusalWalkover;
+        updatedPendingRefusalWalkover = rest;
+      }
+
+      const slotCorruption = slot.state.corruption;
+      const slotCorruptionActive = (slotCorruption?.accepted ?? false) && slotCorruption?.side !== 'both' && !slotCorruption?.refusedByRef;
+      const slotRevealed = slotCorruptionActive && isRevealed();
+      const isSlotWalkover = slotRevealed || refusalWalkover;
+
+      const slotMotm = isSlotWalkover ? null : computeMotm(
         slot.state,
         { team: slot.home, players: slot.homePlayers },
         { team: slot.away, players: slot.awayPlayers },
       );
       const ss = slot.state;
+      const zeroSide = { home: 0, away: 0 };
       const slotSummary: MatchSummary = {
         motm: slotMotm ?? undefined,
-        stats: {
+        stats: isSlotWalkover ? {
+          shots: zeroSide, shotsOnTarget: zeroSide, xg: zeroSide, saves: zeroSide, passes: zeroSide,
+          fouls: zeroSide, corners: zeroSide, offsides: zeroSide, freekicks: zeroSide,
+          dribbles: zeroSide, clearances: zeroSide, keyPasses: zeroSide,
+          possession: zeroSide, yellowCards: zeroSide, redCards: zeroSide,
+        } : {
           shots: ss.shots,
           shotsOnTarget: ss.shotsOnTarget,
           xg: ss.xg,
-          saves: ss.saves ?? { home: 0, away: 0 },
-          passes: ss.passes ?? { home: 0, away: 0 },
+          saves: ss.saves ?? zeroSide,
+          passes: ss.passes ?? zeroSide,
           fouls: ss.fouls,
-          corners: ss.corners ?? { home: 0, away: 0 },
-          offsides: ss.offsides ?? { home: 0, away: 0 },
-          freekicks: ss.freekicks ?? { home: 0, away: 0 },
-          dribbles: ss.dribbles ?? { home: 0, away: 0 },
-          clearances: ss.clearances ?? { home: 0, away: 0 },
-          keyPasses: ss.keyPasses ?? { home: 0, away: 0 },
+          corners: ss.corners ?? zeroSide,
+          offsides: ss.offsides ?? zeroSide,
+          freekicks: ss.freekicks ?? zeroSide,
+          dribbles: ss.dribbles ?? zeroSide,
+          clearances: ss.clearances ?? zeroSide,
+          keyPasses: ss.keyPasses ?? zeroSide,
           possession: ss.possession,
           yellowCards: { home: ss.cards.home.yellow.length, away: ss.cards.away.yellow.length },
           redCards: { home: ss.cards.home.red.length, away: ss.cards.away.red.length },
         },
       };
 
-      updatedMatches = updatedMatches.map((m) =>
-        m.id === slot.compMatchId
-          ? {
-              ...m,
-              status: 'completed' as const,
-              result: {
-                home: slot.state!.score.home,
-                away: slot.state!.score.away,
-                penalties: slot.state!.penaltyScore,
-              },
-              matchSummary: slotSummary,
-              simulatedAt: new Date().toISOString(),
-            }
-          : m,
-      );
+      // Determine walkover cheater (from revelation or refusal enquête)
+      const walkoversWinner = (() => {
+        if (refusalWalkover && refusalCheater && homeId2 && awayId2) return refusalCheater;
+        if (slotRevealed && slotCorruption && homeId2 && awayId2) {
+          return slotCorruption.side === 'home' ? homeId2 : awayId2;
+        }
+        return null;
+      })();
 
-      updatedPlayerStats = accumulateMatchStats(
-        updatedPlayerStats,
-        slot.state,
-        { team: slot.home, players: slot.homePlayers },
-        { team: slot.away, players: slot.awayPlayers },
-      );
-
-      if ((compMatch.phase === 'group' || compMatch.phase === 'league') && compMatch.homeTeamId && compMatch.awayTeamId) {
-        updatedStandings = applyResultToStandings(
-          updatedStandings,
-          compMatch.homeTeamId,
-          compMatch.awayTeamId,
-          slot.state.score.home,
-          slot.state.score.away,
+      if (walkoversWinner) {
+        updatedMatches = applyCorruptionDisqualification(updatedMatches, slot.compMatchId, walkoversWinner);
+        updatedDisqualifiedTeamIds = [...new Set([...updatedDisqualifiedTeamIds, walkoversWinner])];
+      } else {
+        updatedMatches = updatedMatches.map((m) =>
+          m.id === slot.compMatchId
+            ? {
+                ...m,
+                status: 'completed' as const,
+                result: {
+                  home: slot.state!.score.home,
+                  away: slot.state!.score.away,
+                  penalties: slot.state!.penaltyScore,
+                },
+                matchSummary: slotSummary,
+                simulatedAt: new Date().toISOString(),
+              }
+            : m,
         );
+      }
+
+      if (!isSlotWalkover) {
+        updatedPlayerStats = accumulateMatchStats(
+          updatedPlayerStats,
+          slot.state,
+          { team: slot.home, players: slot.homePlayers },
+          { team: slot.away, players: slot.awayPlayers },
+        );
+      }
+
+      // Schedule pending walkover for ref refusal reported this match
+      if (slotCorruption?.refusedByRef && slotCorruption.side !== 'both' && homeId2 && awayId2) {
+        const briberTeamId = slotCorruption.side === 'home' ? homeId2 : awayId2;
+        const nextMatch = current.matches
+          .filter((m) => m.status === 'pending' && (m.homeTeamId === briberTeamId || m.awayTeamId === briberTeamId) && m.round > compMatch.round)
+          .sort((a, b) => a.round - b.round)[0];
+        if (nextMatch) {
+          updatedPendingRefusalWalkover = { ...updatedPendingRefusalWalkover, [briberTeamId]: nextMatch.round };
+        }
+      }
+
+      if (!walkoversWinner) {
+        if ((compMatch.phase === 'group' || compMatch.phase === 'league') && homeId2 && awayId2) {
+          updatedStandings = applyResultToStandings(
+            updatedStandings,
+            homeId2,
+            awayId2,
+            slot.state.score.home,
+            slot.state.score.away,
+          );
+        } else if (compMatch.phase !== 'group' && compMatch.phase !== 'league') {
+          updatedMatches = advanceBracket(updatedMatches, slot.compMatchId);
+        }
       } else if (compMatch.phase !== 'group' && compMatch.phase !== 'league') {
         updatedMatches = advanceBracket(updatedMatches, slot.compMatchId);
       }
@@ -328,7 +388,6 @@ export default function MultiplexLive() {
     let updatedDopingSuspensions: import('@/lib/competition/injuries').Suspension[] = [];
     // Shared across all slots — prevents double-ban within same round
     const dopingBannedTeamIds = [...(current.disqualifiedTeamIds ?? [])];
-    let updatedDisqualifiedTeamIds = current.disqualifiedTeamIds ?? [];
     let updatedPendingRebound: Record<string, number> = { ...(current.pendingPresidencyRebound ?? {}) };
     const roundNum2 = current.currentRound;
 
@@ -400,11 +459,11 @@ export default function MultiplexLive() {
           && tidRank > dangerThreshold;
 
         const isWorldCup = !!(current.name && /coupe du monde|world cup/i.test(current.name));
-        const slotCorruption = slot.state!.corruption;
-        const slotCorruptionActive = (slotCorruption?.accepted ?? false) && slotCorruption?.side !== 'both';
+        const slotCorruption2 = slot.state!.corruption;
+        const slotCorruptionActive = (slotCorruption2?.accepted ?? false) && slotCorruption2?.side !== 'both' && !slotCorruption2?.refusedByRef;
         const slotCorruptionRevealed = slotCorruptionActive && isRevealed();
         const cheatingTeamId = slotCorruptionActive
-          ? (slotCorruption!.side === 'home' ? homeId : awayId)
+          ? (slotCorruption2!.side === 'home' ? homeId : awayId)
           : null;
         const { item: matchPress, dopingSuspension, teamDisqualified, refereeCorruption } = generateMatchPressItem({
           seed: `${baseSeed}-${tid}`,
@@ -698,7 +757,7 @@ export default function MultiplexLive() {
       updatedPressItems = [...updatedPressItems, ...generateCmfItems({ ...cmfBase, seed: `${current.id}-r${roundNum}-cmf-palmares`, phase: finalPh, moment: 'palmares', winner })];
     }
 
-    setPendingUpdate({
+    const nextState = {
       ...current,
       matches: updatedMatches,
       standings: updatedStandings,
@@ -713,8 +772,13 @@ export default function MultiplexLive() {
       injuries: updatedInjuries,
       suspensions: updatedSuspensions,
       pendingPresidencyRebound: Object.keys(updatedPendingRebound).length > 0 ? updatedPendingRebound : undefined,
+      pendingRefusalWalkover: Object.keys(updatedPendingRefusalWalkover).length > 0 ? updatedPendingRefusalWalkover : undefined,
       pendingDrameHommage: Object.keys(updatedPendingDrameHommage).length > 0 ? updatedPendingDrameHommage : undefined,
-    });
+    };
+    // Auto-persist to localStorage immediately — ensures currentRound advances
+    // even if the user navigates away before clicking "Enregistrer localement"
+    saveLocal(nextState);
+    setPendingUpdate(nextState);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allFinished]);
 

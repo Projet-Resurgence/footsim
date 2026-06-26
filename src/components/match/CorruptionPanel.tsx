@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import { generateRefOffer, acceptOffer, mergeBothDeals, getBothSidesMessage, type CorruptionOffer } from '@/lib/sim/corruption';
+import { generateRefOffer, acceptOffer, mergeBothDeals, getBothSidesMessage, refusedByRef, type CorruptionOffer } from '@/lib/sim/corruption';
 import type { CorruptionDeal } from '@/lib/sim/types';
 
 type Props = {
@@ -17,6 +17,7 @@ export function CorruptionPanel({ homeTeamName, awayTeamName, deal, onDeal }: Pr
   const [offer, setOffer] = useState<CorruptionOffer | null>(null);
   const [contacted, setContacted] = useState(false);
   const [refused, setRefused] = useState(false);
+  const [reportedToAuthorities, setReportedToAuthorities] = useState(false);
   const [homeState, setHomeState] = useState<SideDeal | null>(null);
   const [awayState, setAwayState] = useState<SideDeal | null>(null);
   const [bothMessage, setBothMessage] = useState<string | null>(null);
@@ -24,13 +25,21 @@ export function CorruptionPanel({ homeTeamName, awayTeamName, deal, onDeal }: Pr
   function contactRef() {
     const o = generateRefOffer();
     setContacted(true);
-    setOffer(o);
-    setRefused(!o);
+    if (!o) {
+      // Ref not approachable — check if he reports the approach
+      const reported = refusedByRef();
+      setRefused(true);
+      setReportedToAuthorities(reported);
+    } else {
+      setOffer(o);
+    }
   }
 
   function acceptSide(side: 'home' | 'away') {
     if (!offer) return;
-    const sideDeal = acceptOffer(side, offer);
+    // 20% chance ref refuses and reports despite seemingly accepting the approach
+    const refRefused = refusedByRef();
+    const sideDeal = { ...acceptOffer(side, offer), refusedByRef: refRefused };
     const nextHome = side === 'home' ? { accepted: true, deal: sideDeal } : homeState;
     const nextAway = side === 'away' ? { accepted: true, deal: sideDeal } : awayState;
     if (side === 'home') setHomeState({ accepted: true, deal: sideDeal });
@@ -41,6 +50,9 @@ export function CorruptionPanel({ homeTeamName, awayTeamName, deal, onDeal }: Pr
       onDeal(mergeBothDeals(nextHome.deal, nextAway.deal));
     } else {
       onDeal(sideDeal);
+    }
+    if (refRefused) {
+      setReportedToAuthorities(true);
     }
   }
 
@@ -71,6 +83,7 @@ export function CorruptionPanel({ homeTeamName, awayTeamName, deal, onDeal }: Pr
     setOffer(null);
     setContacted(false);
     setRefused(false);
+    setReportedToAuthorities(false);
     setHomeState(null);
     setAwayState(null);
     setBothMessage(null);
@@ -82,7 +95,7 @@ export function CorruptionPanel({ homeTeamName, awayTeamName, deal, onDeal }: Pr
       <div className="flex items-center justify-between">
         <div>
           <div className="text-sm font-medium text-danger">⚠ Corruption arbitrale</div>
-          <div className="text-xs text-muted mt-0.5">Risque de révélation post-match (10%). Disqualification.</div>
+          <div className="text-xs text-muted mt-0.5">30% révélation post-match → tapis vert. L'arbitre peut refuser et dénoncer (30%).</div>
         </div>
         <label className="flex items-center gap-2 cursor-pointer text-sm">
           <input type="checkbox" checked={enabled} onChange={(e) => toggle(e.target.checked)} className="h-4 w-4" />
@@ -96,9 +109,23 @@ export function CorruptionPanel({ homeTeamName, awayTeamName, deal, onDeal }: Pr
         </Button>
       )}
 
-      {enabled && contacted && refused && (
+      {enabled && contacted && refused && !reportedToAuthorities && (
         <div className="rounded-md bg-surface border border-border p-3 text-sm text-muted italic">
           L'arbitre n'est pas intéressé pour ce match.
+        </div>
+      )}
+
+      {enabled && contacted && refused && reportedToAuthorities && (
+        <div className="rounded-md bg-danger/10 border border-danger/40 p-3 space-y-1">
+          <div className="text-sm font-medium text-danger">⚠ L'arbitre a refusé et dénoncé</div>
+          <div className="text-xs text-muted">Une enquête CMF est ouverte. Le prochain match de votre équipe risque un tapis vert (50%).</div>
+        </div>
+      )}
+
+      {enabled && deal?.refusedByRef && (
+        <div className="rounded-md bg-danger/10 border border-danger/40 p-3 space-y-1">
+          <div className="text-sm font-medium text-danger">⚠ Enquête CMF en cours</div>
+          <div className="text-xs text-muted">L'arbitre a accepté l'argent puis dénoncé. Le prochain match risque un tapis vert (50%).</div>
         </div>
       )}
 

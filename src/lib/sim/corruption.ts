@@ -39,11 +39,9 @@ function pick<T>(arr: T[]): T {
 export function generateRefOffer(): CorruptionOffer | null {
   if (Math.random() > 0.70) return null;
   const amount = Math.round((0.5 + Math.random() * 9.5) * 10) / 10; // 0.5M–10M
-  // Higher bribe = more reliable. Bumped floor to 0.60 so honored is more common than not.
-  const honorProb = 0.60 + (amount / 10) * 0.35; // 0.60–0.95
   return {
     amount,
-    honorProb,
+    honorProb: 1, // ref always honors if accepted — revelation is post-match (30%)
     message: pick(REF_MESSAGES),
   };
 }
@@ -63,7 +61,7 @@ export function acceptOffer(side: 'home' | 'away', offer: CorruptionOffer): Corr
     side,
     bribe: offer.amount,
     accepted: true,
-    honored: Math.random() < offer.honorProb,
+    honored: true, // always honored — revelation handled post-match (30%)
   };
 }
 
@@ -81,7 +79,15 @@ export function mergeBothDeals(home: CorruptionDeal, away: CorruptionDeal): Corr
   };
 }
 
-/** 10% chance of post-match revelation. */
+/** 30% chance of post-match revelation. */
 export function isRevealed(): boolean {
-  return Math.random() < 0.10;
+  return Math.random() < 0.30;
+}
+
+/**
+ * 30% chance the referee refuses the approach and reports it before the match.
+ * When true, the match still plays but the next match of the bribing team risks a walkover.
+ */
+export function refusedByRef(): boolean {
+  return Math.random() < 0.30;
 }

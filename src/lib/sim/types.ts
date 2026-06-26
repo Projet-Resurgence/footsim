@@ -77,6 +77,9 @@ export type CorruptionDeal = {
   /** Referee actually honors it in-game (can renege).
    *  When side='both': ref plays normally (cancels out). When side=one: biases against opp. */
   honored: boolean;
+  /** Referee refused the approach before the match and reported it to CMF.
+   *  Match still plays normally, but next match of bribing team has 50% walkover risk. */
+  refusedByRef?: boolean;
 };
 
 export type MatchInput = {

@@ -265,8 +265,18 @@ export default function CompetitionMatchLive() {
       const isFinalMatch = compMatch.phase === 'F';
       setIsFinal(isFinalMatch);
 
+      // Check if this match has a pending walkover from a prior ref refusal (50% chance)
+      const cheatingTeamIdFromRefusal = (() => {
+        const pending = snap!.pendingRefusalWalkover ?? {};
+        for (const [tid, round] of Object.entries(pending)) {
+          if (round === compMatch.round && (compMatch.homeTeamId === tid || compMatch.awayTeamId === tid)) return tid;
+        }
+        return null;
+      })();
+      const refusalWalkoverApplied = cheatingTeamIdFromRefusal !== null && Math.random() < 0.5;
+
       // Check corruption revelation before applying result
-      const corruptionActive = (matchState!.corruption?.accepted ?? false) && matchState!.corruption?.side !== 'both';
+      const corruptionActive = (matchState!.corruption?.accepted ?? false) && matchState!.corruption?.side !== 'both' && !matchState!.corruption?.refusedByRef;
       const revealed = corruptionActive && isRevealed();
 
       const motmResult = computeMotm(
@@ -278,28 +288,36 @@ export default function CompetitionMatchLive() {
       const allPlayers = [...matchInput!.home.players, ...matchInput!.away.players];
       const homeGoalCards = extractGoalsAndCards(ms.events, 'home', allPlayers);
       const awayGoalCards = extractGoalsAndCards(ms.events, 'away', allPlayers);
+      const isWalkover = revealed || refusalWalkoverApplied;
+      const zeroSide = { home: 0, away: 0 };
       const matchSummary: MatchSummary = {
-        motm: motmResult ?? undefined,
-        stats: {
+        motm: isWalkover ? undefined : (motmResult ?? undefined),
+        stats: isWalkover ? {
+          shots: zeroSide, shotsOnTarget: zeroSide, saves: zeroSide, passes: zeroSide,
+          fouls: zeroSide, corners: zeroSide, offsides: zeroSide, freekicks: zeroSide,
+          dribbles: zeroSide, clearances: zeroSide, keyPasses: zeroSide,
+          possession: zeroSide,
+          yellowCards: zeroSide, redCards: zeroSide,
+        } : {
           shots: ms.shots,
           shotsOnTarget: ms.shotsOnTarget,
-          saves: ms.saves ?? { home: 0, away: 0 },
-          passes: ms.passes ?? { home: 0, away: 0 },
+          saves: ms.saves ?? zeroSide,
+          passes: ms.passes ?? zeroSide,
           fouls: ms.fouls,
-          corners: ms.corners ?? { home: 0, away: 0 },
-          offsides: ms.offsides ?? { home: 0, away: 0 },
-          freekicks: ms.freekicks ?? { home: 0, away: 0 },
-          dribbles: ms.dribbles ?? { home: 0, away: 0 },
-          clearances: ms.clearances ?? { home: 0, away: 0 },
-          keyPasses: ms.keyPasses ?? { home: 0, away: 0 },
+          corners: ms.corners ?? zeroSide,
+          offsides: ms.offsides ?? zeroSide,
+          freekicks: ms.freekicks ?? zeroSide,
+          dribbles: ms.dribbles ?? zeroSide,
+          clearances: ms.clearances ?? zeroSide,
+          keyPasses: ms.keyPasses ?? zeroSide,
           possession: ms.possession,
           yellowCards: { home: ms.cards.home.yellow.length, away: ms.cards.away.yellow.length },
           redCards: { home: ms.cards.home.red.length, away: ms.cards.away.red.length },
         },
-        homeGoals: homeGoalCards.goals.length ? homeGoalCards.goals : undefined,
-        awayGoals: awayGoalCards.goals.length ? awayGoalCards.goals : undefined,
-        homeCards: homeGoalCards.cards.length ? homeGoalCards.cards : undefined,
-        awayCards: awayGoalCards.cards.length ? awayGoalCards.cards : undefined,
+        homeGoals: isWalkover ? undefined : (homeGoalCards.goals.length ? homeGoalCards.goals : undefined),
+        awayGoals: isWalkover ? undefined : (awayGoalCards.goals.length ? awayGoalCards.goals : undefined),
+        homeCards: isWalkover ? undefined : (homeGoalCards.cards.length ? homeGoalCards.cards : undefined),
+        awayCards: isWalkover ? undefined : (awayGoalCards.cards.length ? awayGoalCards.cards : undefined),
       };
 
       let updatedMatches = snap!.matches.map((m) =>
@@ -335,9 +353,22 @@ export default function CompetitionMatchLive() {
       }
 
       let disqualifiedTeamIds = snap!.disqualifiedTeamIds ?? [];
+      let updatedPendingRefusalWalkover: Record<string, number> = { ...(snap!.pendingRefusalWalkover ?? {}) };
+
+      // Remove consumed pending walkover entry
+      if (cheatingTeamIdFromRefusal) {
+        const { [cheatingTeamIdFromRefusal]: _, ...rest } = updatedPendingRefusalWalkover;
+        updatedPendingRefusalWalkover = rest;
+      }
 
       let corruptionRevealedThisMatch = false;
-      if (revealed && compMatch.homeTeamId && compMatch.awayTeamId) {
+      // Walkover from ref refusal (enquête CMF, 50% prouvé)
+      if (refusalWalkoverApplied && cheatingTeamIdFromRefusal && compMatch.homeTeamId && compMatch.awayTeamId) {
+        updatedMatches = applyCorruptionDisqualification(updatedMatches, matchId!, cheatingTeamIdFromRefusal);
+        disqualifiedTeamIds = [...new Set([...disqualifiedTeamIds, cheatingTeamIdFromRefusal])];
+        setCorruptionRevealed(true);
+        corruptionRevealedThisMatch = true;
+      } else if (revealed && compMatch.homeTeamId && compMatch.awayTeamId) {
         // Identify cheating team
         const cheatingTeamId = matchState!.corruption!.side === 'home'
           ? compMatch.homeTeamId
@@ -348,6 +379,18 @@ export default function CompetitionMatchLive() {
         disqualifiedTeamIds = [...new Set([...disqualifiedTeamIds, cheatingTeamId])];
         setCorruptionRevealed(true);
         corruptionRevealedThisMatch = true;
+      }
+
+      // If ref refused and reported this match, schedule walkover risk for next match
+      if (matchState!.corruption?.refusedByRef && matchState!.corruption.side !== 'both' && compMatch.homeTeamId && compMatch.awayTeamId) {
+        const briberTeamId = matchState!.corruption.side === 'home' ? compMatch.homeTeamId : compMatch.awayTeamId;
+        // Find next match of this team after current round
+        const nextMatch = snap!.matches
+          .filter((m) => m.status === 'pending' && (m.homeTeamId === briberTeamId || m.awayTeamId === briberTeamId) && m.round > compMatch.round)
+          .sort((a, b) => a.round - b.round)[0];
+        if (nextMatch) {
+          updatedPendingRefusalWalkover = { ...updatedPendingRefusalWalkover, [briberTeamId]: nextMatch.round };
+        }
       }
 
       if (compMatch.phase !== 'group' && compMatch.phase !== 'league') {
@@ -832,6 +875,7 @@ export default function CompetitionMatchLive() {
         suspensions: updatedSuspensions,
         pendingPresidencyRebound: Object.keys(updatedPendingRebound).length > 0 ? updatedPendingRebound : undefined,
         pendingDrameHommage: Object.keys(updatedPendingDrameHommage).length > 0 ? updatedPendingDrameHommage : undefined,
+        pendingRefusalWalkover: Object.keys(updatedPendingRefusalWalkover).length > 0 ? updatedPendingRefusalWalkover : undefined,
       };
 
       // Résultat appliqué en mémoire + localStorage — sauvegarde GitHub manuelle
