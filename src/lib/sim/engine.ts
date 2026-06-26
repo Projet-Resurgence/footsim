@@ -573,11 +573,14 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
 
   const wShot     = 0.08 * (0.6 + pAttack) * myMods.shotFreqMult;
   const wFoul     = 0.08 * oppMods.foulRateMult;
-  const wCorner   = 0.04;
+  // direct/long-ball styles generate more set-piece situations → more corners
+  const wCorner   = 0.04 * (myMods.shotFreqMult > 1 ? 1 + (myMods.shotFreqMult - 1) * 0.8 : 1.0);
   const wOffside  = state.rules.noOffside ? 0 : 0.03;
-  const wKeyPass  = 0.18;
+  // possession/tiki-taka/pressing styles create more key passes
+  const wKeyPass  = 0.18 * myMods.midfieldMult;
   const wFreeKick = 0.03;
-  const wDribble  = 0.28 * pAttack;
+  // contre-attaque/direct/long-ball styles favour direct runs over build-up
+  const wDribble  = 0.28 * pAttack * Math.max(1, myMods.attackMult);
   const wClear    = 0.03 * (1 - pAttack);
   const total = wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick + wDribble + wClear;
 

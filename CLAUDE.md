@@ -108,12 +108,17 @@ Called once per side before kick-off. Takes `players[]`, `formation`, optional `
 
 ### Tactic styles (`TacticMods`)
 
-| Style | shotFreqMult | midfieldMult | attackMult | foulRateMult |
-|---|---|---|---|---|
-| possession | 0.88 | 1.12 | 1.00 | 1.00 |
-| contre-attaque | 1.08 | 0.92 | 1.10 | 1.00 |
-| direct | 1.18 | 1.00 | 1.00 | 1.00 |
-| pressing | 1.00 | 1.15 | 1.00 | 1.12 |
+| Style | shotFreqMult | midfieldMult | attackMult | foulRateMult | defenseMult |
+|---|---|---|---|---|---|
+| possession | 0.88 | 1.12 | 1.00 | 1.00 | 1.00 |
+| contre-attaque | 1.08 | 0.92 | 1.10 | 1.00 | 1.00 |
+| direct | 1.18 | 1.00 | 1.00 | 1.00 | 1.00 |
+| pressing | 1.00 | 1.15 | 1.00 | 1.12 | 1.00 |
+| ultra-defensif | 0.65 | 0.85 | 0.75 | 1.05 | 1.20 |
+| gegenpressing | 1.10 | 1.18 | 1.05 | 1.20 | 1.00 |
+| tiki-taka | 0.82 | 1.20 | 0.95 | 0.90 | 1.05 |
+| long-ball | 1.15 | 0.80 | 1.15 | 1.05 | 0.95 |
+| chaos | 1.30 | 0.95 | 1.10 | 1.35 | 0.90 |
 
 ### Tick loop (`sim/engine.ts → tick()`)
 
@@ -132,19 +137,19 @@ Both `halftime` and `extraTimeHalfTime` stall the loop until UI sends `resume`.
 2. **Possession roll**: `P(home) = homeMid / (homeMid + awayMid)` where each side's mid is multiplied by `0.93^(reds)`.
 3. **Event roll** — weighted draw over:
 
-| Event | Base weight |
+| Event | Weight formula |
 |---|---|
 | shot | `0.08 × (0.6 + pAttack) × shotFreqMult` |
 | foul | `0.08 × opp.foulRateMult` |
-| corner | 0.04 |
+| corner | `0.04 × (1 + (shotFreqMult−1)×0.8)` if shotFreqMult>1, else `0.04` |
 | offside | 0.03 (0 if `noOffside` rule) |
-| keyPass | 0.10 |
+| keyPass | `0.18 × midfieldMult` |
 | freeKick | 0.03 |
-| dribble | `0.04 × pAttack` |
+| dribble | `0.28 × pAttack × max(1, attackMult)` |
 | clearance | `0.03 × (1 − pAttack)` |
 | (nothing) | remainder |
 
-where `pAttack = myAttack / (myAttack + oppDefense)`, both multiplied by `0.93^reds`.
+where `pAttack = myAttack / (myAttack + oppDefense)`, both multiplied by `0.93^reds`. Tactic mods now apply to `keyPass`, `dribble`, and `corner` weights — styles with high `midfieldMult` generate more key passes, styles with `shotFreqMult > 1` generate more corners, styles with `attackMult > 1` generate more direct runs.
 
 ### Shot resolution
 

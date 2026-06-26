@@ -115,19 +115,20 @@ function MoteurTab() {
         <Table
           headers={['Événement', 'Poids de base', 'Modificateurs']}
           rows={[
-            ['Tir', '~8 %', '× (0,6 + pAttaque) × style × coachShotFreqMult'],
-            ['Faute', '~8 %', '× style adverse × coachFoulRateMult'],
-            ['Corner', '4 %', '—'],
+            ['Tir', '~8 %', '× (0,6 + pAttaque) × shotFreqMult × coachShotFreqMult'],
+            ['Faute', '~8 %', '× foulRateMult adverse × coachFoulRateMult'],
+            ['Corner', '4 %', '× (1 + (shotFreqMult−1)×0,8) si shotFreqMult > 1 — jeu direct/long ball/chaos génèrent plus de corners'],
             ['Hors-jeu', '3 %', '0 si règle désactivée'],
-            ['Passe clé', '18 %', '35 % de chance de déclencher un tir en chaîne'],
+            ['Passe clé', '18 %', '× midfieldMult — possession/tiki-taka/pressing génèrent plus de passes clés. 35 % → tir en chaîne'],
             ['Coup franc', '3 %', '30 % → tir (× 0,75)'],
-            ['Dribble', '~4 %', '40 % → tir (× 1,05), proportionnel à pAttaque'],
+            ['Dribble', '~28 %', '× pAttaque × max(1, attackMult) — contre-attaque/long ball forcent plus de courses directes. 40 % → tir (× 1,05)'],
             ['Dégagement', '~3 %', 'Proportionnel à (1 − pAttaque)'],
           ]}
         />
         <p className="mt-3 text-sm text-muted">
           <em>pAttaque</em> = attaque possédante ÷ (attaque + défense adverse). Les passes clés sont
-          attribuées aux milieux (passing + firstTouch élevés).
+          attribuées aux milieux (passing + firstTouch élevés). Les mods tactiques s'appliquent désormais
+          aussi sur les corners, passes clés et dribbles — pas seulement sur les tirs.
         </p>
       </Section>
 
@@ -155,20 +156,28 @@ function MoteurTab() {
       </Section>
 
       <Section title="5. Styles tactiques">
+        <p className="text-sm text-muted mb-3">
+          Les mods s'appliquent à la fois sur les ratings pré-calculés (attaque/milieu/défense) <em>et</em> sur
+          les poids d'événements à chaque minute — un style offensif génère plus de tirs, plus de dribbles
+          et plus de corners, pas seulement un rating d'attaque plus élevé.
+        </p>
         <Table
-          headers={['Style', 'Tirs', 'Milieu', 'Attaque', 'Fautes adverses']}
+          headers={['Style', 'Tirs', 'Corners', 'Passes clés', 'Dribbles', 'Milieu', 'Attaque', 'Défense', 'Fautes adverses']}
           rows={[
-            ['Possession', '−12 %', '+12 %', '=', '='],
-            ['Contre-attaque', '+8 %', '−8 %', '+10 %', '='],
-            ['Jeu direct', '+18 %', '=', '=', '='],
-            ['Pressing', '=', '+15 %', '=', '+12 %'],
-            ['Ultra-défensif', '−35 %', '−15 %', '−25 %', '+5 %'],
-            ['Gegenpressing', '+10 %', '+18 %', '+5 %', '+20 %'],
-            ['Tiki-taka', '−18 %', '+20 %', '−5 %', '−10 %'],
-            ['Long ball', '+15 %', '−20 %', '+15 %', '+5 %'],
-            ['Chaos', '+30 %', '−5 %', '+10 %', '+35 %'],
+            ['Possession',     '−12 %', '=',     '+12 %', '=',     '+12 %', '=',     '=',     '='],
+            ['Contre-attaque', '+8 %',  '=',     '−8 %',  '+10 %', '−8 %',  '+10 %', '=',     '='],
+            ['Jeu direct',     '+18 %', '+14 %', '=',     '=',     '=',     '=',     '=',     '='],
+            ['Pressing',       '=',     '=',     '+15 %', '=',     '+15 %', '=',     '=',     '+12 %'],
+            ['Ultra-défensif', '−35 %', '=',     '−15 %', '=',     '−15 %', '−25 %', '+20 %', '+5 %'],
+            ['Gegenpressing',  '+10 %', '+8 %',  '+18 %', '+5 %',  '+18 %', '+5 %',  '=',     '+20 %'],
+            ['Tiki-taka',      '−18 %', '=',     '+20 %', '=',     '+20 %', '−5 %',  '+5 %',  '−10 %'],
+            ['Long ball',      '+15 %', '+12 %', '−20 %', '+15 %', '−20 %', '+15 %', '−5 %',  '+5 %'],
+            ['Chaos',          '+30 %', '+24 %', '−5 %',  '+10 %', '−5 %',  '+10 %', '−10 %', '+35 %'],
           ]}
         />
+        <p className="mt-3 text-sm text-muted">
+          Corners = dérivés de shotFreqMult (même formule). Passes clés = dérivées de midfieldMult. Dribbles = dérivés de attackMult (uniquement si {'>'} 1).
+        </p>
       </Section>
 
       <Section title="6. Cartons, expulsions et entraîneur">
