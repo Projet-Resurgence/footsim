@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION, POSITIVE_TRAITS, NEGATIVE_TRAITS } from '@/lib/gen/coach';
 import { POSITIONS, POSITION_LABEL, POSITION_FULL } from '@/lib/types';
 
-type Tab = 'moteur' | 'entraineurs' | 'moral' | 'notes' | 'presse' | 'postes' | 'statistiques';
+type Tab = 'moteur' | 'entraineurs' | 'moral' | 'notes' | 'presse' | 'postes' | 'statistiques' | 'matchups';
 
 const TAB_LABEL: Record<Tab, string> = {
   moteur: 'Moteur de jeu',
@@ -12,6 +12,7 @@ const TAB_LABEL: Record<Tab, string> = {
   presse: 'Presse',
   postes: 'Postes',
   statistiques: 'Statistiques de match',
+  matchups: 'Matchups tactiques',
 };
 
 export default function Simulation() {
@@ -25,7 +26,7 @@ export default function Simulation() {
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-border">
-        {(['moteur', 'entraineurs', 'moral', 'notes', 'presse', 'postes', 'statistiques'] as Tab[]).map((t) => (
+        {(['moteur', 'entraineurs', 'moral', 'notes', 'presse', 'postes', 'statistiques', 'matchups'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -43,6 +44,7 @@ export default function Simulation() {
       {tab === 'presse' && <PresseTab />}
       {tab === 'postes' && <PostesTab />}
       {tab === 'statistiques' && <StatistiquesTab />}
+      {tab === 'matchups' && <MatchupsTab />}
     </div>
   );
 }
@@ -696,6 +698,130 @@ function PostesTab() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function MatchupsTab() {
+  return (
+    <div className="space-y-10">
+      <Section title="Principe général">
+        <p>
+          Chaque match applique des <strong>modificateurs croisés</strong> entre les deux équipes,
+          calculés une seule fois avant le coup d'envoi. Ces ajustements s'appliquent
+          <em> après</em> le calcul des ratings (overall, style tactique, moral, coach) et reflètent
+          l'avantage ou le désavantage structurel qu'une équipe a face à l'autre.
+        </p>
+        <p className="text-muted">
+          Deux couches indépendantes, multipliées ensemble. Amplitude totale ±5–10 % par couche,
+          ±20 % maximum combiné — assez visible pour compter, pas assez fort pour écraser l'écart de niveau.
+        </p>
+      </Section>
+
+      <Section title="Couche 1 — Formation vs Formation">
+        <p className="text-sm text-muted mb-3">
+          Chaque formation est classée dans un profil structurel selon le nombre de défenseurs et milieux alignés.
+        </p>
+        <Table
+          headers={['Profil', 'Formations concernées', 'Caractéristique']}
+          rows={[
+            ['Pressing haut', '4-3-3 · 3-4-3 · 4-2-3-1', 'Ligne haute, pression immédiate — espaces derrière'],
+            ['Milieu chargé', '3-5-2 · 4-3-2-1 · 3-6-1', 'Domination du milieu — lent à verticaliser'],
+            ['Bloc défensif', '5-3-2 · 5-4-1 · 4-5-1 · 3-4-1-2', 'Organisation basse — peu de transition rapide'],
+            ['Équilibré', '4-4-2 · 4-4-1-1 · 4-1-4-1', 'Ni avantage ni désavantage particulier'],
+          ]}
+        />
+        <p className="mt-3 text-sm text-muted mb-2">Matrice des avantages :</p>
+        <Table
+          headers={['Mon profil', 'Contre Pressing haut', 'Contre Milieu chargé', 'Contre Bloc défensif', 'Contre Équilibré']}
+          rows={[
+            ['Pressing haut',  '=',                    '−7 % att, −5 % def',   '+8 % att → contre',    '+5 % att'],
+            ['Milieu chargé',  '+5 % att, +7 % mid',   '=',                    '+4 % att, +6 % mid',   '+2 % att, +4 % mid'],
+            ['Bloc défensif',  '+6 % att (espaces)',    '−4 % att, −4 % mid',   '=',                    '−2 % att, +2 % def'],
+            ['Équilibré',      '−3 % att, +3 % def',   '−4 % att, +2 % def',   '+2 % att, +2 % def',   '='],
+          ]}
+        />
+        <div className="mt-3 rounded-lg border border-border bg-surface/50 px-4 py-3 text-sm text-muted">
+          <strong>Exemple :</strong> 5-4-1 (bloc défensif) vs 4-3-3 (pressing haut) — le bloc récupère +6 % en attaque
+          car la ligne haute laisse de l'espace derrière, mais le pressing haut gagne +8 % en défense car il ferme vite les transitions.
+        </div>
+      </Section>
+
+      <Section title="Couche 2 — Style tactique vs Style tactique">
+        <p className="text-sm text-muted mb-3">
+          Les styles nommés sont regroupés en profils de jeu pour calculer les avantages.
+        </p>
+        <Table
+          headers={['Profil de jeu', 'Styles concernés']}
+          rows={[
+            ['Construction-possession', 'Possession · Tiki-taka'],
+            ['Attaque directe', 'Contre-attaque · Jeu direct · Long ball'],
+            ['Haute intensité', 'Pressing · Gegenpressing'],
+            ['Défensif', 'Ultra-défensif'],
+            ['Chaos', 'Chaos'],
+          ]}
+        />
+        <p className="mt-4 text-sm font-medium mb-2">Logique des matchups :</p>
+        <div className="space-y-2">
+          {[
+            { from: 'Construction-possession', beats: 'Défensif', why: 'La possession étrangle progressivement le bloc — le défensif manque d\'options pour sortir' },
+            { from: 'Construction-possession', loses: 'Attaque directe', why: 'Les longs ballons exploitent les espaces derrière la ligne haute' },
+            { from: 'Construction-possession', loses: 'Chaos', why: 'Le jeu anarchique désorganise les circuits de passe courts' },
+            { from: 'Attaque directe', beats: 'Construction-possession', why: 'Exploite l\'espace laissé par la montée de ligne' },
+            { from: 'Attaque directe', loses: 'Haute intensité', why: 'La récupération haute intercepte les longs ballons avant qu\'ils n\'arrivent' },
+            { from: 'Attaque directe', loses: 'Défensif', why: 'Le bloc organisé ferme tous les couloirs directs' },
+            { from: 'Haute intensité', beats: 'Attaque directe', why: 'Récupère avant que le ballon ne parte — coupe les transitions' },
+            { from: 'Haute intensité', loses: 'Construction-possession', why: 'Les triangles courts absorbent le press et épuisent les pressueurs' },
+            { from: 'Défensif', beats: 'Attaque directe', why: 'Bloc bas absorbe les centres et longs ballons sans se déplacer' },
+            { from: 'Défensif', loses: 'Construction-possession', why: 'La possession étouffe — pas d\'espace pour sortir et contre-attaquer' },
+            { from: 'Chaos', beats: 'Construction-possession', why: 'Le pressing anarchique désorganise les automatismes de passe' },
+            { from: 'Chaos', loses: 'Défensif', why: 'L\'organisation basse résiste au désordre adverse' },
+          ].map((r, i) => (
+            <div key={i} className={`flex gap-3 rounded-lg border px-4 py-2 text-sm ${r.beats ? 'border-green-500/20 bg-green-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+              <span className={`shrink-0 font-semibold ${r.beats ? 'text-green-400' : 'text-danger'}`}>
+                {r.from}
+              </span>
+              <span className="text-muted/60 shrink-0">{r.beats ? '▶ bat' : '▶ perd contre'}</span>
+              <span className="font-medium shrink-0">{r.beats ?? r.loses}</span>
+              <span className="text-muted text-xs self-center">— {r.why}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 rounded-lg border border-border bg-surface/50 px-4 py-3 text-sm text-muted">
+          <strong>Amplitude :</strong> chaque avantage style donne ±4 à +8 % sur l'attaque, la défense ou le milieu.
+          Deux profils identiques (possession vs possession) = pas d'effet.
+        </div>
+      </Section>
+
+      <Section title="Styles personnalisés">
+        <p className="text-sm text-muted mb-3">
+          Les styles créés via l'éditeur custom n'ont pas de nom prédéfini. Le moteur dérive automatiquement
+          un profil de jeu à partir des valeurs de leurs modificateurs :
+        </p>
+        <Table
+          headers={['Condition (par ordre de priorité)', 'Profil dérivé']}
+          rows={[
+            ['defenseMult ≥ 1,12', 'Défensif'],
+            ['foulRateMult ≥ 1,15 ET midfieldMult ≥ 1,10', 'Haute intensité'],
+            ['midfieldMult ≥ 1,12', 'Construction-possession'],
+            ['shotFreqMult ≥ 1,15 OU attackMult ≥ 1,10', 'Attaque directe'],
+            ['foulRateMult ≥ 1,25 OU shotFreqMult ≥ 1,25', 'Chaos'],
+            ['Aucune condition atteinte', 'Neutre — pas de matchup style appliqué'],
+          ]}
+        />
+        <p className="mt-3 text-sm text-muted">
+          Une fois le profil dérivé, les mêmes règles de matchup s'appliquent que pour un style nommé.
+          Un style custom "neutre" (tous mods proches de 1) ne reçoit ni avantage ni désavantage tactique.
+        </p>
+      </Section>
+
+      <Section title="Quand ces ajustements s'appliquent-ils ?">
+        <p className="text-sm text-muted">
+          Les matchups sont calculés une seule fois dans le worker, immédiatement après le pré-calcul
+          des ratings (avant le coup d'envoi). Si l'admin change de tactique en cours de match via
+          «&nbsp;Mettre à jour la tactique&nbsp;», les matchups sont recalculés avec les nouvelles données.
+        </p>
+      </Section>
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, Fragment } from 'react';
 import { Link } from 'react-router-dom';
-import { AccountMenu } from '@/components/layout/AccountMenu';
 import { SkeletonCard, SkeletonRow } from '@/components/ui/Skeleton';
 import { toast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
@@ -282,24 +281,24 @@ export default function MyTeam() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center px-6">
+      <div className="flex flex-col items-center justify-center py-20">
         <div className="w-full max-w-2xl space-y-4">
           <SkeletonCard lines={2} />
           {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
         </div>
-      </main>
+      </div>
     );
   }
 
   if (!data) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center">
+      <div className="flex flex-col items-center justify-center gap-6 py-20 text-center">
         <div className="font-display text-2xl">Aucune équipe affiliée</div>
         <p className="text-muted text-sm max-w-sm">
           Ton identifiant Discord n'est associé à aucune équipe. Contacte l'administrateur.
         </p>
         <Link to="/" className="text-sm text-accent underline">Retour à l'accueil</Link>
-      </main>
+      </div>
     );
   }
 
@@ -307,12 +306,7 @@ export default function MyTeam() {
 
   return (
     <>
-    <main className="mx-auto max-w-4xl px-6 py-8 space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <Link to="/" className="text-sm text-muted hover:text-text">← Retour</Link>
-        <AccountMenu />
-      </div>
+    <div className="max-w-4xl space-y-8">
       <div className="flex items-center gap-4">
         <img src={team.flag} alt="" className="h-16 w-16 object-cover rounded" />
         <div className="flex-1">
@@ -559,7 +553,7 @@ export default function MyTeam() {
 
       {/* Simulation (tous sous-onglets : moteur, entraineurs, moral, notes, presse) */}
       {tab === 'simulation' && <Simulation />}
-    </main>
+    </div>
 
     {viewingPlayer && (
       <PlayerView player={viewingPlayer} onClose={() => setViewingPlayer(null)} />

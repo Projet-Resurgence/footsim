@@ -93,9 +93,12 @@ export const router = createBrowserRouter(
       path: '/my-team',
       element: (
         <RequireAuth>
-          <S><MyTeam /></S>
+          <DashboardLayout />
         </RequireAuth>
       ),
+      children: [
+        { index: true, element: <S><MyTeam /></S> },
+      ],
     },
     {
       path: '/competition-view/:id',

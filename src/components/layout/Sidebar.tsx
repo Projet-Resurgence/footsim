@@ -4,10 +4,11 @@ import { useSession } from '@/stores/session';
 
 type NavItem = { to: string; label: string; end?: boolean; adminOnly?: boolean };
 const items: NavItem[] = [
-  { to: '/dashboard', label: "Vue d'ensemble", end: true },
-  { to: '/dashboard/teams', label: 'Équipes' },
-  { to: '/dashboard/competitions', label: 'Compétitions' },
-  { to: '/match', label: 'Matchs' },
+  { to: '/my-team', label: 'Mon équipe', end: true },
+  { to: '/dashboard', label: "Vue d'ensemble", end: true, adminOnly: true },
+  { to: '/dashboard/teams', label: 'Équipes', adminOnly: true },
+  { to: '/dashboard/competitions', label: 'Compétitions', adminOnly: true },
+  { to: '/match', label: 'Matchs', adminOnly: true },
   { to: '/dashboard/classements-cmf', label: 'Classements CMF' },
   { to: '/dashboard/simulation', label: 'Simulation' },
 ];
