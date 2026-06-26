@@ -112,15 +112,26 @@ export const useCompetition = create<State>((set, get) => ({
 
   setCurrent(c) {
     if (c) {
-      lsWrite(c);
-      set({ current: c, dirty: true });
+      const storeCurrent = get().current;
+      const existingRound = storeCurrent?.id === c.id ? storeCurrent.currentRound : (lsRead(c.id)?.currentRound ?? 0);
+      if (existingRound <= c.currentRound) {
+        lsWrite(c);
+        set({ current: c, dirty: true });
+      } else {
+        // Stale setCurrent (older round) — update metadata only, never regress round/matches
+        set({ dirty: true });
+      }
     } else {
       set({ current: null, dirty: false });
     }
   },
 
   saveLocal(competition) {
-    lsWrite(competition);
-    set({ current: competition, dirty: true });
+    const storeCurrent = get().current;
+    const existingRound = storeCurrent?.id === competition.id ? storeCurrent.currentRound : (lsRead(competition.id)?.currentRound ?? 0);
+    if (existingRound <= competition.currentRound) {
+      lsWrite(competition);
+      set({ current: competition, dirty: true });
+    }
   },
 }));

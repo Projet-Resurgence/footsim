@@ -18,7 +18,7 @@ async function readIndex(token: string | null): Promise<{ data: CompetitionSumma
 }
 
 async function writeIndex(data: CompetitionSummary[], token: string, message: string): Promise<void> {
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const result = await writeJson({
         path: INDEX_PATH,
@@ -32,8 +32,9 @@ async function writeIndex(data: CompetitionSummary[], token: string, message: st
       return;
     } catch (err) {
       const msg = String(err);
-      if ((msg.includes('409') || msg.includes('422')) && attempt < 3) {
-        // SHA stale — re-fetch and retry
+      if ((msg.includes('409') || msg.includes('422')) && attempt < 4) {
+        // SHA stale or replication lag — wait then re-fetch
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
         const fresh = await readJson<CompetitionSummary[]>(INDEX_PATH, token);
         cachedIndexSha = fresh?.sha;
         cachedIndexData = fresh?.data;

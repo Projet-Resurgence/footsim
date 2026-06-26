@@ -86,8 +86,9 @@ export async function writeJson(opts: WriteOptions): Promise<{ sha: string }> {
 
   let res = await attempt(opts.sha);
 
-  // 409 = SHA stale — re-read fresh SHA and retry once
+  // 409 = SHA stale or replication lag — wait, re-read fresh SHA, retry once
   if (res.status === 409 || res.status === 422) {
+    await new Promise((r) => setTimeout(r, 500));
     const fresh = await readJson<unknown>(opts.path, opts.token);
     res = await attempt(fresh?.sha);
   }
