@@ -7,8 +7,8 @@ import { toast } from '@/components/ui/Toast';
 import { useCompetition } from '@/stores/competition';
 import { useCredentials } from '@/stores/credentials';
 import { useSession } from '@/stores/session';
-import { FORMAT_LABEL } from '@/lib/competition/types';
-import type { CompetitionSummary } from '@/lib/competition/types';
+import { FORMAT_LABEL, COMPETITION_KIND_LABEL } from '@/lib/competition/types';
+import type { CompetitionSummary, CompetitionKind } from '@/lib/competition/types';
 import { loadCompetition, saveCompetition } from '@/lib/github/competitions';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -34,6 +34,7 @@ export default function Competitions() {
   const [recovering, setRecovering] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'setup' | 'ongoing' | 'completed'>('all');
+  const [kindFilter, setKindFilter] = useState<'all' | CompetitionKind>('all');
 
   async function handleRecover() {
     if (!pat || !recoverId.trim()) return;
@@ -64,16 +65,22 @@ export default function Competitions() {
   const filtered = summaries.filter((s) => {
     const matchSearch = !search.trim() || s.name.toLowerCase().includes(search.trim().toLowerCase());
     const matchStatus = statusFilter === 'all' || s.status === statusFilter;
-    return matchSearch && matchStatus;
+    const matchKind = kindFilter === 'all' || (s.kind ?? 'officielle') === kindFilter;
+    return matchSearch && matchStatus && matchKind;
   });
 
-  // Group by RP year (s.year field) or fallback to createdAt calendar year
-  const byYear = filtered.reduce<Record<string, CompetitionSummary[]>>((acc, s) => {
-    const year = s.year != null ? String(s.year) : new Date(s.createdAt).getFullYear().toString();
-    (acc[year] = acc[year] ?? []).push(s);
-    return acc;
-  }, {});
-  const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
+  // Separate into official vs friendly
+  const officielles = filtered.filter((s) => (s.kind ?? 'officielle') === 'officielle');
+  const amicales = filtered.filter((s) => s.kind === 'amicale');
+
+  function groupByYear(list: CompetitionSummary[]) {
+    const map = list.reduce<Record<string, CompetitionSummary[]>>((acc, s) => {
+      const year = s.year != null ? String(s.year) : new Date(s.createdAt).getFullYear().toString();
+      (acc[year] = acc[year] ?? []).push(s);
+      return acc;
+    }, {});
+    return { byYear: map, years: Object.keys(map).sort((a, b) => Number(b) - Number(a)) };
+  }
 
   const filtersBar = (
     <div className="flex flex-wrap gap-2 items-center">
@@ -92,28 +99,56 @@ export default function Competitions() {
           {s === 'all' ? 'Tous' : STATUS_LABEL[s]}
         </button>
       ))}
+      <div className="w-px h-4 bg-border mx-1" />
+      {(['all', 'officielle', 'amicale'] as const).map((k) => (
+        <button
+          key={k}
+          onClick={() => setKindFilter(k)}
+          className={`px-3 py-1 rounded-full text-xs border transition-colors ${kindFilter === k ? 'border-accent bg-accent/10 text-accent' : 'border-border text-muted hover:text-text'}`}
+        >
+          {k === 'all' ? 'Officielle + Amicale' : COMPETITION_KIND_LABEL[k]}
+        </button>
+      ))}
     </div>
   );
 
-  const groupedGrid = years.length === 0 ? (
+  function renderKindSection(list: CompetitionSummary[], label: string) {
+    if (list.length === 0) return null;
+    const { byYear, years } = groupByYear(list);
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-text">{label}</span>
+          <div className="flex-1 border-t border-border" />
+          <span className="text-xs text-muted">{list.length}</span>
+        </div>
+        <div className="space-y-6">
+          {years.map((year) => (
+            <div key={year}>
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-xs font-semibold text-muted uppercase tracking-widest">{year}</span>
+                <div className="flex-1 border-t border-border/50" />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {byYear[year].map((s) => (
+                  <CompetitionCard key={s.id} summary={s} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const groupedGrid = filtered.length === 0 ? (
     <div className="rounded-lg border border-border bg-surface p-12 text-center text-muted">
       Aucune compétition trouvée.
     </div>
   ) : (
-    <div className="space-y-6">
-      {years.map((year) => (
-        <div key={year}>
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-xs font-semibold text-muted uppercase tracking-widest">{year}</span>
-            <div className="flex-1 border-t border-border" />
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {byYear[year].map((s) => (
-              <CompetitionCard key={s.id} summary={s} />
-            ))}
-          </div>
-        </div>
-      ))}
+    <div className="space-y-10">
+      {renderKindSection(officielles, 'Compétitions officielles')}
+      {renderKindSection(amicales, 'Compétitions amicales')}
     </div>
   );
 
@@ -208,14 +243,20 @@ export default function Competitions() {
 }
 
 function CompetitionCard({ summary }: { summary: CompetitionSummary }) {
+  const isAmicale = summary.kind === 'amicale';
   return (
     <Link to={`/dashboard/competitions/${summary.id}`} className="block">
       <div className="rounded-lg border border-border bg-surface p-5 hover:border-accent/50 transition-colors space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="font-display text-xl truncate">{summary.name}</div>
-          <span className={`text-xs shrink-0 ${STATUS_COLOR[summary.status]}`}>
-            {STATUS_LABEL[summary.status]}
-          </span>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span className={`text-xs ${STATUS_COLOR[summary.status]}`}>
+              {STATUS_LABEL[summary.status]}
+            </span>
+            {isAmicale && (
+              <span className="text-xs text-muted border border-border rounded px-1.5 py-0.5">Amicale</span>
+            )}
+          </div>
         </div>
         <div className="text-sm text-muted">{FORMAT_LABEL[summary.format]}</div>
         <div className="flex items-center justify-between text-xs text-muted">

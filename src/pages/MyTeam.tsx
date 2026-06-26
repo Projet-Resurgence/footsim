@@ -121,13 +121,14 @@ export default function MyTeam() {
   }, [session?.id]);
 
   useEffect(() => {
-    if (tab !== 'competitions') return;
+    if (tab !== 'competitions' && tab !== 'palmares') return;
+    if (summaries.length > 0) return; // already loaded
     setLoadingComps(true);
     listCompetitions(env.githubReadToken ?? null)
       .then(setSummaries)
       .catch(() => toast('error', 'Impossible de charger les compétitions.'))
       .finally(() => setLoadingComps(false));
-  }, [tab]);
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   function persistSavedTactics(next: SavedTactic[], activeId?: string) {
@@ -491,7 +492,7 @@ export default function MyTeam() {
 
       {/* Compétitions */}
       {tab === 'competitions' && (
-        <div className="space-y-4">
+        <div className="space-y-8">
           {loadingComps ? (
             <div className="grid gap-4 md:grid-cols-2">
               {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} lines={3} />)}
@@ -501,34 +502,77 @@ export default function MyTeam() {
               Aucune compétition disponible.
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {summaries.map((s) => {
-                const clickable = s.status === 'ongoing' || s.status === 'completed';
-                const inner = (
-                  <div className={`rounded-lg border border-border bg-surface p-4 space-y-2 transition-colors ${clickable ? 'hover:border-accent/50 cursor-pointer' : ''}`}>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="font-medium">{s.name}</div>
-                      <span className={`text-xs ${STATUS_COLOR[s.status]}`}>{STATUS_LABEL[s.status]}</span>
-                    </div>
-                    <div className="text-xs text-muted">
-                      {FORMAT_LABEL[s.format]} · {s.teamCount} équipes
-                    </div>
-                    {s.winner && (
-                      <div className="text-xs text-warning">🏆 Vainqueur enregistré</div>
-                    )}
+            <>
+              {/* Officielles */}
+              {summaries.filter((s) => (s.kind ?? 'officielle') === 'officielle').length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold">Compétitions officielles</span>
+                    <div className="flex-1 border-t border-border" />
+                    <span className="text-xs text-muted">{summaries.filter((s) => (s.kind ?? 'officielle') === 'officielle').length}</span>
                   </div>
-                );
-                return clickable
-                  ? <Link key={s.id} to={`/competition-view/${s.id}`}>{inner}</Link>
-                  : <div key={s.id}>{inner}</div>;
-              })}
-            </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {summaries.filter((s) => (s.kind ?? 'officielle') === 'officielle').map((s) => {
+                      const clickable = s.status === 'ongoing' || s.status === 'completed';
+                      const inner = (
+                        <div className={`rounded-lg border border-border bg-surface p-4 space-y-2 transition-colors ${clickable ? 'hover:border-accent/50 cursor-pointer' : ''}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-medium">{s.name}</div>
+                            <span className={`text-xs ${STATUS_COLOR[s.status]}`}>{STATUS_LABEL[s.status]}</span>
+                          </div>
+                          <div className="text-xs text-muted">{FORMAT_LABEL[s.format]} · {s.teamCount} équipes</div>
+                          {s.winner && <div className="text-xs text-warning">🏆 Vainqueur enregistré</div>}
+                        </div>
+                      );
+                      return clickable
+                        ? <Link key={s.id} to={`/competition-view/${s.id}`}>{inner}</Link>
+                        : <div key={s.id}>{inner}</div>;
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* Amicales */}
+              {summaries.filter((s) => s.kind === 'amicale').length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold">Compétitions amicales</span>
+                    <div className="flex-1 border-t border-border" />
+                    <span className="text-xs text-muted">{summaries.filter((s) => s.kind === 'amicale').length}</span>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {summaries.filter((s) => s.kind === 'amicale').map((s) => {
+                      const clickable = s.status === 'ongoing' || s.status === 'completed';
+                      const inner = (
+                        <div className={`rounded-lg border border-border bg-surface p-4 space-y-2 transition-colors ${clickable ? 'hover:border-accent/50 cursor-pointer' : ''}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-medium">{s.name}</div>
+                            <div className="flex flex-col items-end gap-1">
+                              <span className={`text-xs ${STATUS_COLOR[s.status]}`}>{STATUS_LABEL[s.status]}</span>
+                              <span className="text-xs text-muted border border-border rounded px-1.5 py-0.5">Amicale</span>
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted">{FORMAT_LABEL[s.format]} · {s.teamCount} équipes</div>
+                          {s.winner && <div className="text-xs text-warning">🏆 Vainqueur enregistré</div>}
+                        </div>
+                      );
+                      return clickable
+                        ? <Link key={s.id} to={`/competition-view/${s.id}`}>{inner}</Link>
+                        : <div key={s.id}>{inner}</div>;
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
       {/* Palmarès */}
       {tab === 'palmares' && (
-        <MyTeamPalmaresTab compHistory={data.team.compHistory ?? []} />
+        <MyTeamPalmaresTab
+          compHistory={data.team.compHistory ?? []}
+          teamId={data.team.id}
+          ongoingSummaries={summaries.filter((s) => s.status === 'ongoing' && s.teamIds?.includes(data.team.id))}
+        />
       )}
       {tab === 'stats' && (
         <MyTeamStatsTab
@@ -946,8 +990,17 @@ function MyTeamStatsTab({
   );
 }
 
-function MyTeamPalmaresTab({ compHistory }: { compHistory: CompHistoryEntry[] }) {
-  if (compHistory.length === 0) {
+function MyTeamPalmaresTab({
+  compHistory,
+  ongoingSummaries,
+}: {
+  compHistory: CompHistoryEntry[];
+  teamId: string;
+  ongoingSummaries: CompetitionSummary[];
+}) {
+  const totalParticipations = compHistory.length + ongoingSummaries.length;
+
+  if (totalParticipations === 0) {
     return (
       <div className="py-16 text-center text-muted text-sm">
         Aucun palmarès enregistré. Les résultats apparaissent ici après chaque compétition sauvegardée.
@@ -961,6 +1014,7 @@ function MyTeamPalmaresTab({ compHistory }: { compHistory: CompHistoryEntry[] })
   }, {});
 
   const wins = compHistory.filter((e) => e.result === 'winner').length;
+  const distinctComps = Object.keys(byName).length + ongoingSummaries.filter((s) => !byName[s.name]).length;
 
   return (
     <div className="space-y-6">
@@ -970,16 +1024,28 @@ function MyTeamPalmaresTab({ compHistory }: { compHistory: CompHistoryEntry[] })
           <div className="text-xs text-muted mt-0.5">Titre{wins > 1 ? 's' : ''}</div>
         </div>
         <div className="rounded-lg border border-border bg-surface px-5 py-3 text-center">
-          <div className="font-display text-3xl">{compHistory.length}</div>
-          <div className="text-xs text-muted mt-0.5">Participation{compHistory.length > 1 ? 's' : ''}</div>
+          <div className="font-display text-3xl">{totalParticipations}</div>
+          <div className="text-xs text-muted mt-0.5">Participation{totalParticipations > 1 ? 's' : ''}</div>
         </div>
         <div className="rounded-lg border border-border bg-surface px-5 py-3 text-center">
-          <div className="font-display text-3xl">{Object.keys(byName).length}</div>
-          <div className="text-xs text-muted mt-0.5">Compétition{Object.keys(byName).length > 1 ? 's' : ''} différente{Object.keys(byName).length > 1 ? 's' : ''}</div>
+          <div className="font-display text-3xl">{distinctComps}</div>
+          <div className="text-xs text-muted mt-0.5">Compétition{distinctComps > 1 ? 's' : ''} différente{distinctComps > 1 ? 's' : ''}</div>
         </div>
       </div>
 
       <div className="space-y-4">
+        {/* Compétitions en cours */}
+        {ongoingSummaries.map((s) => (
+          <div key={s.id} className="rounded-lg border border-accent/30 bg-accent/5 p-4 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-medium">{s.name}</div>
+              <span className="text-xs text-accent">En cours</span>
+            </div>
+            <div className="text-xs text-muted">{FORMAT_LABEL[s.format]} · {s.teamCount} équipes</div>
+          </div>
+        ))}
+
+        {/* Compétitions terminées */}
         {Object.entries(byName).map(([compName, entries]) => {
           const entryWins = entries.filter((e) => e.result === 'winner').length;
           const sorted = [...entries].sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
