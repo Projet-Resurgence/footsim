@@ -13,6 +13,7 @@ import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification
 import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary } from '@/lib/competition/types';
 import { accumulateMatchStats, computeAwards, computeMotm } from '@/lib/competition/statsAccumulator';
+import { extractGoalsAndCards } from '@/lib/github/matches';
 import { CorruptionPanel } from '@/components/match/CorruptionPanel';
 import { isRevealed } from '@/lib/sim/corruption';
 import { resolveActiveTactic, loadLocalSavedTactics } from '@/lib/localTactics';
@@ -257,8 +258,16 @@ export default function MultiplexLive() {
       );
       const ss = slot.state;
       const zeroSide = { home: 0, away: 0 };
+      const allSlotPlayers = [...slot.homePlayers, ...slot.awayPlayers];
+      const slotHomeGoalCards = isSlotWalkover ? { goals: [], cards: [] } : extractGoalsAndCards(ss.events, 'home', allSlotPlayers);
+      const slotAwayGoalCards = isSlotWalkover ? { goals: [], cards: [] } : extractGoalsAndCards(ss.events, 'away', allSlotPlayers);
+
       const slotSummary: MatchSummary = {
         motm: slotMotm ?? undefined,
+        homeGoals: slotHomeGoalCards.goals.length ? slotHomeGoalCards.goals : undefined,
+        awayGoals: slotAwayGoalCards.goals.length ? slotAwayGoalCards.goals : undefined,
+        homeCards: slotHomeGoalCards.cards.length ? slotHomeGoalCards.cards : undefined,
+        awayCards: slotAwayGoalCards.cards.length ? slotAwayGoalCards.cards : undefined,
         stats: isSlotWalkover ? {
           shots: zeroSide, shotsOnTarget: zeroSide, xg: zeroSide, saves: zeroSide, passes: zeroSide,
           fouls: zeroSide, corners: zeroSide, offsides: zeroSide, freekicks: zeroSide,
