@@ -22,7 +22,16 @@ function lsRead(id: string): Competition | null {
 function lsWrite(c: Competition) {
   try {
     localStorage.setItem(LS_KEY(c.id), JSON.stringify(c));
-  } catch {}
+  } catch {
+    // Quota exceeded — strip heavy fields and retry
+    try {
+      const slim = { ...c, pressItems: undefined, playerStats: undefined };
+      localStorage.setItem(LS_KEY(c.id), JSON.stringify(slim));
+      console.warn('[lsWrite] quota exceeded, saved slim version without pressItems/playerStats');
+    } catch (e2) {
+      console.error('[lsWrite] localStorage write failed even slim:', e2);
+    }
+  }
 }
 
 function lsDelete(id: string) {
@@ -63,15 +72,26 @@ export const useCompetition = create<State>((set, get) => ({
   async load(id, token) {
     // localStorage wins — it holds unsaved match results
     const local = lsRead(id);
-    console.log('[competition.load]', { id, localRound: local?.currentRound ?? null, storeRound: get().current?.currentRound ?? null });
+    const storeCurrent = get().current;
+    const storeRound = storeCurrent?.id === id ? storeCurrent.currentRound : 0;
+    console.log('[competition.load]', { id, localRound: local?.currentRound ?? null, storeRound });
+
+    // In-memory store is the most current source (e.g. localStorage quota exceeded — lsWrite failed silently)
+    if (!local && storeCurrent?.id === id && storeRound > 0) {
+      console.log('[competition.load] localStorage miss but store has data — using store', { storeRound });
+      return storeCurrent;
+    }
+
     if (local) {
+      // If localStorage has slim version (pressItems stripped due to quota), restore from memory
+      const merged: Competition = (!local.pressItems && storeCurrent?.id === id)
+        ? { ...local, pressItems: storeCurrent.pressItems, playerStats: storeCurrent.playerStats }
+        : local;
       // Never regress store to an older round (race: saveLocal may have already advanced it)
-      const storeCurrent = get().current;
-      const storeRound = storeCurrent?.id === id ? storeCurrent.currentRound : 0;
-      if (storeRound <= local.currentRound) {
-        set({ current: local, dirty: true });
+      if (storeRound <= merged.currentRound) {
+        set({ current: merged, dirty: true });
       }
-      return local;
+      return merged;
     }
     const comp = await loadCompetition(id, token);
     if (comp) lsWrite(comp);
