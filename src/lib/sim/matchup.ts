@@ -5,9 +5,10 @@ type FormationProfile = 'high-press' | 'balanced' | 'midfield-heavy' | 'defensiv
 
 function formationProfile(f: Formation): FormationProfile {
   if (['4-3-3', '3-4-3', '4-2-3-1'].includes(f)) return 'high-press';
+  // 4-1-4-1 = 1 DM + 4 mid + 1 ST → milieu très dense, pas balanced
+  if (['3-5-2', '4-3-2-1', '3-6-1', '4-1-4-1'].includes(f)) return 'midfield-heavy';
   if (['5-3-2', '5-4-1', '4-5-1', '3-4-1-2'].includes(f)) return 'defensive-block';
-  if (['3-5-2', '4-3-2-1', '3-6-1'].includes(f)) return 'midfield-heavy';
-  return 'balanced'; // 4-4-2, 4-4-1-1, 4-1-4-1
+  return 'balanced'; // 4-4-2, 4-4-1-1
 }
 
 /**
@@ -15,30 +16,60 @@ function formationProfile(f: Formation): FormationProfile {
  * Returns [myAttackMult, myDefenseMult, myMidfieldMult] for `my` formation vs `opp` formation.
  * Values are centered around 1.0 with ±5–10% range.
  */
+/**
+ * Formation matchup table — [attackMult, defenseMult, midfieldMult]
+ *
+ * Logique tactique :
+ *
+ * high-press (4-3-3, 4-2-3-1, 3-4-3)
+ *   Ligne haute, récupération immédiate, pressing dès la perte.
+ *   Attaque forte — le pressing crée des occasions hautes.
+ *   Défense vulnérable derrière la ligne (espaces dos aux défenseurs).
+ *   vs balanced : domine en attaque et au milieu
+ *   vs midfield-heavy : milieu dense bloque les circuits du press (−att, −mid)
+ *   vs defensive-block : press force le bloc à reculer (+att, +mid),
+ *                        mais les longs dégagements du bloc exposent l'espace derrière (−def)
+ *
+ * midfield-heavy (3-5-2, 4-3-2-1, 3-6-1, 4-1-4-1)
+ *   Densité au milieu, circuits courts, contrôle du tempo. Lent à verticaliser.
+ *   vs high-press : circuits courts absorbent le press (+mid), attaque légèrement freinée
+ *   vs balanced : domination milieu nette
+ *   vs defensive-block : possession étouffe le bloc sur la durée (+att, +mid)
+ *
+ * defensive-block (5-3-2, 5-4-1, 4-5-1, 3-4-1-2)
+ *   Bloc bas et compact, absorption, contre-attaque sur les espaces laissés.
+ *   vs high-press : ligne haute laisse l'espace → contre-attaque efficace (+att),
+ *                   défense exposée aux tirs en zone haute (−def)
+ *   vs balanced : défense solide (+def), peu d'attaque (−att)
+ *   vs midfield-heavy : possession finit par percer (−def), peu d'espace pour contrer (−att)
+ *
+ * balanced (4-4-2, 4-4-1-1)
+ *   Ni avantage ni désavantage structurel fort.
+ */
 const FORMATION_MATCHUP: Record<FormationProfile, Record<FormationProfile, [number, number, number]>> = {
   // [attackMult, defenseMult, midfieldMult]
   'high-press': {
     'high-press':      [1.00, 1.00, 1.00],
-    'balanced':        [1.05, 0.97, 1.03],
-    'midfield-heavy':  [0.93, 0.97, 0.95], // milieu surchargé étouffe le press
-    'defensive-block': [0.92, 1.08, 1.02], // bloc bas casse les espaces du press
+    'balanced':        [1.12, 0.96, 1.08], // press domine l'équilibré
+    'midfield-heavy':  [0.90, 0.98, 0.86], // milieu dense étouffe les circuits du press
+    'defensive-block': [1.08, 0.88, 1.10], // press enfonce le bloc mais espaces derrière
   },
   'balanced': {
-    'high-press':      [0.97, 1.03, 0.97],
+    'high-press':      [0.92, 1.06, 0.94], // subit le press mais défend correctement
     'balanced':        [1.00, 1.00, 1.00],
-    'midfield-heavy':  [0.96, 1.02, 0.98],
-    'defensive-block': [1.02, 1.02, 1.00],
+    'midfield-heavy':  [0.94, 1.02, 0.90], // perd le milieu face au surnom
+    'defensive-block': [1.06, 1.02, 1.02], // ouvertures face au bloc
   },
   'midfield-heavy': {
-    'high-press':      [1.05, 1.03, 1.07], // récupère mieux face au press
-    'balanced':        [1.02, 1.00, 1.04],
+    'high-press':      [0.94, 1.02, 1.12], // circuits courts absorbent le press, milieu domine
+    'balanced':        [1.06, 1.00, 1.10], // domination milieu nette
     'midfield-heavy':  [1.00, 1.00, 1.00],
-    'defensive-block': [1.04, 0.98, 1.06], // possession étouffe le bloc
+    'defensive-block': [1.10, 0.94, 1.14], // possession étouffe le bloc sur la durée
   },
   'defensive-block': {
-    'high-press':      [1.06, 0.95, 0.98], // contre-attaque sur espaces laissés
-    'balanced':        [0.98, 1.02, 1.00],
-    'midfield-heavy':  [0.96, 1.02, 0.96], // possession finit par percer
+    'high-press':      [1.14, 0.92, 0.96], // contre-attaque sur les espaces laissés par la ligne haute
+    'balanced':        [0.94, 1.08, 0.98], // défend bien, n'attaque pas
+    'midfield-heavy':  [0.88, 0.92, 0.90], // possession finit par percer, pas d'espace pour contrer
     'defensive-block': [1.00, 1.00, 1.00],
   },
 };
@@ -54,51 +85,79 @@ function styleProfile(style: TacticStyle): StyleProfile {
 }
 
 /**
- * Style matchup table.
- * Returns [myAttackMult, myDefenseMult, myMidfieldMult] for `my` style vs `opp` style.
+ * Style matchup table — [attackMult, defenseMult, midfieldMult]
  *
- * Logique football :
- * - possession bat defensive (lentement étouffe le bloc)
- * - direct/long-ball bat possession (espace derrière ligne haute)
- * - high-intensity bat direct (récupération haute avant que le ballon parte)
- * - high-intensity perd contre possession (triangles courts absorbent le press)
- * - defensive résiste à direct/chaos (organisation ferme)
- * - chaos désorganise possession/tiki-taka (pressing anarchique)
+ * Logique tactique :
+ *
+ * possession-build (Possession, Tiki-taka)
+ *   Triangles courts, construction depuis l'arrière, garde le ballon.
+ *   PERD contre : direct-attack (long ball exploite l'espace dos aux défenseurs avancés)
+ *   PERD contre : high-intensity (pressing immédiat intercepte avant que le triangle ne se forme)
+ *   BAT : defensive (étouffe le bloc sur la durée, le bloc ne peut pas sortir)
+ *   BAT : chaos (organisation et patience neutralise le désordre adverse)
+ *
+ * direct-attack (Contre-attaque, Jeu direct, Long ball)
+ *   Verticalité, longs ballons, exploite l'espace derrière la ligne adverse.
+ *   BAT : possession-build (espace derrière la ligne haute)
+ *   PERD contre : high-intensity (récupération haute avant que le long ballon ne parte)
+ *   PERD contre : defensive (bloc bas ferme l'espace — long ball absorbé dans le bloc)
+ *
+ * high-intensity (Pressing, Gegenpressing)
+ *   Récupération immédiate après perte, transitions rapides, épuisement adverse.
+ *   BAT : direct-attack (intercepte avant la phase directe)
+ *   BAT : chaos (pressing structuré neutralise le pressing anarchique)
+ *   PERD contre : possession-build (triangles courts contournent le press, épuise les presseurs)
+ *   PERD contre : defensive (bloc bas absorbe le pressing, pas d'espace à combler)
+ *
+ * defensive (Ultra-défensif)
+ *   Bloc très bas et compact, peu de transitions offensives, absorption.
+ *   BAT : direct-attack (long ball dans le bloc = absorption, pas d'espace)
+ *   BAT : high-intensity (pressing contre un bloc bas = épuisement des presseurs)
+ *   PERD contre : possession-build (possession progressive trouve la faille)
+ *   PERD contre : chaos (imprévisibilité crée des situations non anticipées)
+ *
+ * chaos
+ *   Pressing anarchique, imprévisible, fautes fréquentes, transitions dans tous les sens.
+ *   BAT : possession-build (désorganise les circuits de passe)
+ *   BAT : direct-attack (transitions anarchiques récupèrent autant qu'elles perdent)
+ *   PERD contre : high-intensity (pressing organisé domine l'anarchie)
+ *   PERD contre : defensive (organisation ferme résiste à l'imprévisible)
  */
 const STYLE_MATCHUP: Record<StyleProfile, Record<StyleProfile, [number, number, number]>> = {
+  // [attackMult, defenseMult, midfieldMult]
   'possession-build': {
     'possession-build': [1.00, 1.00, 1.00],
-    'direct-attack':    [0.94, 0.97, 1.02], // espace derrière → vulnérable
-    'high-intensity':   [1.06, 1.04, 1.05], // triangles courts absorbent le press
-    'defensive':        [1.08, 1.02, 1.06], // possession perce progressivement
-    'chaos':            [0.95, 0.97, 1.00], // chaos déstabilise les patterns
+    'direct-attack':    [0.88, 0.91, 1.06], // espace derrière → vulnérable défensivement, milieu compense
+    'high-intensity':   [0.91, 0.90, 0.88], // gegenpressing casse les circuits AVANT qu'ils se forment
+    'defensive':        [1.14, 1.06, 1.12], // possession perce progressivement le bloc
+    'chaos':            [1.08, 1.06, 1.10], // patience et organisation neutralise le chaos
   },
   'direct-attack': {
-    'possession-build': [1.07, 1.02, 0.97], // exploit espace derrière ligne haute
+    'possession-build': [1.14, 1.08, 0.92], // exploite l'espace derrière la ligne haute
     'direct-attack':    [1.00, 1.00, 1.00],
-    'high-intensity':   [0.94, 0.96, 0.95], // récupération haute coupe les longs ballons
-    'defensive':        [0.92, 1.00, 0.95], // bloc organisé ferme les espaces
-    'chaos':            [1.02, 0.98, 0.97],
+    'high-intensity':   [0.88, 0.91, 0.90], // récupération haute coupe le long ballon avant
+    'defensive':        [0.86, 0.94, 0.90], // bloc bas ferme l'espace — long ball absorbé
+    'chaos':            [0.96, 1.04, 0.98], // chaos crée autant d'espaces pour les deux
   },
   'high-intensity': {
-    'possession-build': [0.95, 0.97, 0.96], // triangles courts cassent le press
-    'direct-attack':    [1.06, 1.04, 1.05], // récupère avant le long ballon
+    'possession-build': [1.06, 1.04, 1.08], // gegenpressing casse les triangles courts
+    'direct-attack':    [1.12, 1.10, 1.12], // récupère avant le long ballon, transitions propres
     'high-intensity':   [1.00, 1.00, 1.00],
-    'defensive':        [1.02, 0.98, 1.02], // pressing fatigue le bloc
-    'chaos':            [0.97, 0.98, 0.98], // chaos désorganise l'organisation du press
+    'defensive':        [0.90, 0.88, 0.92], // bloc bas absorbe le pressing, peu d'espace
+    'chaos':            [1.10, 1.08, 1.06], // pressing structuré domine le pressing anarchique
   },
   'defensive': {
-    'possession-build': [0.94, 1.00, 0.96], // possession finit par percer
-    'direct-attack':    [1.06, 1.05, 0.98], // bloc bas absorbe les longs ballons
-    'high-intensity':   [0.98, 1.02, 0.97],
+    'possession-build': [0.88, 0.96, 0.90], // possession finit par trouver la faille
+    'direct-attack':    [1.04, 1.14, 0.94], // long ball dans le bloc = absorption solide
+    'high-intensity':   [1.06, 1.12, 0.96], // pressing contre bloc bas = épuisement des presseurs
     'defensive':        [1.00, 1.00, 1.00],
-    'chaos':            [1.04, 1.03, 0.97], // organisation résiste au chaos
+    'chaos':            [0.92, 0.90, 0.96], // imprévisibilité crée des failles dans le bloc
   },
   'chaos': {
-    'possession-build': [1.05, 1.02, 1.00], // désorganise les circuits de passe
-    'direct-attack':    [0.98, 1.02, 1.00],
-    'high-intensity':   [1.02, 1.02, 1.00],
-    'defensive':        [0.97, 0.98, 1.00], // bloc organisé résiste
+    'possession-build': [1.10, 0.96, 1.02], // désorganise les automatismes de passe
+    'direct-attack':    [1.08, 0.98, 1.04], // transitions dans tous les sens, récupère autant
+    'high-intensity':   [0.92, 0.94, 0.94], // pressing structuré neutralise l'anarchie
+    'defensive':        [1.06, 1.08, 1.00], // imprévisibilité perce l'organisation
     'chaos':            [1.00, 1.00, 1.00],
   },
 };

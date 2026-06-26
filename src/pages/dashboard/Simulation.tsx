@@ -713,8 +713,8 @@ function MatchupsTab() {
           l'avantage ou le désavantage structurel qu'une équipe a face à l'autre.
         </p>
         <p className="text-muted">
-          Deux couches indépendantes, multipliées ensemble. Amplitude totale ±5–10 % par couche,
-          ±20 % maximum combiné — assez visible pour compter, pas assez fort pour écraser l'écart de niveau.
+          Deux couches indépendantes, multipliées ensemble. Amplitude totale ±8–16 % par couche,
+          ±30 % maximum combiné — la formation et le style tactique sont des facteurs déterminants, capables de renverser un match.
         </p>
       </Section>
 
@@ -725,25 +725,24 @@ function MatchupsTab() {
         <Table
           headers={['Profil', 'Formations concernées', 'Caractéristique']}
           rows={[
-            ['Pressing haut', '4-3-3 · 3-4-3 · 4-2-3-1', 'Ligne haute, pression immédiate — espaces derrière'],
-            ['Milieu chargé', '3-5-2 · 4-3-2-1 · 3-6-1', 'Domination du milieu — lent à verticaliser'],
-            ['Bloc défensif', '5-3-2 · 5-4-1 · 4-5-1 · 3-4-1-2', 'Organisation basse — peu de transition rapide'],
-            ['Équilibré', '4-4-2 · 4-4-1-1 · 4-1-4-1', 'Ni avantage ni désavantage particulier'],
+            ['Pressing haut', '4-3-3 · 3-4-3 · 4-2-3-1', 'Ligne haute, récupération immédiate — espaces derrière défense'],
+            ['Milieu chargé', '3-5-2 · 4-3-2-1 · 3-6-1 · 4-1-4-1', 'Domination du milieu, circuits courts — lent à verticaliser'],
+            ['Bloc défensif', '5-3-2 · 5-4-1 · 4-5-1 · 3-4-1-2', 'Organisation basse, contre-attaque sur espaces laissés'],
+            ['Équilibré', '4-4-2 · 4-4-1-1', 'Ni avantage ni désavantage structurel fort'],
           ]}
         />
         <p className="mt-3 text-sm text-muted mb-2">Matrice des avantages :</p>
         <Table
           headers={['Mon profil', 'Contre Pressing haut', 'Contre Milieu chargé', 'Contre Bloc défensif', 'Contre Équilibré']}
           rows={[
-            ['Pressing haut',  '=',                    '−7 % att, −5 % def',   '+8 % att → contre',    '+5 % att'],
-            ['Milieu chargé',  '+5 % att, +7 % mid',   '=',                    '+4 % att, +6 % mid',   '+2 % att, +4 % mid'],
-            ['Bloc défensif',  '+6 % att (espaces)',    '−4 % att, −4 % mid',   '=',                    '−2 % att, +2 % def'],
-            ['Équilibré',      '−3 % att, +3 % def',   '−4 % att, +2 % def',   '+2 % att, +2 % def',   '='],
+            ['Pressing haut',  '=',                           '−10 % att, −14 % mid',    '+8 % att, −12 % def',   '+12 % att, +8 % mid'],
+            ['Milieu chargé',  '−6 % att, +12 % mid',         '=',                       '+10 % att, +14 % mid',  '+6 % att, +10 % mid'],
+            ['Bloc défensif',  '+14 % att (contre)',           '−12 % att, −10 % mid',    '=',                     '−6 % att, +8 % def'],
+            ['Équilibré',      '−8 % att, +6 % def',          '−6 % att, +2 % def',      '+6 % att, +2 % def',    '='],
           ]}
         />
         <div className="mt-3 rounded-lg border border-border bg-surface/50 px-4 py-3 text-sm text-muted">
-          <strong>Exemple :</strong> 5-4-1 (bloc défensif) vs 4-3-3 (pressing haut) — le bloc récupère +6 % en attaque
-          car la ligne haute laisse de l'espace derrière, mais le pressing haut gagne +8 % en défense car il ferme vite les transitions.
+          <strong>Exemple :</strong> 5-4-1 (bloc défensif) vs 4-3-3 (pressing haut) — le bloc récupère +14 % en attaque sur les espaces laissés par la ligne haute adverse. Le 4-3-3 lui domine le milieu (+8 % mid) mais sa défense est exposée (−12 %).
         </div>
       </Section>
 
@@ -764,18 +763,22 @@ function MatchupsTab() {
         <p className="mt-4 text-sm font-medium mb-2">Logique des matchups :</p>
         <div className="space-y-2">
           {[
-            { from: 'Construction-possession', beats: 'Défensif', why: 'La possession étrangle progressivement le bloc — le défensif manque d\'options pour sortir' },
-            { from: 'Construction-possession', loses: 'Attaque directe', why: 'Les longs ballons exploitent les espaces derrière la ligne haute' },
-            { from: 'Construction-possession', loses: 'Chaos', why: 'Le jeu anarchique désorganise les circuits de passe courts' },
-            { from: 'Attaque directe', beats: 'Construction-possession', why: 'Exploite l\'espace laissé par la montée de ligne' },
-            { from: 'Attaque directe', loses: 'Haute intensité', why: 'La récupération haute intercepte les longs ballons avant qu\'ils n\'arrivent' },
-            { from: 'Attaque directe', loses: 'Défensif', why: 'Le bloc organisé ferme tous les couloirs directs' },
-            { from: 'Haute intensité', beats: 'Attaque directe', why: 'Récupère avant que le ballon ne parte — coupe les transitions' },
-            { from: 'Haute intensité', loses: 'Construction-possession', why: 'Les triangles courts absorbent le press et épuisent les pressueurs' },
-            { from: 'Défensif', beats: 'Attaque directe', why: 'Bloc bas absorbe les centres et longs ballons sans se déplacer' },
-            { from: 'Défensif', loses: 'Construction-possession', why: 'La possession étouffe — pas d\'espace pour sortir et contre-attaquer' },
-            { from: 'Chaos', beats: 'Construction-possession', why: 'Le pressing anarchique désorganise les automatismes de passe' },
-            { from: 'Chaos', loses: 'Défensif', why: 'L\'organisation basse résiste au désordre adverse' },
+            { from: 'Construction-possession', beats: 'Défensif', why: 'La possession étouffe le bloc — le bloc ne peut pas sortir proprement, la faille finit par apparaître' },
+            { from: 'Construction-possession', beats: 'Chaos', why: 'La patience et l\'organisation neutralisent l\'imprévisibilité adverse sur la durée' },
+            { from: 'Construction-possession', loses: 'Attaque directe', why: 'Longs ballons dans le dos des défenseurs avancés — la ligne haute est vulnérable derrière' },
+            { from: 'Construction-possession', loses: 'Haute intensité', why: 'Le pressing immédiat intercepte avant que le triangle ne se forme' },
+            { from: 'Attaque directe', beats: 'Construction-possession', why: 'Exploite l\'espace derrière la ligne haute — long ball dans le dos des défenseurs' },
+            { from: 'Attaque directe', loses: 'Haute intensité', why: 'Récupération haute immédiate avant que le long ballon ne parte' },
+            { from: 'Attaque directe', loses: 'Défensif', why: 'Bloc bas ferme l\'espace — les longs ballons atterrissent dans le bloc, pas derrière' },
+            { from: 'Haute intensité', beats: 'Attaque directe', why: 'Intercepte avant la phase directe, transitions propres dans l\'autre sens' },
+            { from: 'Haute intensité', beats: 'Chaos', why: 'Le pressing structuré domine le pressing anarchique — organisation contre désordre' },
+            { from: 'Haute intensité', loses: 'Défensif', why: 'Bloc bas absorbe le pressing, les presseurs s\'épuisent sans espace à combler' },
+            { from: 'Défensif', beats: 'Haute intensité', why: 'Bloc bas prive le pressing de tout espace — les presseurs s\'épuisent sans récupérer' },
+            { from: 'Défensif', loses: 'Construction-possession', why: 'Possession progressive étouffe le bloc — le bloc manque d\'options pour sortir' },
+            { from: 'Défensif', loses: 'Chaos', why: 'L\'imprévisibilité génère des situations que le bloc n\'a pas anticipées' },
+            { from: 'Chaos', beats: 'Attaque directe', why: 'Transitions anarchiques dans les deux sens — récupère autant de ballons qu\'il en perd' },
+            { from: 'Chaos', loses: 'Haute intensité', why: 'Le pressing organisé structure ce que le chaos ne peut pas gérer' },
+            { from: 'Chaos', loses: 'Construction-possession', why: 'La patience et l\'organisation surmontent l\'anarchie sur la durée' },
           ].map((r, i) => (
             <div key={i} className={`flex gap-3 rounded-lg border px-4 py-2 text-sm ${r.beats ? 'border-green-500/20 bg-green-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
               <span className={`shrink-0 font-semibold ${r.beats ? 'text-green-400' : 'text-danger'}`}>
@@ -788,7 +791,7 @@ function MatchupsTab() {
           ))}
         </div>
         <div className="mt-4 rounded-lg border border-border bg-surface/50 px-4 py-3 text-sm text-muted">
-          <strong>Amplitude :</strong> chaque avantage style donne ±4 à +8 % sur l'attaque, la défense ou le milieu.
+          <strong>Amplitude :</strong> chaque avantage style donne ±8 à ±14 % sur l'attaque, la défense ou le milieu.
           Deux profils identiques (possession vs possession) = pas d'effet.
         </div>
       </Section>
