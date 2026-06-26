@@ -59,6 +59,7 @@ export default function CompetitionNew() {
   const teams = useTeams((s) => s.teams);
   const refresh = useTeams((s) => s.refresh);
   const saveLocal = useCompetition((s) => s.saveLocal);
+  const save = useCompetition((s) => s.save);
   const pat = useCredentials((s) => s.githubPat);
   const { ownerId, pat: effectivePat } = useBackendArgs();
   const navigate = useNavigate();
@@ -251,6 +252,9 @@ export default function CompetitionNew() {
       };
 
       saveLocal(comp);
+      if (pat) {
+        save(comp, pat).catch((err) => toast('error', `Erreur sauvegarde GitHub : ${err}`));
+      }
       toast('success', 'Compétition créée.');
       navigate(`/dashboard/competitions/${id}`);
     } catch (err) {
