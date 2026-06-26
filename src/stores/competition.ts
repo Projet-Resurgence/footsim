@@ -75,12 +75,12 @@ export const useCompetition = create<State>((set, get) => ({
 
   async save(competition, token) {
     await saveCompetition(competition, token);
-    lsWrite(competition);
-    // Only update current if it's still the same version or newer — prevents a stale async save
-    // from overwriting a more recent local state (e.g. round N save completing after round N+1 starts)
+    // After GitHub save, only mark dirty=false if the store still holds this exact version.
+    // Never overwrite local state — saveLocal/setCurrent are always more recent.
     const storeCurrent = get().current;
-    if (!storeCurrent || storeCurrent.id !== competition.id || storeCurrent.currentRound <= competition.currentRound) {
-      set({ current: competition, dirty: false });
+    const isSameVersion = storeCurrent?.id === competition.id && storeCurrent.currentRound === competition.currentRound;
+    if (isSameVersion) {
+      set({ dirty: false });
     }
     const summary: CompetitionSummary = {
       id: competition.id,
