@@ -13,19 +13,25 @@ const items: NavItem[] = [
   { to: '/my-team/simulation', label: 'Simulation' },
 ];
 
+type SidebarProps = {
+  open?: boolean;
+  onClose?: () => void;
+};
 
-export function Sidebar() {
+export function Sidebar({ open, onClose }: SidebarProps) {
   const isAdmin = useSession((s) => s.isAdmin());
+  const filtered = items.filter((item) => !item.adminOnly || isAdmin);
 
-  return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface px-4 py-6">
+  const nav = (
+    <>
       <div className="mb-10 px-2 font-display text-2xl">FootSim</div>
       <nav className="flex flex-col gap-1">
-        {items.filter((item) => !item.adminOnly || isAdmin).map((item) => (
+        {filtered.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.end}
+            onClick={onClose}
             className={({ isActive }) =>
               cn(
                 'rounded-md px-3 py-2 text-sm transition-colors',
@@ -37,6 +43,34 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-surface px-4 py-6">
+        {nav}
+      </aside>
+
+      {/* Mobile overlay */}
+      {open && (
+        <div className="fixed inset-0 z-40 md:hidden">
+          {/* backdrop */}
+          <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+          {/* drawer */}
+          <aside className="absolute left-0 top-0 h-full w-64 bg-surface px-4 py-6 shadow-xl flex flex-col">
+            <button
+              onClick={onClose}
+              className="self-end mb-4 text-muted hover:text-text transition-colors"
+              aria-label="Fermer le menu"
+            >
+              ✕
+            </button>
+            {nav}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
