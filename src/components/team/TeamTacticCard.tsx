@@ -130,10 +130,10 @@ export function TacticPitch({ formation, lineup, players, tokenPositions }: { fo
             className="flex flex-col items-center gap-0.5"
           >
             <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-[9px] font-bold ${player ? 'border-white bg-white/20 text-white shadow-md' : 'border-white/30 bg-black/20 text-white/40'}`}>
-              {player ? `${player.firstName[0]}${player.lastName[0]}` : '+'}
+              {POSITION_LABEL[slot.pos as keyof typeof POSITION_LABEL] ?? slot.pos}
             </div>
             <span className="max-w-[52px] truncate rounded bg-black/50 px-0.5 text-center text-[8px] leading-tight text-white/90">
-              {player ? player.lastName : (POSITION_LABEL[slot.pos as keyof typeof POSITION_LABEL] ?? slot.pos)}
+              {player ? player.lastName : ''}
             </span>
           </div>
         );

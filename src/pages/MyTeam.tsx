@@ -927,7 +927,7 @@ function MyTeamStatsTab({
   type PlayerStat = { goals: number; assists: number };
   const stats = new Map<string, PlayerStat>();
 
-  for (const m of recentMatches.filter((m) => m.compKind === 'officielle')) {
+  for (const m of recentMatches.filter((m) => m.compKind !== 'amicale')) {
     for (const g of m.scorers ?? []) {
       if (!g.playerId) continue;
       const s = stats.get(g.playerId) ?? { goals: 0, assists: 0 };
