@@ -9,8 +9,8 @@ const items: NavItem[] = [
   { to: '/dashboard/teams', label: 'Équipes', adminOnly: true },
   { to: '/dashboard/competitions', label: 'Compétitions', adminOnly: true },
   { to: '/match', label: 'Matchs', adminOnly: true },
-  { to: '/dashboard/classements-cmf', label: 'Classements CMF' },
-  { to: '/dashboard/simulation', label: 'Simulation' },
+  { to: '/my-team/classements-cmf', label: 'Classements CMF' },
+  { to: '/my-team/simulation', label: 'Simulation' },
 ];
 
 

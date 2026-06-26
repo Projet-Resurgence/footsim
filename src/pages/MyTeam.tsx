@@ -23,8 +23,6 @@ import type { CultureWeight } from '@/lib/gen/names';
 import { loadLocalTactics, loadLocalSavedTactics, saveLocalSavedTactics } from '@/lib/localTactics';
 import { env } from '@/lib/env';
 import { PlayerView } from '@/components/team/PlayerView';
-import Simulation from '@/pages/dashboard/Simulation';
-import ClassementsCMF from '@/pages/dashboard/ClassementsCMF';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
 import type { Coach } from '@/lib/gen/coach';
 
@@ -41,7 +39,7 @@ const STATUS_COLOR: Record<string, string> = {
   completed: 'text-warning',
 };
 
-type Tab = 'tactique' | 'joueurs' | 'noms' | 'postes' | 'competitions' | 'palmares' | 'historique' | 'classements' | 'simulation' | 'entraineur' | 'stats';
+type Tab = 'tactique' | 'joueurs' | 'noms' | 'postes' | 'competitions' | 'palmares' | 'historique' | 'entraineur' | 'stats';
 
 export default function MyTeam() {
   const session = useSession((s) => s.session);
@@ -327,7 +325,7 @@ export default function MyTeam() {
 
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-1 border-b border-border">
-        {(['tactique', 'joueurs', 'noms', 'postes', 'competitions', 'palmares', 'historique', 'stats', 'classements', 'entraineur', 'simulation'] as Tab[]).map((t) => (
+        {(['tactique', 'joueurs', 'noms', 'postes', 'competitions', 'palmares', 'historique', 'stats', 'entraineur'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -341,9 +339,7 @@ export default function MyTeam() {
               : t === 'stats' ? 'Stats individuelles'
               : t === 'palmares' ? 'Palmarès'
               : t === 'historique' ? 'Historique matchs'
-              : t === 'classements' ? 'Classements CMF'
-              : t === 'entraineur' ? 'Entraîneur'
-              : 'Simulation'}
+              : 'Entraîneur'}
           </button>
         ))}
       </div>
@@ -545,14 +541,10 @@ export default function MyTeam() {
       {tab === 'historique' && (
         <MyTeamHistoriqueTab recentMatches={data.team.recentMatches ?? []} />
       )}
-      {/* Classements CMF */}
-      {tab === 'classements' && <ClassementsCMF embedded />}
       {tab === 'entraineur' && (
         <CoachReadPanel coach={data.team.coach ?? null} teamSlug={data.team.slug} isAdmin={isAdmin} />
       )}
 
-      {/* Simulation (tous sous-onglets : moteur, entraineurs, moral, notes, presse) */}
-      {tab === 'simulation' && <Simulation />}
     </div>
 
     {viewingPlayer && (

@@ -98,6 +98,8 @@ export const router = createBrowserRouter(
       ),
       children: [
         { index: true, element: <S><MyTeam /></S> },
+        { path: 'classements-cmf', element: <S><ClassementsCMF /></S> },
+        { path: 'simulation', element: <S><Simulation /></S> },
       ],
     },
     {
