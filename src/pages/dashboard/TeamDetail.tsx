@@ -1570,6 +1570,7 @@ function StatsIndividuellesTab({
           compImportance: comp.data.importance,
         });
         synced += r.synced;
+        if (r.skipped > 0) toast('info', `${summary.name} : ${r.skipped} match(s) ignorés (pas de fichier match).`);
       }
       type TW = import('@/lib/types').Team & { recentMatches?: RecentMatchSummary[] };
       const fresh = await readJson<TW>(`data/teams/${teamSlug}/team.json`, pat);

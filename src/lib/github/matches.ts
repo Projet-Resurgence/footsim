@@ -370,10 +370,23 @@ export async function resyncCompetitionMatchHistory(
     const scoreHome = m.result!.home;
     const scoreAway = m.result!.away;
 
-    // Load stored match file to extract scorers/cards
-    const stored = await readJson<StoredMatch>(MATCH_PATH(m.id), token);
-    const homeEvents = stored ? extractGoalsAndCards(stored.data.events, 'home', []) : { goals: [], cards: [] };
-    const awayEvents = stored ? extractGoalsAndCards(stored.data.events, 'away', []) : { goals: [], cards: [] };
+    // Extract scorers/cards from matchSummary embedded in CompMatch (no file fetch needed)
+    const homeGoals = m.matchSummary?.homeGoals ?? [];
+    const awayGoals = m.matchSummary?.awayGoals ?? [];
+    const homeCards = m.matchSummary?.homeCards ?? [];
+    const awayCards = m.matchSummary?.awayCards ?? [];
+    // Fallback: load stored match file if summary absent
+    if (homeGoals.length === 0 && awayGoals.length === 0 && (scoreHome > 0 || scoreAway > 0)) {
+      const stored = await readJson<StoredMatch>(MATCH_PATH(m.id), token);
+      if (stored) {
+        const he = extractGoalsAndCards(stored.data.events, 'home', []);
+        const ae = extractGoalsAndCards(stored.data.events, 'away', []);
+        homeGoals.push(...he.goals); homeCards.push(...he.cards);
+        awayGoals.push(...ae.goals); awayCards.push(...ae.cards);
+      }
+    }
+    const homeEvents = { goals: homeGoals, cards: homeCards };
+    const awayEvents = { goals: awayGoals, cards: awayCards };
 
     const participantCount = comp.teamIds?.length;
     const homeSummary: RecentMatchSummary = {
