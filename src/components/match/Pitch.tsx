@@ -156,13 +156,10 @@ function eventDisplacements(
 ): Displacement[] {
   if (!ev || !ev.ballPos) return onPitchIds.map(() => ({ dx: 0, dy: 0 }));
 
-  // Convert ballPos (engine SVG space x=0..100, y=0..50) to display space
-  // In 1st half: home attacks right (x as-is), away mirrored.
-  // In 2nd half: flipped.
   const rawBall = ev.ballPos;
   const attacking = ev.side === side;
 
-  // Display ball position for this side
+  // Ball in display space for this side's perspective
   let bx: number, by: number;
   if (side === 'home') {
     bx = flipped ? 100 - rawBall.x : rawBall.x;
@@ -172,45 +169,66 @@ function eventDisplacements(
     by = rawBall.y;
   }
 
-  // Intensity of movement per event type
+  // Attacking direction: home attacks toward x=100 in 1st half, x=0 in 2nd. Mirror for away.
+  // After display-space transform both sides "attack toward x=100".
+  const attackDir = 100; // target x when pushing forward (both sides post-mirror)
+  const defendDir = 0;   // goal to protect
+
+  // Intensity per event type
   const intensity: Record<string, { att: number; def: number; gk: number }> = {
-    shot:        { att: 0.55, def: 0.15, gk: 0.05 },
+    shot:        { att: 0.60, def: 0.18, gk: 0.06 },
     goal:        { att: 0.30, def: 0.10, gk: 0.02 },
-    save:        { att: 0.20, def: 0.08, gk: 0.02 },
-    keyPass:     { att: 0.40, def: 0.20, gk: 0.03 },
-    dribble:     { att: 0.50, def: 0.25, gk: 0.04 },
-    corner:      { att: 0.45, def: 0.35, gk: 0.05 },
-    header:      { att: 0.50, def: 0.30, gk: 0.04 },
-    freeKick:    { att: 0.40, def: 0.35, gk: 0.05 },
+    save:        { att: 0.22, def: 0.10, gk: 0.02 },
+    keyPass:     { att: 0.45, def: 0.22, gk: 0.03 },
+    dribble:     { att: 0.55, def: 0.28, gk: 0.04 },
+    corner:      { att: 0.50, def: 0.38, gk: 0.05 },
+    header:      { att: 0.52, def: 0.32, gk: 0.04 },
+    freeKick:    { att: 0.44, def: 0.38, gk: 0.05 },
     penalty:     { att: 0.15, def: 0.10, gk: 0.02 },
-    foul:        { att: 0.15, def: 0.15, gk: 0.02 },
-    clearance:   { att: 0.10, def: 0.20, gk: 0.03 },
-    offside:     { att: 0.10, def: 0.05, gk: 0.01 },
+    foul:        { att: 0.18, def: 0.18, gk: 0.02 },
+    clearance:   { att: 0.10, def: 0.22, gk: 0.03 },
+    offside:     { att: 0.12, def: 0.06, gk: 0.01 },
   };
 
-  const mod = intensity[ev.type] ?? { att: 0.12, def: 0.10, gk: 0.02 };
+  const mod = intensity[ev.type] ?? { att: 0.14, def: 0.12, gk: 0.02 };
+
+  const n = onPitchIds.length;
 
   return onPitchIds.map((id, i) => {
     const base = basePositions[i];
     if (!base) return { dx: 0, dy: 0 };
 
     const isGk = i === 0;
-    const isActivePlayer = ev.playerId === id || ev.assistId === id;
+    const isActive = ev.playerId === id || ev.assistId === id;
+    // Normalised position in lineup (0=GK, 1=fwd) for role-based intensity
+    const roleFactor = i / Math.max(n - 1, 1); // 0..1
 
-    // t = how far this player moves toward ball (0=stay, 1=go to ball)
-    let t: number;
     if (isGk) {
-      t = mod.gk;
-    } else if (attacking) {
-      // Possessing side moves forward
-      t = isActivePlayer ? Math.min(mod.att * 1.8, 0.85) : mod.att * (0.4 + 0.6 * (i / onPitchIds.length));
-    } else {
-      // Defending side compresses toward ball to block
-      t = isActivePlayer ? mod.def * 1.5 : mod.def * (0.3 + 0.7 * (1 - i / onPitchIds.length));
+      // GK barely moves — slight lateral shift toward ball y
+      const dy = lerp(0, by - base.y, mod.gk);
+      return { dx: 0, dy };
     }
 
-    const targetX = lerp(base.x, bx, t);
-    const targetY = lerp(base.y, by, t);
+    let targetX: number;
+    let targetY: number;
+    let t: number;
+
+    if (attacking) {
+      // Attacking: push players toward ball position + forward bias
+      // Active player goes closest to ball; others push proportionally to their role
+      t = isActive ? Math.min(mod.att * 1.8, 0.88) : mod.att * (0.3 + 0.7 * roleFactor);
+      // Target blends between ball position and deep attack position
+      const advanceBias = isActive ? 0.7 : 0.4 * roleFactor;
+      targetX = lerp(lerp(base.x, bx, t), lerp(base.x, attackDir, t), advanceBias);
+      targetY = lerp(base.y, by, t * 0.8);
+    } else {
+      // Defending: players compress toward ball to block, forwards track back less
+      t = isActive ? mod.def * 1.5 : mod.def * (0.25 + 0.75 * (1 - roleFactor));
+      // Defenders track toward ball; attackers only partially
+      const trackBias = isActive ? 0.8 : 0.5 * (1 - roleFactor);
+      targetX = lerp(lerp(base.x, bx, t), lerp(base.x, defendDir, t * 0.3), trackBias);
+      targetY = lerp(base.y, by, t * 0.75);
+    }
 
     return { dx: targetX - base.x, dy: targetY - base.y };
   });

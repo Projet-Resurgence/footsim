@@ -15,9 +15,11 @@ type Props = {
   home: Team;
   away: Team;
   score: { home: number; away: number };
+  scorerName?: string | null;
+  scorerMinute?: number | null;
 };
 
-export function GoalCelebration({ visible, scoringTeam, home, away, score }: Props) {
+export function GoalCelebration({ visible, scoringTeam, home, away, score, scorerName, scorerMinute }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastSrcRef = useRef('');
   const [videoSrc, setVideoSrc] = useState(VIDEOS[0]);
@@ -89,15 +91,26 @@ export function GoalCelebration({ visible, scoringTeam, home, away, score }: Pro
             </motion.div>
 
             <motion.div
-              className="flex items-center gap-3"
+              className="flex flex-col items-center gap-1"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
             >
-              {scoringTeam.flag && (
-                <img src={scoringTeam.flag} alt={scoringTeam.name} className="h-10 w-10 object-cover rounded shadow-lg" />
+              <div className="flex items-center gap-3">
+                {scoringTeam.flag && (
+                  <img src={scoringTeam.flag} alt={scoringTeam.name} className="h-10 w-10 object-cover rounded shadow-lg" />
+                )}
+                <span className="font-display text-2xl text-accent tracking-wide">{scoringTeam.name}</span>
+              </div>
+              {scorerName && (
+                <div className="flex items-center gap-1.5 text-white/80 text-base font-medium tracking-wide">
+                  <span>⚽</span>
+                  <span>{scorerName}</span>
+                  {scorerMinute != null && (
+                    <span className="text-white/40 text-sm">{scorerMinute}'</span>
+                  )}
+                </div>
               )}
-              <span className="font-display text-2xl text-accent tracking-wide">{scoringTeam.name}</span>
             </motion.div>
 
             <motion.div

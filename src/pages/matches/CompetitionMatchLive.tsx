@@ -73,7 +73,7 @@ export default function CompetitionMatchLive() {
   const [awaySavedTactics, setAwaySavedTactics] = useState<SavedTactic[]>([]);
   const savedRef = useRef(false);
   const prevScoreRef = useRef({ home: 0, away: 0 });
-  const [celebration, setCelebration] = useState<{ team: Team; score: { home: number; away: number } } | null>(null);
+  const [celebration, setCelebration] = useState<{ team: Team; score: { home: number; away: number }; scorerName?: string; scorerMinute?: number } | null>(null);
   const celebTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset all per-match state when params change (même composant réutilisé)
@@ -224,15 +224,23 @@ export default function CompetitionMatchLive() {
     if (matchState.matchId !== matchInput.matchId) return;
     const prev = prevScoreRef.current;
     const curr = matchState.score;
-    if (curr.home > prev.home) triggerCelebration(matchInput.home.team, curr);
-    else if (curr.away > prev.away) triggerCelebration(matchInput.away.team, curr);
+    const allPlayers = [...matchInput.home.players, ...matchInput.away.players];
+    if (curr.home > prev.home) {
+      const goalEv = [...matchState.events].reverse().find((e) => e.type === 'goal' && e.side === 'home');
+      const scorer = goalEv?.playerId ? allPlayers.find((p) => p.id === goalEv.playerId) : undefined;
+      triggerCelebration(matchInput.home.team, curr, scorer ? `${scorer.firstName} ${scorer.lastName}` : undefined, goalEv?.minute);
+    } else if (curr.away > prev.away) {
+      const goalEv = [...matchState.events].reverse().find((e) => e.type === 'goal' && e.side === 'away');
+      const scorer = goalEv?.playerId ? allPlayers.find((p) => p.id === goalEv.playerId) : undefined;
+      triggerCelebration(matchInput.away.team, curr, scorer ? `${scorer.firstName} ${scorer.lastName}` : undefined, goalEv?.minute);
+    }
     prevScoreRef.current = { ...curr };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchState?.score.home, matchState?.score.away]);
 
-  function triggerCelebration(team: Team, score: { home: number; away: number }) {
+  function triggerCelebration(team: Team, score: { home: number; away: number }, scorerName?: string, scorerMinute?: number) {
     if (celebTimerRef.current) clearTimeout(celebTimerRef.current);
-    setCelebration({ team, score });
+    setCelebration({ team, score, scorerName, scorerMinute });
     celebTimerRef.current = setTimeout(() => setCelebration(null), 4000);
   }
 
@@ -947,6 +955,8 @@ export default function CompetitionMatchLive() {
         home={matchInput.home.team}
         away={matchInput.away.team}
         score={celebration?.score ?? matchState.score}
+        scorerName={celebration?.scorerName}
+        scorerMinute={celebration?.scorerMinute}
       />
 
       <div className="flex items-center justify-between">

@@ -69,6 +69,16 @@ export function computeMotm(
   home: { team: Team; players: Player[] },
   away: { team: Team; players: Player[] },
 ): MotmResult | null {
+  // Determine winner side — MOTM must be from the winning team (draw: no restriction)
+  const hs = state.score.home;
+  const as_ = state.score.away;
+  let winnerSide: 'home' | 'away' | null = null;
+  if (hs > as_) winnerSide = 'home';
+  else if (as_ > hs) winnerSide = 'away';
+  else if (state.penaltyScore) {
+    winnerSide = state.penaltyScore.home > state.penaltyScore.away ? 'home' : 'away';
+  }
+
   const homeMap = new Map(home.players.map((p) => [p.id, p]));
   const awayMap = new Map(away.players.map((p) => [p.id, p]));
 
@@ -112,6 +122,8 @@ export function computeMotm(
   let best: MotmResult | null = null;
 
   for (const [side, sideData] of [['home', home], ['away', away]] as const) {
+    // Skip loser side when there is a clear winner
+    if (winnerSide && side !== winnerSide) continue;
     const sideMap = side === 'home' ? homeMap : awayMap;
     const ids = participatedIds(side);
     for (const pid of ids) {
