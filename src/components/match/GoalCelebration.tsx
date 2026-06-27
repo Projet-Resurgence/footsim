@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { Team } from '@/lib/types';
 
 const VIDEOS = [
-  '/footsim/videos/celebration-but-1.mp4',
-  '/footsim/videos/celebration-but-2.mp4',
+  '/videos/celebration-but-1.mp4',
+  '/videos/celebration-but-2.mp4',
 ];
 
 type Props = {
@@ -21,18 +21,19 @@ export function GoalCelebration({ visible, scoringTeam, home, away, score }: Pro
 
   useEffect(() => {
     if (visible) {
-      setVideoSrc(VIDEOS[Math.floor(Math.random() * VIDEOS.length)]);
+      const src = VIDEOS[Math.floor(Math.random() * VIDEOS.length)];
+      setVideoSrc(src);
+      // Play after next paint — element may not reflect new src yet
+      requestAnimationFrame(() => {
+        const el = videoRef.current;
+        if (!el) return;
+        el.load();
+        el.play().catch(() => {});
+      });
+    } else {
+      videoRef.current?.pause();
     }
-  }, [visible]);
-
-  useEffect(() => {
-    if (visible && videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(() => {});
-    } else if (!visible && videoRef.current) {
-      videoRef.current.pause();
-    }
-  }, [visible, videoSrc]);
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <AnimatePresence>
