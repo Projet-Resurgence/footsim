@@ -39,18 +39,16 @@ export function GoalCelebration({ visible, scoringTeam, home, away, score }: Pro
     });
   }
 
-  // Nouveau but = scoringTeam change ou visible passe à true
-  const prevTeamRef = useRef<string | null>(null);
+  const totalGoals = score.home + score.away;
+
   useEffect(() => {
     if (!visible) {
       videoRef.current?.pause();
-      prevTeamRef.current = null;
       return;
     }
-    // visible vient de passer true, ou l'équipe a changé (même équipe = nouveau but aussi)
     pickAndPlay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, scoringTeam]);
+  }, [visible, totalGoals]);
 
   return (
     <AnimatePresence>
