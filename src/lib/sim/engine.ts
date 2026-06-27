@@ -196,41 +196,64 @@ function injectGoal(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): v
   state.ball = ZONE.centre;
 }
 
-function applyForcedOutcome(state: MatchState, ctx: EngineCtx): void {
-  const homeOutcome = ctx.home.team.matchOutcome;
-  const awayOutcome = ctx.away.team.matchOutcome;
-  if (!homeOutcome && !awayOutcome) return;
+function forcedDesiredHome(ctx: EngineCtx): 'win' | 'loss' | 'draw' | null {
+  const ho = ctx.home.team.matchOutcome;
+  const ao = ctx.away.team.matchOutcome;
+  if (!ho && !ao) return null;
+  if (ho) return ho;
+  return ao === 'win' ? 'loss' : ao === 'loss' ? 'win' : 'draw';
+}
 
-  // Determine desired result from home perspective; home takes priority if both set
-  let desiredHome: 'win' | 'loss' | 'draw';
-  if (homeOutcome) {
-    desiredHome = homeOutcome;
-  } else {
-    desiredHome = awayOutcome === 'win' ? 'loss' : awayOutcome === 'loss' ? 'win' : 'draw';
-  }
+// Called every tick — probabilistically injects a forced goal spread across the full match
+function tickForcedGoal(state: MatchState, ctx: EngineCtx): void {
+  const desired = forcedDesiredHome(ctx);
+  if (!desired) return;
 
   const h = state.score.home;
   const a = state.score.away;
-  const currentResult: 'win' | 'loss' | 'draw' = h > a ? 'win' : a > h ? 'loss' : 'draw';
+  const current: 'win' | 'loss' | 'draw' = h > a ? 'win' : a > h ? 'loss' : 'draw';
+  if (current === desired) return;
 
-  if (currentResult === desiredHome) return; // already correct — no injection needed
+  // Which side needs a goal?
+  let needSide: 'home' | 'away';
+  if (desired === 'win') needSide = 'home';
+  else if (desired === 'loss') needSide = 'away';
+  else needSide = h > a ? 'away' : 'home'; // draw: trailing side scores
 
-  if (desiredHome === 'win') {
-    // Need home to lead: inject enough home goals to go a + 1
+  // Minutes remaining in current period
+  const periodEnd = state.status === 'firstHalf' ? 45 + state.homeAddedTime
+    : state.status === 'secondHalf' ? 90 + state.awayAddedTime
+    : state.status === 'extraTimeFirst' ? 105
+    : state.status === 'extraTimeSecond' ? 123
+    : 90;
+  const minutesLeft = Math.max(1, periodEnd - state.minute);
+
+  // Probability: spread uniformly so expected 1 goal per period when needed.
+  // Use 1/minutesLeft so on average it fires once before the period ends.
+  if (!chance(1 / minutesLeft)) return;
+
+  injectGoal(state, ctx, needSide);
+}
+
+function applyForcedOutcome(state: MatchState, ctx: EngineCtx): void {
+  // Safety net at fulltime: if result still wrong (e.g. opponent equalised late), fix it
+  const desired = forcedDesiredHome(ctx);
+  if (!desired) return;
+
+  const h = state.score.home;
+  const a = state.score.away;
+  const current: 'win' | 'loss' | 'draw' = h > a ? 'win' : a > h ? 'loss' : 'draw';
+  if (current === desired) return;
+
+  if (desired === 'win') {
     const needed = (a + 1) - h;
     for (let i = 0; i < needed; i++) injectGoal(state, ctx, 'home');
-  } else if (desiredHome === 'loss') {
+  } else if (desired === 'loss') {
     const needed = (h + 1) - a;
     for (let i = 0; i < needed; i++) injectGoal(state, ctx, 'away');
   } else {
-    // draw: inject goals for the trailing side to equalise
-    if (h > a) {
-      const needed = h - a;
-      for (let i = 0; i < needed; i++) injectGoal(state, ctx, 'away');
-    } else {
-      const needed = a - h;
-      for (let i = 0; i < needed; i++) injectGoal(state, ctx, 'home');
-    }
+    if (h > a) for (let i = 0; i < h - a; i++) injectGoal(state, ctx, 'away');
+    else for (let i = 0; i < a - h; i++) injectGoal(state, ctx, 'home');
   }
 }
 
@@ -239,6 +262,33 @@ function checkGoldenGoal(state: MatchState, ctx: EngineCtx): void {
     state.status = 'fulltime';
     pushEvent(state, ctx, { type: 'fulltime', side: null, ballPos: ZONE.centre }, ctx.home.team.name);
   }
+}
+
+// Returns true if allowing a goal for `possessing` would break the forced outcome.
+// Probability of blocking increases as the match progresses (more urgent near end).
+function shouldBlockGoal(state: MatchState, ctx: EngineCtx, possessing: 'home' | 'away'): boolean {
+  const desired = forcedDesiredHome(ctx);
+  if (!desired) return false;
+
+  const h = state.score.home;
+  const a = state.score.away;
+
+  // Would this goal break the desired result?
+  const newH = possessing === 'home' ? h + 1 : h;
+  const newA = possessing === 'away' ? a + 1 : a;
+  const newResult: 'win' | 'loss' | 'draw' = newH > newA ? 'win' : newA > newH ? 'loss' : 'draw';
+  if (newResult === desired) return false; // goal is fine or even helpful
+
+  // Goal would break result — block with increasing probability toward end of match
+  const periodEnd = state.status === 'firstHalf' ? 45 + state.homeAddedTime
+    : state.status === 'secondHalf' ? 90 + state.awayAddedTime
+    : state.status === 'extraTimeFirst' ? 105
+    : state.status === 'extraTimeSecond' ? 123
+    : 90;
+  const progress = clamp(state.minute / periodEnd, 0, 1);
+  // Early in match: 30% chance to block (still some drama). Late: near 100%.
+  const pBlock = 0.30 + 0.70 * progress;
+  return chance(pBlock);
 }
 
 function resolveShot(
@@ -265,6 +315,15 @@ function resolveShot(
   if (onTarget) {
     state.shotsOnTarget[possessing]++;
     if (chance(pGoal)) {
+      // If this goal would break the forced outcome, convert to a save instead
+      if (shouldBlockGoal(state, ctx, possessing)) {
+        state.saves[opp]++;
+        if (oppGk?.id) state.playerSaves[oppGk.id] = (state.playerSaves[oppGk.id] ?? 0) + 1;
+        const oppName_ = opp === 'home' ? ctx.home.team.name : ctx.away.team.name;
+        pushEvent(state, ctx, { type: 'save', side: opp, playerId: oppGk?.id, ballPos: ballZone },
+          oppName_, oppGk ? `${oppGk.firstName} ${oppGk.lastName}` : undefined);
+        return false;
+      }
       state.score[possessing]++;
       const effectiveAssist = assisterId !== shooter?.id ? assisterId : undefined;
       pushEvent(state, ctx, { type: 'goal', side: possessing, playerId: shooter?.id, assistId: effectiveAssist, ballPos: ballZone },
@@ -580,6 +639,9 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   }
 
   state.minute++;
+
+  // Forced outcome: probabilistic goal injection spread across the full match
+  tickForcedGoal(state, ctx);
 
   // Apply any planned subs triggered by this minute
   applyPlannedSubsByMinute(state, ctx, 'home');
