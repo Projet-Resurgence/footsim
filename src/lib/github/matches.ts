@@ -27,6 +27,27 @@ const IMPORTANCE_MATCH_MULT: Record<CompetitionImportance, number> = {
   mondial: 2.0,
 };
 
+// ─── LPM zone bonus ──────────────────────────────────────────────────────────
+// Zone Or (1–24): qualifiés directement → gros bonus décroissant par rang
+// Zone Rouge (25–40): barrages → bonus modéré (positif si qualifié, négatif si éliminé)
+// Zone Noire (41–48): éliminés → malus
+export function calcLpmZoneBonus(opts: {
+  rank: number; // 1-based
+  playoffQualified?: boolean; // Zone Rouge → a passé les barrages
+}): number {
+  const { rank, playoffQualified } = opts;
+  if (rank <= 24) {
+    // Zone Or: 1er = +80, 24ème = +20, linéaire
+    return Math.round(80 - (rank - 1) * (60 / 23));
+  }
+  if (rank <= 40) {
+    // Zone Rouge barrages: qualifié → +8, éliminé → -5
+    return playoffQualified ? 8 : -5;
+  }
+  // Zone Noire 41–48: -10 → -20 décroissant
+  return Math.round(-10 - (rank - 41) * (10 / 7));
+}
+
 export function participantSizeMult(count: number | undefined): number {
   if (!count) return 1.00;
   if (count <= 2) return 0.20;
@@ -445,6 +466,73 @@ export async function resyncCompetitionMatchHistory(
   }
 
   return { synced, skipped: 0 };
+}
+
+/**
+ * Distribute LPM zone bonus CMF points to all participating teams.
+ * Writes a synthetic recentMatch entry (matchId = `lpm-bonus-{compId}`) per team.
+ * Safe to re-run: skips teams that already have the entry.
+ */
+export async function distributeLpmZonePoints(
+  comp: import('@/lib/competition/types').Competition,
+  token: string,
+  opts: {
+    /** teamId → final rank (1-based) */
+    ranks: Record<string, number>;
+    /** set of teamIds that passed the playoff (Zone Rouge qualifiés) */
+    playoffQualifiedIds: Set<string>;
+    /** teamSlugs map from listTeams */
+    teamSlugs?: Record<string, string>;
+  },
+): Promise<{ distributed: number; skipped: number }> {
+  const snapshot = comp.teamSnapshot ?? {};
+  const syntheticMatchId = `lpm-bonus-${comp.id}`;
+  let distributed = 0;
+  let skipped = 0;
+
+  for (const [teamId, rank] of Object.entries(opts.ranks)) {
+    const slug = opts.teamSlugs?.[teamId] ?? snapshot[teamId]?.slug ?? teamId;
+    const cmfPoints = calcLpmZoneBonus({ rank, playoffQualified: opts.playoffQualifiedIds.has(teamId) });
+    const summary: RecentMatchSummary = {
+      matchId: syntheticMatchId,
+      playedAt: comp.createdAt,
+      opponentSlug: '',
+      opponentName: `LPM — Classement final`,
+      homeAway: 'home',
+      scoreFor: 0,
+      scoreAgainst: 0,
+      cmfPoints,
+      compKind: 'officielle',
+      compScope: 'internationale',
+      compImportance: 'mondial',
+      participantCount: comp.teamIds.length,
+    };
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+      type TW = import('@/lib/types').Team & { recentMatches?: RecentMatchSummary[] };
+      const existing = await readJson<TW>(TEAM_PATH(slug), token);
+      if (!existing) { skipped++; break; }
+      const prev = existing.data.recentMatches ?? [];
+      if (prev.some((r) => r.matchId === syntheticMatchId)) { skipped++; break; }
+      const next = [summary, ...prev].sort((a, b) => b.playedAt.localeCompare(a.playedAt));
+      try {
+        await writeJson({
+          path: TEAM_PATH(slug), token,
+          data: { ...existing.data, recentMatches: next } as TW,
+          message: `chore(teams/${slug}): LPM zone bonus rank ${rank} (+${cmfPoints} CMF)`,
+          sha: existing.sha,
+        });
+        distributed++;
+        break;
+      } catch (err) {
+        const msg = String(err);
+        if ((msg.includes('409') || msg.includes('422')) && attempt < 3) continue;
+        throw err;
+      }
+    }
+  }
+
+  return { distributed, skipped };
 }
 
 /**

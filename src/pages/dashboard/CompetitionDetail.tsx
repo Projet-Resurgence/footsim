@@ -30,7 +30,7 @@ import { PRESS_CATEGORY_COLOR, PRESS_CATEGORY_LABEL, generateCmfItems } from '@/
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
 import { batchUpdateTeamCompHistory, batchUpdateTeamMedical, batchRemoveTeamRecentMatches } from '@/lib/github/store';
 import { commitFiles, readJson as ghReadJson } from '@/lib/github/api';
-import { resyncCompetitionMatchHistory, deleteCompetitionMatchFiles } from '@/lib/github/matches';
+import { resyncCompetitionMatchHistory, deleteCompetitionMatchFiles, distributeLpmZonePoints, calcLpmZoneBonus } from '@/lib/github/matches';
 import type { Injury, Suspension } from '@/lib/competition/injuries';
 import { SEVERITY_COLOR, CAUSE_LABEL } from '@/lib/competition/injuries';
 
@@ -58,6 +58,7 @@ export default function CompetitionDetail() {
   const [syncing, setSyncing] = useState(false);
   const [resyncing, setResyncing] = useState(false);
   const [syncingMedical, setSyncingMedical] = useState(false);
+  const [distributingLpm, setDistributingLpm] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'bracket' | 'rounds' | 'stats' | 'presse' | 'morale' | 'medical' | 'suspensions'>('overview');
   const [knockoutDraw, setKnockoutDraw] = useState<DrawResult | null>(null);
   const [lpmDraw, setLpmDraw] = useState<LPMPair[] | null>(null);
@@ -297,6 +298,38 @@ export default function CompetitionDetail() {
       toast('error', String(err));
     } finally {
       setSyncingMedical(false);
+    }
+  }
+
+  async function handleDistributeLpmZone() {
+    if (!pat || !current || current.format !== 'lpm') return;
+    setDistributingLpm(true);
+    try {
+      const { sortStandings } = await import('@/lib/competition/scheduler');
+      const { listTeams } = await import('@/lib/github/store');
+      const allTeams = await listTeams(pat);
+      const teamSlugs: Record<string, string> = {};
+      for (const t of allTeams) teamSlugs[t.id] = t.slug;
+
+      const sorted = sortStandings(Object.values(current.standings));
+      const ranks: Record<string, number> = {};
+      sorted.forEach((s, i) => { ranks[s.teamId] = i + 1; });
+
+      // Playoff qualified: teams in Zone Rouge that appear as winners in playoff matches
+      const playoffQualifiedIds = new Set<string>();
+      for (const m of current.matches) {
+        if (m.phase !== 'lpm_playoff' || m.status !== 'completed' || !m.result) continue;
+        const homeWon = m.result.home > m.result.away || (m.result.penalties && m.result.penalties.home > m.result.penalties.away);
+        if (homeWon && m.homeTeamId) playoffQualifiedIds.add(m.homeTeamId);
+        else if (!homeWon && m.awayTeamId) playoffQualifiedIds.add(m.awayTeamId);
+      }
+
+      const { distributed, skipped } = await distributeLpmZonePoints(current, pat, { ranks, playoffQualifiedIds, teamSlugs });
+      toast('success', `Points CMF LPM distribués : ${distributed} équipes mises à jour, ${skipped} ignorées.`);
+    } catch (err) {
+      toast('error', String(err));
+    } finally {
+      setDistributingLpm(false);
     }
   }
 
@@ -588,6 +621,11 @@ export default function CompetitionDetail() {
             <Button size="sm" variant="ghost" onClick={handleResyncMatchHistory} disabled={resyncing}>
               {resyncing ? <Spinner className="h-4 w-4" /> : '🔄 Resync historique'}
             </Button>
+            {isLPM && current.status === 'completed' && (
+              <Button size="sm" variant="ghost" onClick={handleDistributeLpmZone} disabled={distributingLpm}>
+                {distributingLpm ? <Spinner className="h-4 w-4" /> : '★ Points CMF LPM'}
+              </Button>
+            )}
             {dirty && (
               <Button size="sm" variant="ghost" onClick={handleSync} disabled={syncing}>
                 {syncing ? <Spinner className="h-4 w-4" /> : '↑ Sauvegarder'}
