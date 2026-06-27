@@ -923,56 +923,65 @@ function RoundsView({
                 return KO_LABEL[phase ?? ''] ?? `Tour ${round}${phase ? ` · ${phase}` : ''}`;
               })();
 
+        const allDone = completed === total;
+
         return (
           <div
             key={round}
-            className={`rounded-lg border transition-colors ${
-              isCurrent && completed < total
-                ? 'border-accent/40 bg-accent/3'
-                : 'border-border bg-surface'
-            }`}
+            className={`rounded-lg border overflow-hidden transition-colors ${
+              isCurrent && !allDone
+                ? 'border-accent/40'
+                : allDone
+                ? 'border-border/50'
+                : 'border-border'
+            } bg-surface`}
           >
             {/* Round header */}
             <button
-              className="w-full flex items-center gap-3 px-4 py-3 text-left select-none"
+              className="w-full flex items-center gap-3 px-4 py-3 text-left select-none hover:bg-border/10 transition-colors"
               onClick={() => toggleRound(round)}
             >
-              <span className={`text-sm font-semibold ${isCurrent && completed < total ? 'text-accent' : ''}`}>
+              {/* Status dot */}
+              <span className={`h-2 w-2 rounded-full shrink-0 ${
+                allDone ? 'bg-green-500' : isCurrent ? 'bg-accent animate-pulse' : 'bg-border'
+              }`} />
+
+              <span className={`text-sm font-semibold flex-1 ${isCurrent && !allDone ? 'text-accent' : allDone ? 'text-muted' : ''}`}>
                 {label}
               </span>
-              <span className="text-xs text-muted tabular-nums">
-                {completed === total
-                  ? <span className="text-green-500">✓ Terminé</span>
-                  : `${completed} / ${total}`}
+
+              <span className="text-xs tabular-nums shrink-0">
+                {allDone
+                  ? <span className="text-green-500/80 font-medium">✓ {total} matchs</span>
+                  : <span className="text-muted">{completed}<span className="text-muted/40">/{total}</span></span>
+                }
               </span>
+
               {canMultiplex && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onSimulateRound(round); }}
-                  className="ml-auto text-xs font-medium text-accent hover:text-accent/70 transition-colors flex items-center gap-1 shrink-0"
+                  className="shrink-0 text-xs font-medium text-accent hover:text-accent/70 border border-accent/30 rounded px-2 py-0.5 transition-colors"
                 >
                   ▶ Multiplex
                 </button>
               )}
-              {!canMultiplex && (
-                <span className="ml-auto text-xs text-muted/40">{isOpen ? '▲' : '▼'}</span>
-              )}
-              {canMultiplex && (
-                <span className="text-xs text-muted/40 ml-1">{isOpen ? '▲' : '▼'}</span>
-              )}
+
+              <span className="text-xs text-muted/30 shrink-0">{isOpen ? '▲' : '▼'}</span>
             </button>
 
             {/* Match list */}
             {isOpen && (
-              <div className="border-t border-border/40 divide-y divide-border/30">
-                {roundMatches.map((m) => (
-                  <RoundMatchRow
-                    key={m.id}
-                    match={m}
-                    teamMap={teamMap}
-                    canSimulate={canSimulate}
-                    onSimulate={() => onSimulateMatch(m.id)}
-                    disqualifiedTeamIds={competition.disqualifiedTeamIds ?? []}
-                  />
+              <div className="border-t border-border/40">
+                {roundMatches.map((m, idx) => (
+                  <div key={m.id} className={idx > 0 ? 'border-t border-border/20' : ''}>
+                    <RoundMatchRow
+                      match={m}
+                      teamMap={teamMap}
+                      canSimulate={canSimulate}
+                      onSimulate={() => onSimulateMatch(m.id)}
+                      disqualifiedTeamIds={competition.disqualifiedTeamIds ?? []}
+                    />
+                  </div>
                 ))}
               </div>
             )}
@@ -1009,69 +1018,75 @@ function RoundMatchRow({
   return (
     <div>
       <div
-        className={`flex items-center gap-2 px-4 py-2.5 text-sm ${hasSummary ? 'cursor-pointer hover:bg-surface/60' : ''}`}
+        className={`flex items-center gap-3 px-4 py-3 text-sm transition-colors ${hasSummary ? 'cursor-pointer hover:bg-border/10' : ''}`}
         onClick={() => hasSummary && setExpanded((v) => !v)}
       >
         {/* Home */}
-        <div className="flex flex-1 items-center gap-2 min-w-0 justify-end flex-row-reverse">
-          {home?.flag
-            ? <img src={home.flag} alt="" className={`h-5 w-5 rounded-sm object-cover shrink-0 ${homeDisq ? 'opacity-40' : ''}`} />
-            : <div className="h-5 w-5 rounded-sm bg-border/40 shrink-0" />}
-          <span className={`truncate text-right text-[13px] ${homeDisq ? 'line-through text-muted' : 'font-medium'}`}>
+        <div className="flex flex-1 items-center gap-2 min-w-0 justify-end">
+          <span className={`truncate text-right text-[13px] ${homeDisq ? 'line-through text-muted' : done ? 'text-text' : 'font-medium'}`}>
             {home?.name ?? (match.homeTeamId ? '…' : 'À définir')}
           </span>
+          {home?.flag
+            ? <img src={home.flag} alt="" className={`h-6 w-6 rounded-sm object-cover shrink-0 ${homeDisq ? 'opacity-30' : ''}`} />
+            : <div className="h-6 w-6 rounded-sm bg-border/40 shrink-0" />}
         </div>
 
         {/* Score / status */}
-        <div className="shrink-0 w-20 text-center font-display tabular-nums text-[13px]">
+        <div className="shrink-0 w-24 text-center font-display tabular-nums">
           {isWalkover ? (
-            <span className="text-[10px] font-medium text-green-500 uppercase tracking-wider">Tapis vert</span>
+            <span className="text-[10px] font-medium text-green-500 uppercase tracking-wider">Forfait</span>
           ) : done && match.result ? (
-            <span className={`font-bold ${match.result.home > match.result.away ? 'text-accent' : match.result.home < match.result.away ? 'text-muted' : ''}`}>
-              {match.result.home}
-              <span className="text-muted font-normal mx-0.5">–</span>
-              {match.result.away}
+            <div>
+              <span className="text-base font-bold">
+                <span className={match.result.home > match.result.away ? 'text-text' : 'text-muted'}>
+                  {match.result.home}
+                </span>
+                <span className="text-muted/50 mx-1 font-normal">–</span>
+                <span className={match.result.away > match.result.home ? 'text-text' : 'text-muted'}>
+                  {match.result.away}
+                </span>
+              </span>
               {match.result.penalties && (
-                <div className="text-[10px] text-muted font-normal leading-none mt-0.5">
+                <div className="text-[10px] text-muted font-normal leading-tight">
                   {match.result.penalties.home}–{match.result.penalties.away} tab
                 </div>
               )}
-            </span>
+            </div>
           ) : canSim ? (
             <button
               onClick={(e) => { e.stopPropagation(); onSimulate(); }}
-              className="text-accent hover:text-accent/70 transition-colors text-xs font-medium"
+              className="text-accent hover:text-accent/70 transition-colors text-xs font-medium border border-accent/30 rounded px-2 py-0.5"
             >
               ▶ Jouer
             </button>
           ) : (
-            <span className="text-muted/40 text-xs">vs</span>
+            <span className="text-muted/30 text-sm">·</span>
           )}
         </div>
 
         {/* Away */}
         <div className="flex flex-1 items-center gap-2 min-w-0">
           {away?.flag
-            ? <img src={away.flag} alt="" className={`h-5 w-5 rounded-sm object-cover shrink-0 ${awayDisq ? 'opacity-40' : ''}`} />
-            : <div className="h-5 w-5 rounded-sm bg-border/40 shrink-0" />}
-          <span className={`truncate text-[13px] ${awayDisq ? 'line-through text-muted' : ''}`}>
+            ? <img src={away.flag} alt="" className={`h-6 w-6 rounded-sm object-cover shrink-0 ${awayDisq ? 'opacity-30' : ''}`} />
+            : <div className="h-6 w-6 rounded-sm bg-border/40 shrink-0" />}
+          <span className={`truncate text-[13px] ${awayDisq ? 'line-through text-muted' : done ? 'text-text' : 'font-medium'}`}>
             {away?.name ?? (match.awayTeamId ? '…' : 'À définir')}
           </span>
         </div>
 
         {hasSummary && (
-          <span className="text-xs text-muted/40 shrink-0 ml-1">{expanded ? '▲' : '▼'}</span>
+          <span className="text-[10px] text-muted/30 shrink-0">{expanded ? '▲' : '▼'}</span>
         )}
       </div>
 
       {expanded && match.matchSummary && (
-        <div className="border-t border-border/20 bg-surface/30 px-4 py-4 space-y-4">
+        <div className="border-t border-border/20 bg-bg/60 px-6 py-5 space-y-5">
           {match.matchSummary.motm && (
-            <div className="flex items-center gap-3 rounded-md bg-warning/5 border border-warning/20 px-3 py-2">
-              <span className="text-base">⭐</span>
+            <div className="flex items-center gap-3 rounded-lg bg-warning/5 border border-warning/20 px-4 py-3">
+              <span className="text-lg shrink-0">⭐</span>
               <div className="min-w-0">
-                <div className="text-[10px] text-muted uppercase tracking-wide">Homme du match</div>
-                <div className="font-medium text-sm truncate">{match.matchSummary.motm.playerName}</div>
+                <div className="text-[10px] text-muted uppercase tracking-widest mb-0.5">Homme du match</div>
+                <div className="font-semibold text-sm truncate">{match.matchSummary.motm.playerName}</div>
                 <div className="text-xs text-muted">{match.matchSummary.motm.teamName} · {match.matchSummary.motm.rating.toFixed(1)}/10</div>
               </div>
             </div>
