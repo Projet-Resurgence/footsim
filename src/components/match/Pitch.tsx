@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { MatchState } from '@/lib/sim/types';
 import type { Formation } from '@/lib/types';
 
@@ -104,14 +104,10 @@ function mirror(p: { x: number; y: number }) {
   return { x: 100 - p.x, y: p.y };
 }
 
-// Convert free-editor coords (x=width 0-100%, y=depth 0-100%, y=88=GK)
-// to Pitch SVG coords (viewBox 0 0 100 50, x=depth, y=width, home attacks right)
 function editorToSvg(t: { x: number; y: number }): { x: number; y: number } {
   return { x: (100 - t.y) / 100 * 50, y: t.x / 100 * 50 };
 }
 
-// Returns positions in home-space (GK near x=5, attackers near x=45).
-// Caller applies mirror() for away side or for 2nd-half flip, same as FORMATION_POSITIONS path.
 function buildPositionsFromTokens(
   onPitchIds: string[],
   tokenPositions: Record<string, { x: number; y: number }>,
@@ -124,14 +120,6 @@ function buildPositionsFromTokens(
   });
 }
 
-// Pentagon side points (radius 0.55, first vertex pointing up)
-const PENTAGON_ANGLES = [0, 1, 2, 3, 4].map((i) => (i / 5) * 2 * Math.PI - Math.PI / 2);
-const BALL_R = 0.55;
-
-const BALL_TRANSITION = { type: 'tween', duration: 0.4, ease: 'easeOut' } as const;
-const PLAYER_TRANSITION = { type: 'tween', duration: 0.6, ease: 'easeOut' } as const;
-
-// Build enriched tokenPositions: substitutes inherit the position of the replaced player.
 function enrichTokenPositions(
   base: Record<string, { x: number; y: number }>,
   events: import('@/lib/sim/types').MatchEvent[],
@@ -148,13 +136,29 @@ function enrichTokenPositions(
   return enriched;
 }
 
+// Pentagon seam points
+const PENTAGON_ANGLES = [0, 1, 2, 3, 4].map((i) => (i / 5) * 2 * Math.PI - Math.PI / 2);
+const BALL_R = 0.6;
+
+const BALL_TRANSITION = { type: 'spring', stiffness: 120, damping: 18, mass: 0.8 } as const;
+const PLAYER_TRANSITION = { type: 'spring', stiffness: 90, damping: 20 } as const;
+
+// Detect which side possesses from last event
+function getPossessingSide(state: MatchState): 'home' | 'away' | null {
+  for (let i = state.events.length - 1; i >= 0; i--) {
+    const ev = state.events[i];
+    if (ev.side === 'home' || ev.side === 'away') return ev.side;
+  }
+  return null;
+}
+
 export function Pitch({ state, homeFormation, awayFormation, homeColor = '#F4F0E6', awayColor = '#C73E3E', homeTokenPositions, awayTokenPositions }: Props) {
   const flipped = SECOND_HALF_STATUSES.has(state.status);
+  const possessing = getPossessingSide(state);
 
   const enrichedHome = homeTokenPositions ? enrichTokenPositions(homeTokenPositions, state.events) : undefined;
   const enrichedAway = awayTokenPositions ? enrichTokenPositions(awayTokenPositions, state.events) : undefined;
 
-  // Use free-editor token positions when available, else fall back to preset formation layout
   const rawHome = enrichedHome
     ? buildPositionsFromTokens(state.homeOnPitch, enrichedHome, FORMATION_POSITIONS[homeFormation])
     : FORMATION_POSITIONS[homeFormation];
@@ -162,89 +166,143 @@ export function Pitch({ state, homeFormation, awayFormation, homeColor = '#F4F0E
     ? buildPositionsFromTokens(state.awayOnPitch, enrichedAway, FORMATION_POSITIONS[awayFormation])
     : FORMATION_POSITIONS[awayFormation];
 
-  // In 1st half: home attacks right (rawHome as-is), away attacks left (mirrored)
-  // In 2nd half: teams swap ends
+  // 1st half: home attacks right; 2nd half: swap
   const homePositions = flipped ? rawHome.map(mirror) : rawHome;
   const awayPositions = flipped ? rawAway : rawAway.map(mirror);
 
   const ballX = state.ball?.x ?? 50;
   const ballY = state.ball?.y ?? 25;
-  const ballOffset = (ballX - 50) * 0.12;
+
+  // Subtle formation drift toward ball
+  const driftX = (ballX - 50) * 0.06;
+  const driftY = (ballY - 25) * 0.04;
+
+  const isActive = state.status !== 'pregame' && state.status !== 'halftime' &&
+    state.status !== 'extraTimeHalfTime' && state.status !== 'fulltime' && state.status !== 'penalties';
 
   return (
     <svg
       viewBox="0 0 100 50"
-      className="w-full max-w-3xl rounded-lg border border-border shadow-subtle-md"
+      className="w-full max-w-3xl rounded-xl border border-border shadow-subtle-md"
       style={{ background: 'var(--pitch)' }}
     >
       {/* Pitch markings */}
-      <rect x="0.5" y="0.5" width="99" height="49" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" />
-      <line x1="50" y1="0.5" x2="50" y2="49.5" stroke="var(--pitch-line)" strokeWidth="0.3" />
-      <circle cx="50" cy="25" r="6" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" />
-      <circle cx="50" cy="25" r="0.5" fill="var(--pitch-line)" />
-      <rect x="0.5" y="13" width="14" height="24" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" />
-      <rect x="85.5" y="13" width="14" height="24" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" />
-      <rect x="0.5" y="18" width="6" height="14" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" />
-      <rect x="93.5" y="18" width="6" height="14" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" />
+      <rect x="0.5" y="0.5" width="99" height="49" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.7" />
+      <line x1="50" y1="0.5" x2="50" y2="49.5" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.7" />
+      {/* Centre circle */}
+      <circle cx="50" cy="25" r="8" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.7" />
+      <circle cx="50" cy="25" r="0.6" fill="var(--pitch-line)" opacity="0.7" />
+      {/* Penalty areas */}
+      <rect x="0.5" y="13.5" width="16" height="23" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.7" />
+      <rect x="83.5" y="13.5" width="16" height="23" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.7" />
+      {/* Goal areas */}
+      <rect x="0.5" y="19" width="6" height="12" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.7" />
+      <rect x="93.5" y="19" width="6" height="12" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.7" />
+      {/* Penalty spots */}
+      <circle cx="11" cy="25" r="0.4" fill="var(--pitch-line)" opacity="0.5" />
+      <circle cx="89" cy="25" r="0.4" fill="var(--pitch-line)" opacity="0.5" />
+      {/* Corner arcs */}
+      <path d="M 0.5 4 A 3.5 3.5 0 0 1 4 0.5" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.5" />
+      <path d="M 96 0.5 A 3.5 3.5 0 0 1 99.5 4" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.5" />
+      <path d="M 0.5 46 A 3.5 3.5 0 0 0 4 49.5" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.5" />
+      <path d="M 96 49.5 A 3.5 3.5 0 0 0 99.5 46" fill="none" stroke="var(--pitch-line)" strokeWidth="0.3" opacity="0.5" />
 
       {/* Home players */}
       {homePositions.slice(0, state.homeOnPitch.length).map((pos, i) => {
         const id = state.homeOnPitch[i];
-        const shift = i === 0 ? ballOffset * 0.3 : ballOffset;
+        const hasBall = isActive && possessing === 'home' && i === 0;
+        const cx = pos.x + (isActive ? driftX : 0);
+        const cy = pos.y + (isActive ? driftY : 0);
         return (
-          <motion.circle
-            key={`h-${id}`}
-            r="1.4"
-            fill={homeColor}
-            stroke="#1A1A1A"
-            strokeWidth="0.2"
-            opacity="0.95"
-            initial={{ cx: pos.x + shift, cy: pos.y }}
-            animate={{ cx: pos.x + shift, cy: pos.y }}
-            transition={PLAYER_TRANSITION}
-          />
+          <g key={`h-${id}`}>
+            {/* Pulse ring when possessing */}
+            {hasBall && (
+              <motion.circle
+                cx={cx} cy={cy} r={2.2}
+                fill="none"
+                stroke={homeColor}
+                strokeWidth="0.3"
+                opacity={0}
+                animate={{ r: [2.2, 3.5], opacity: [0.6, 0] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeOut' }}
+              />
+            )}
+            <motion.circle
+              r="1.5"
+              fill={homeColor}
+              stroke={hasBall ? '#FFE566' : '#1A1A1A'}
+              strokeWidth={hasBall ? 0.35 : 0.2}
+              opacity="0.95"
+              initial={{ cx, cy }}
+              animate={{ cx, cy }}
+              transition={PLAYER_TRANSITION}
+            />
+          </g>
         );
       })}
 
       {/* Away players */}
       {awayPositions.slice(0, state.awayOnPitch.length).map((pos, i) => {
         const id = state.awayOnPitch[i];
-        const shift = i === 0 ? -ballOffset * 0.3 : -ballOffset;
+        const hasBall = isActive && possessing === 'away' && i === 0;
+        const cx = pos.x - (isActive ? driftX : 0);
+        const cy = pos.y - (isActive ? driftY : 0);
         return (
-          <motion.circle
-            key={`a-${id}`}
-            r="1.4"
-            fill={awayColor}
-            stroke="#1A1A1A"
-            strokeWidth="0.2"
-            opacity="0.95"
-            initial={{ cx: pos.x + shift, cy: pos.y }}
-            animate={{ cx: pos.x + shift, cy: pos.y }}
-            transition={PLAYER_TRANSITION}
-          />
+          <g key={`a-${id}`}>
+            {hasBall && (
+              <motion.circle
+                cx={cx} cy={cy} r={2.2}
+                fill="none"
+                stroke={awayColor}
+                strokeWidth="0.3"
+                opacity={0}
+                animate={{ r: [2.2, 3.5], opacity: [0.6, 0] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeOut' }}
+              />
+            )}
+            <motion.circle
+              r="1.5"
+              fill={awayColor}
+              stroke={hasBall ? '#FFE566' : '#1A1A1A'}
+              strokeWidth={hasBall ? 0.35 : 0.2}
+              opacity="0.95"
+              initial={{ cx, cy }}
+              animate={{ cx, cy }}
+              transition={PLAYER_TRANSITION}
+            />
+          </g>
         );
       })}
 
-      {/* Ball: white circle */}
+      {/* Ball shadow */}
+      <motion.ellipse
+        rx="1.0" ry="0.4"
+        fill="rgba(0,0,0,0.25)"
+        initial={{ cx: ballX + 0.3, cy: ballY + 1.2 }}
+        animate={{ cx: ballX + 0.3, cy: ballY + 1.2 }}
+        transition={BALL_TRANSITION}
+      />
+
+      {/* Ball */}
       <motion.circle
-        r="1.1"
+        r="1.15"
         fill="white"
-        stroke="#444"
-        strokeWidth="0.16"
+        stroke="#333"
+        strokeWidth="0.14"
         initial={{ cx: ballX, cy: ballY }}
         animate={{ cx: ballX, cy: ballY }}
         transition={BALL_TRANSITION}
       />
 
-      {/* Ball: pentagon seams */}
+      {/* Pentagon seams */}
       {PENTAGON_ANGLES.map((angle, i) => {
         const next = PENTAGON_ANGLES[(i + 1) % 5];
         return (
           <motion.line
             key={`seam-${i}`}
             stroke="#444"
-            strokeWidth="0.12"
-            opacity="0.5"
+            strokeWidth="0.13"
+            opacity="0.45"
             initial={{
               x1: ballX + Math.cos(angle) * BALL_R,
               y1: ballY + Math.sin(angle) * BALL_R,
@@ -261,6 +319,32 @@ export function Pitch({ state, homeFormation, awayFormation, homeColor = '#F4F0E
           />
         );
       })}
+
+      {/* But flash : halo doré sur le but quand goal */}
+      <AnimatePresence>
+        {state.events.length > 0 && state.events[state.events.length - 1]?.type === 'goal' && (() => {
+          const lastGoal = state.events[state.events.length - 1];
+          const goalSide = lastGoal.side;
+          // home attacks right in 1st half → goal cx=100, away goal cx=0
+          const effectiveSide = flipped
+            ? (goalSide === 'home' ? 'away' : 'home')
+            : goalSide;
+          const goalCx = effectiveSide === 'home' ? 100 : 0;
+          return (
+            <motion.circle
+              key={`goal-flash-${lastGoal.id}`}
+              cx={goalCx} cy={25} r={8}
+              fill="rgba(255,220,50,0.18)"
+              stroke="rgba(255,220,50,0.5)"
+              strokeWidth="0.4"
+              initial={{ opacity: 0, r: 4 }}
+              animate={{ opacity: [0, 1, 0], r: [4, 12, 16] }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 1.2, ease: 'easeOut' }}
+            />
+          );
+        })()}
+      </AnimatePresence>
     </svg>
   );
 }

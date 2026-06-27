@@ -1,33 +1,79 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import type { MatchEvent } from '@/lib/sim/types';
 
-const accentByType: Partial<Record<MatchEvent['type'], string>> = {
-  goal: 'border-l-accent',
-  yellow: 'border-l-warning',
-  red: 'border-l-danger',
-  save: 'border-l-accent/60',
-  halftime: 'border-l-muted',
-  fulltime: 'border-l-muted',
+const IMPORTANT_TYPES = new Set<MatchEvent['type']>(['goal', 'yellow', 'red', 'penalty', 'penalty_saved', 'penalty_miss']);
+
+const BORDER_BY_TYPE: Partial<Record<MatchEvent['type'], string>> = {
+  goal:          'border-l-accent',
+  yellow:        'border-l-warning',
+  red:           'border-l-danger',
+  penalty:       'border-l-accent/80',
+  penalty_saved: 'border-l-accent/60',
+  penalty_miss:  'border-l-danger/60',
+  save:          'border-l-accent/40',
+  halftime:      'border-l-muted',
+  fulltime:      'border-l-muted',
+  extraTime:     'border-l-warning/60',
+  injury:        'border-l-warning/80',
+  coachRed:      'border-l-danger/70',
 };
 
-export function EventFeed({ events }: { events: MatchEvent[] }) {
-  const recent = [...events].slice(-30).reverse();
+const BG_BY_TYPE: Partial<Record<MatchEvent['type'], string>> = {
+  goal:    'bg-accent/8',
+  yellow:  'bg-warning/6',
+  red:     'bg-danger/8',
+  injury:  'bg-warning/5',
+};
+
+function EventRow({ ev }: { ev: MatchEvent }) {
+  const border = BORDER_BY_TYPE[ev.type] ?? 'border-l-border';
+  const bg = BG_BY_TYPE[ev.type] ?? '';
+  const isImportant = IMPORTANT_TYPES.has(ev.type);
+
   return (
-    <div className="flex h-full max-h-[420px] flex-col gap-2 overflow-y-auto rounded-lg border border-border bg-surface p-4 shadow-subtle-sm">
+    <motion.div
+      key={ev.id}
+      layout
+      initial={{ opacity: 0, x: 14, scale: 0.97 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+      className={`border-l-2 ${border} ${bg} pl-3 py-1 rounded-r text-sm leading-snug ${isImportant ? 'font-medium' : 'text-muted/90'}`}
+    >
+      {ev.text}
+    </motion.div>
+  );
+}
+
+export function EventFeed({ events }: { events: MatchEvent[] }) {
+  const pinned = [...events].filter((ev) => IMPORTANT_TYPES.has(ev.type)).reverse();
+  const recent = [...events].filter((ev) => !IMPORTANT_TYPES.has(ev.type)).slice(-25).reverse();
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-subtle-sm">
       <h3 className="font-display text-sm uppercase tracking-widest text-muted">Événements</h3>
-      <AnimatePresence initial={false}>
-        {recent.map((ev) => (
-          <motion.div
-            key={ev.id}
-            initial={{ opacity: 0, x: 16 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0 }}
-            className={`border-l-2 ${accentByType[ev.type] ?? 'border-l-border'} pl-3 text-sm`}
-          >
-            {ev.text}
-          </motion.div>
-        ))}
-      </AnimatePresence>
+
+      {/* Épinglés : buts & cartons */}
+      {pinned.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] uppercase tracking-widest text-muted/60">Moments clés</span>
+          <AnimatePresence initial={false}>
+            {pinned.map((ev) => <EventRow key={ev.id} ev={ev} />)}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Séparateur si les deux sections présentes */}
+      {pinned.length > 0 && recent.length > 0 && (
+        <div className="border-t border-border/40" />
+      )}
+
+      {/* Flux normal, scrollable */}
+      <div className="max-h-64 overflow-y-auto flex flex-col gap-1.5">
+        <AnimatePresence initial={false}>
+          {recent.map((ev) => <EventRow key={ev.id} ev={ev} />)}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
