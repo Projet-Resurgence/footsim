@@ -23,6 +23,8 @@ type Props = {
 };
 
 export function GoalCelebration({ visible, scoringTeam, home, away, score, scorerName, scorerMinute }: Props) {
+  // Track whether we're actually showing (not just exit-animating) to block pointer events
+  const isShowing = visible && !!scoringTeam;
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastSrcRef = useRef('');
   const [videoSrc, setVideoSrc] = useState(VIDEOS[0]);
@@ -56,6 +58,8 @@ export function GoalCelebration({ visible, scoringTeam, home, away, score, score
   }, [visible, totalGoals]);
 
   return (
+    // Outer wrapper always in DOM — pointer-events disabled when not showing (incl. exit animation)
+    <div className={isShowing ? undefined : 'pointer-events-none'} style={{ position: 'fixed', inset: 0, zIndex: isShowing ? 50 : -1 }}>
     <AnimatePresence>
       {visible && scoringTeam && (
         <motion.div
@@ -154,5 +158,6 @@ export function GoalCelebration({ visible, scoringTeam, home, away, score, score
         </motion.div>
       )}
     </AnimatePresence>
+    </div>
   );
 }
