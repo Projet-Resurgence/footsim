@@ -19,23 +19,33 @@ type Props = {
 
 export function GoalCelebration({ visible, scoringTeam, home, away, score }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const lastSrcRef = useRef<string>('');
   const [videoSrc, setVideoSrc] = useState(VIDEOS[0]);
 
+  function pickVideo(): string {
+    const pool = VIDEOS.filter((v) => v !== lastSrcRef.current);
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function playVideo(src: string) {
+    lastSrcRef.current = src;
+    setVideoSrc(src);
+    requestAnimationFrame(() => {
+      const el = videoRef.current;
+      if (!el) return;
+      el.load();
+      el.play().catch(() => {});
+    });
+  }
+
+  // Chaque changement de scoringTeam (nouveau but) → nouvelle vidéo différente
   useEffect(() => {
     if (visible) {
-      const src = VIDEOS[Math.floor(Math.random() * VIDEOS.length)];
-      setVideoSrc(src);
-      // Play after next paint — element may not reflect new src yet
-      requestAnimationFrame(() => {
-        const el = videoRef.current;
-        if (!el) return;
-        el.load();
-        el.play().catch(() => {});
-      });
+      playVideo(pickVideo());
     } else {
       videoRef.current?.pause();
     }
-  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visible, scoringTeam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <AnimatePresence>
@@ -132,6 +142,9 @@ export function GoalCelebration({ visible, scoringTeam, home, away, score }: Pro
                 playsInline
                 loop={false}
                 className="w-full h-full object-cover"
+                onEnded={() => {
+                  if (visible) playVideo(pickVideo());
+                }}
               />
             </motion.div>
           </motion.div>
