@@ -306,8 +306,28 @@ export function Pitch({ state, homeFormation, awayFormation, homeColor = '#F4F0E
     [lastEv?.id, state.awayOnPitch.join(','), awayBase, flipped, isActive],
   );
 
-  const ballX = state.ball?.x ?? 50;
-  const ballY = state.ball?.y ?? 25;
+  // Ball follows the active player's display position when there is one.
+  // Fallback: transform engine ballPos (x=0..100, y=0..50) into display space.
+  const { ballX, ballY } = useMemo(() => {
+    if (lastEv?.playerId && isActive) {
+      // Find active player in home or away lineup
+      const hIdx = state.homeOnPitch.indexOf(lastEv.playerId);
+      if (hIdx >= 0 && homeBase[hIdx] && homeDisp[hIdx]) {
+        return { ballX: homeBase[hIdx].x + homeDisp[hIdx].dx, ballY: homeBase[hIdx].y + homeDisp[hIdx].dy };
+      }
+      const aIdx = state.awayOnPitch.indexOf(lastEv.playerId);
+      if (aIdx >= 0 && awayBase[aIdx] && awayDisp[aIdx]) {
+        return { ballX: awayBase[aIdx].x + awayDisp[aIdx].dx, ballY: awayBase[aIdx].y + awayDisp[aIdx].dy };
+      }
+    }
+    // No active player — use engine ballPos transformed to display space
+    const raw = state.ball ?? { x: 50, y: 25 };
+    // engine: home attacks right in 1st half (x=0 home goal, x=100 away goal)
+    // display: same orientation, but flipped in 2nd half
+    const dx = flipped ? 100 - raw.x : raw.x;
+    return { ballX: dx, ballY: raw.y };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastEv?.id, lastEv?.playerId, homeBase, awayBase, homeDisp, awayDisp, state.ball, flipped, isActive]);
 
   // Possessing side from last event
   const possessing = lastEv?.side ?? null;
