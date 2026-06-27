@@ -73,8 +73,9 @@ export default function CompetitionMatchLive() {
   const [awaySavedTactics, setAwaySavedTactics] = useState<SavedTactic[]>([]);
   const savedRef = useRef(false);
   const prevScoreRef = useRef({ home: 0, away: 0 });
-  const [celebration, setCelebration] = useState<{ team: Team; score: { home: number; away: number } } | null>(null);
+  const [celebration, setCelebration] = useState<{ key: number; team: Team; score: { home: number; away: number } } | null>(null);
   const celebTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const goalKeyRef = useRef(0);
 
   // Reset all per-match state when params change (même composant réutilisé)
   useEffect(() => {
@@ -232,8 +233,9 @@ export default function CompetitionMatchLive() {
 
   function triggerCelebration(team: Team, score: { home: number; away: number }) {
     if (celebTimerRef.current) clearTimeout(celebTimerRef.current);
-    setCelebration({ team, score });
-    celebTimerRef.current = setTimeout(() => setCelebration(null), 3000);
+    goalKeyRef.current += 1;
+    setCelebration({ key: goalKeyRef.current, team, score });
+    celebTimerRef.current = setTimeout(() => setCelebration(null), 3500);
   }
 
   // Load saved tactics for halftime tactic switcher
@@ -942,8 +944,7 @@ export default function CompetitionMatchLive() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 space-y-6">
       <GoalCelebration
-        key={matchId}
-        visible={celebration !== null}
+        goalKey={celebration?.key ?? 0}
         scoringTeam={celebration?.team ?? null}
         home={matchInput.home.team}
         away={matchInput.away.team}
