@@ -309,7 +309,7 @@ export default function Home() {
         <div className="max-w-3xl mx-auto grid grid-cols-3 gap-8 md:gap-16">
           <StatBadge value="97" label="Cultures" />
           <StatBadge value="9" label="Styles tactiques" />
-          <StatBadge value="11v11" label="Format" />
+          <StatBadge value="13" label="Formations" />
         </div>
       </section>
 
@@ -417,19 +417,30 @@ export default function Home() {
               { name: 'Tiki-taka', desc: 'Courtes passes en triangle, domination du milieu. Jeu lent mais précis.' },
               { name: 'Long ball', desc: 'Duels aériens, jeu physique. Moins de milieu, plus de frappes directes.' },
               { name: 'Chaos', desc: 'Aucune organisation définie. Tirs max, fautes max, surprises garanties.' },
-              { name: 'Style personnalisé', desc: 'Définissez vos propres multiplicateurs — fréquence de tirs, intensité du milieu, pression défensive — pour créer une identité tactique unique.', custom: true },
-            ].map(({ name, desc, custom }, i) => (
+            ].map(({ name, desc }, i) => (
               <motion.div key={name}
-                className={`rounded-lg border px-4 py-3 space-y-1 transition-colors ${custom ? 'border-accent/30 bg-accent/5 hover:border-accent/60' : 'border-border bg-surface hover:border-accent/40'}`}
+                className="rounded-lg border border-border bg-surface px-4 py-3 space-y-1 transition-colors hover:border-accent/40"
                 initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.05, duration: 0.35 }}>
-                <div className={`font-medium text-sm flex items-center gap-1.5 ${custom ? 'text-accent' : ''}`}>
-                  {custom && <span className="text-[10px] border border-accent/40 rounded px-1 py-px uppercase tracking-wider">libre</span>}
-                  {name}
-                </div>
+                <div className="font-medium text-sm">{name}</div>
                 <div className="text-xs text-muted leading-relaxed">{desc}</div>
               </motion.div>
             ))}
+            {/* Style personnalisé — pleine largeur */}
+            <motion.div
+              className="col-span-2 md:col-span-3 rounded-lg border border-accent/30 bg-accent/5 px-5 py-4 flex items-start gap-4 hover:border-accent/60 transition-colors"
+              initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }} transition={{ delay: 0.5, duration: 0.35 }}>
+              <div className="shrink-0 mt-0.5">
+                <span className="text-[10px] border border-accent/40 rounded px-1.5 py-px uppercase tracking-wider text-accent font-medium">libre</span>
+              </div>
+              <div className="space-y-1">
+                <div className="font-medium text-sm text-accent">Style personnalisé</div>
+                <div className="text-xs text-muted leading-relaxed">
+                  Définissez vos propres multiplicateurs — fréquence de tirs, intensité du milieu, pression défensive — pour créer une identité tactique entièrement unique qui ne correspond à aucun schéma prédéfini.
+                </div>
+              </div>
+            </motion.div>
           </div>
         </div>
       </section>
