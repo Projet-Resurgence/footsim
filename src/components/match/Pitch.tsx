@@ -189,10 +189,11 @@ export function Pitch({ state, homeFormation, awayFormation, homeColor = '#F4F0E
 
       {/* Home players */}
       {homePositions.slice(0, state.homeOnPitch.length).map((pos, i) => {
+        const id = state.homeOnPitch[i];
         const shift = i === 0 ? ballOffset * 0.3 : ballOffset;
         return (
           <motion.circle
-            key={`h-${i}`}
+            key={`h-${id}`}
             r="1.4"
             fill={homeColor}
             stroke="#1A1A1A"
@@ -207,10 +208,11 @@ export function Pitch({ state, homeFormation, awayFormation, homeColor = '#F4F0E
 
       {/* Away players */}
       {awayPositions.slice(0, state.awayOnPitch.length).map((pos, i) => {
+        const id = state.awayOnPitch[i];
         const shift = i === 0 ? -ballOffset * 0.3 : -ballOffset;
         return (
           <motion.circle
-            key={`a-${i}`}
+            key={`a-${id}`}
             r="1.4"
             fill={awayColor}
             stroke="#1A1A1A"
