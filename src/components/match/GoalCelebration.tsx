@@ -7,6 +7,9 @@ const VIDEOS = [
   '/videos/celebration-but-2.mp4',
   '/videos/celebration-but-3.mp4',
   '/videos/celebration-but-4.mp4',
+  '/videos/celebration-goat-5.mp4',
+  '/videos/celebration-goal-6.mp4',
+  '/videos/celebration-goal-7.mp4',
 ];
 
 type Props = {
