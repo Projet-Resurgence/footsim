@@ -164,20 +164,48 @@ function posFamily(pos: Position): Position[] {
   return ['LW', 'RW', 'ST'];
 }
 
+function injectGoal(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): void {
+  const opp: 'home' | 'away' = side === 'home' ? 'away' : 'home';
+  const teamName = side === 'home' ? ctx.home.team.name : ctx.away.team.name;
+  const ballZone = side === 'home' ? ZONE.awayBox : ZONE.homeBox;
+
+  const scorer = pickAttacker(side, ctx, state);
+  const assister = pickMidfielder(side, ctx, state) ?? pickAttacker(side, ctx, state);
+  const effectiveAssist = assister && assister.id !== scorer?.id ? assister : null;
+  const oppGk = gkOf(opp, ctx, state);
+
+  // Mimic the full stat chain of a real goal
+  state.shots[side]++;
+  state.shotsOnTarget[side]++;
+  const fin = scorer?.stats.technical.finishing ?? 10;
+  const com = scorer?.stats.mental.composure ?? 10;
+  const gkVal = oppGk?.overall ?? 50;
+  const xg = clamp(sigmoid((fin + com - gkVal * 0.5) / 8), 0.04, 0.75);
+  state.xg[side] = Math.round((state.xg[side] + xg) * 100) / 100;
+
+  if (effectiveAssist?.id) {
+    state.keyPasses[side]++;
+    state.playerKeyPasses[effectiveAssist.id] = (state.playerKeyPasses[effectiveAssist.id] ?? 0) + 1;
+  }
+
+  state.score[side]++;
+  pushEvent(state, ctx,
+    { type: 'goal', side, playerId: scorer?.id, assistId: effectiveAssist?.id, ballPos: ballZone },
+    teamName, scorer ? `${scorer.firstName} ${scorer.lastName}` : undefined,
+  );
+  state.ball = ZONE.centre;
+}
+
 function applyForcedOutcome(state: MatchState, ctx: EngineCtx): void {
   const homeOutcome = ctx.home.team.matchOutcome;
   const awayOutcome = ctx.away.team.matchOutcome;
-  // Priority: home outcome, then away outcome (if both set they may conflict — home wins)
-  const outcome: 'win' | 'loss' | 'draw' | null | undefined =
-    homeOutcome || awayOutcome || null;
-  if (!outcome) return;
+  if (!homeOutcome && !awayOutcome) return;
 
-  // Determine desired result from home perspective
+  // Determine desired result from home perspective; home takes priority if both set
   let desiredHome: 'win' | 'loss' | 'draw';
   if (homeOutcome) {
     desiredHome = homeOutcome;
   } else {
-    // awayOutcome set — invert for home
     desiredHome = awayOutcome === 'win' ? 'loss' : awayOutcome === 'loss' ? 'win' : 'draw';
   }
 
@@ -185,19 +213,24 @@ function applyForcedOutcome(state: MatchState, ctx: EngineCtx): void {
   const a = state.score.away;
   const currentResult: 'win' | 'loss' | 'draw' = h > a ? 'win' : a > h ? 'loss' : 'draw';
 
-  if (currentResult === desiredHome) return; // already correct
+  if (currentResult === desiredHome) return; // already correct — no injection needed
 
   if (desiredHome === 'win') {
-    // home must win: set home = away + 1 (or keep higher if already winning)
-    state.score.home = Math.max(h, a + 1);
+    // Need home to lead: inject enough home goals to go a + 1
+    const needed = (a + 1) - h;
+    for (let i = 0; i < needed; i++) injectGoal(state, ctx, 'home');
   } else if (desiredHome === 'loss') {
-    // home must lose: set away = home + 1
-    state.score.away = Math.max(a, h + 1);
+    const needed = (h + 1) - a;
+    for (let i = 0; i < needed; i++) injectGoal(state, ctx, 'away');
   } else {
-    // draw: equalise to higher score
-    const eq = Math.max(h, a);
-    state.score.home = eq;
-    state.score.away = eq;
+    // draw: inject goals for the trailing side to equalise
+    if (h > a) {
+      const needed = h - a;
+      for (let i = 0; i < needed; i++) injectGoal(state, ctx, 'away');
+    } else {
+      const needed = a - h;
+      for (let i = 0; i < needed; i++) injectGoal(state, ctx, 'home');
+    }
   }
 }
 
