@@ -23,6 +23,7 @@ import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
 import type { StoredMatch } from '@/lib/prapi/matchBackend';
+import { extractGoalsAndCards } from '@/lib/github/matches';
 import type { RecentMatchSummary } from '@/lib/github/matches';
 
 export default function MatchLive() {
@@ -117,11 +118,16 @@ export default function MatchLive() {
       const awayTeam = input.away.team;
       const score = state.score;
 
+      const allPlayers = [...input.home.players, ...input.away.players];
+      const homeGoals = extractGoalsAndCards(state.events, 'home', allPlayers).goals;
+      const awayGoals = extractGoalsAndCards(state.events, 'away', allPlayers).goals;
+
       for (const isHome of [true, false]) {
         const myTeam = isHome ? homeTeam : awayTeam;
         const oppTeam = isHome ? awayTeam : homeTeam;
         const scoreFor = isHome ? score.home : score.away;
         const scoreAgainst = isHome ? score.away : score.home;
+        const myGoals = isHome ? homeGoals : awayGoals;
         if (!myTeam.slug) continue;
         const summary: RecentMatchSummary = {
           matchId,
@@ -135,6 +141,7 @@ export default function MatchLive() {
           scoreAgainst,
           opponentStrength: oppTeam.globalStrength ?? 50,
           compKind: 'amicale',
+          scorers: myGoals.length ? myGoals : undefined,
         };
         backend.loadTeam(myTeam.slug, ownerId).then((res) => {
           if (!res) return;

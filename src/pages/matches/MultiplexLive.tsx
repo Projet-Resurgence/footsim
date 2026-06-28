@@ -879,11 +879,16 @@ export default function MultiplexLive() {
         const playedAt = compMatch.simulatedAt ?? new Date().toISOString();
         const participantCount = current.teamIds.length;
 
+        const allSlotPlayers2 = [...slot.homePlayers, ...slot.awayPlayers];
+        const slotHomeGoals = extractGoalsAndCards(slot.state!.events, 'home', allSlotPlayers2).goals;
+        const slotAwayGoals = extractGoalsAndCards(slot.state!.events, 'away', allSlotPlayers2).goals;
+
         const makeSummary = (isHome: boolean): RecentMatchSummary => {
           const oppSnap = isHome ? awaySnap : homeSnap;
           const oppStrength = (oppSnap as any)?.globalStrength ?? 50;
           const scoreFor = isHome ? slot.state!.score.home : slot.state!.score.away;
           const scoreAgainst = isHome ? slot.state!.score.away : slot.state!.score.home;
+          const myGoals = isHome ? slotHomeGoals : slotAwayGoals;
           return {
             matchId: slot.compMatchId,
             playedAt,
@@ -899,6 +904,7 @@ export default function MultiplexLive() {
             compScope: current.scope,
             compImportance: current.importance,
             participantCount,
+            scorers: myGoals.length ? myGoals : undefined,
             cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: current.kind, compScope: current.scope, compImportance: current.importance, participantCount }),
           };
         };

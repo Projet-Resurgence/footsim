@@ -957,6 +957,7 @@ export default function CompetitionMatchLive() {
             const oppStrength = (oppSnap as any)?.globalStrength ?? 50;
             const scoreFor = isHome ? thisMatch.result!.home : thisMatch.result!.away;
             const scoreAgainst = isHome ? thisMatch.result!.away : thisMatch.result!.home;
+            const myGoals = isHome ? homeGoalCards.goals : awayGoalCards.goals;
             return {
               matchId: thisMatch.id ?? '',
               playedAt,
@@ -972,6 +973,7 @@ export default function CompetitionMatchLive() {
               compScope: snap!.scope,
               compImportance: snap!.importance,
               participantCount,
+              scorers: myGoals.length ? myGoals : undefined,
               cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: snap!.kind, compScope: snap!.scope, compImportance: snap!.importance, participantCount }),
             };
           };

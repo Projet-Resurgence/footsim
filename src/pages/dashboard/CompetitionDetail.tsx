@@ -337,6 +337,7 @@ export default function CompetitionDetail() {
               const oppStrength = (oppSnap as any)?.globalStrength ?? 50;
               const scoreFor = isHome ? m.result.home : m.result.away;
               const scoreAgainst = isHome ? m.result.away : m.result.home;
+              const myGoals = isHome ? (m.matchSummary?.homeGoals ?? []) : (m.matchSummary?.awayGoals ?? []);
               newEntries.push({
                 matchId: m.id,
                 playedAt: m.simulatedAt ?? new Date().toISOString(),
@@ -352,6 +353,7 @@ export default function CompetitionDetail() {
                 compScope: current.scope,
                 compImportance: current.importance,
                 participantCount: current.teamIds.length,
+                scorers: myGoals.length ? myGoals : undefined,
                 cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: current.kind, compScope: current.scope, compImportance: current.importance, participantCount: current.teamIds.length }),
               });
             }
