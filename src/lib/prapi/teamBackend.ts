@@ -9,6 +9,11 @@ export class PrApiTeamBackend implements ITeamBackend {
     return prapi.get<Team[]>('/teams', this.token);
   }
 
+  async bulkTeams(slugs?: string[]): Promise<{ team: Team; players: Player[] }[]> {
+    const qs = slugs && slugs.length > 0 ? `?slugs=${slugs.join(',')}` : '';
+    return prapi.get<{ team: Team; players: Player[] }[]>(`/teams/bulk${qs}`, this.token);
+  }
+
   async loadTeam(slug: string, _ownerId: string): Promise<{ team: Team; players: Player[] } | null> {
     try {
       return prapi.get<{ team: Team; players: Player[] }>(`/teams/${slug}`, this.token);

@@ -26,6 +26,30 @@ export const prapi = {
   put: <T>(path: string, token: string | null, body: unknown) => request<T>('PUT', path, token, body),
   del: <T>(path: string, token: string | null) => request<T>('DELETE', path, token),
 
+  /** CMF rankings computed server-side — no auth required. */
+  rankings: () =>
+    request<{
+      teams: {
+        team: import('@/lib/types').Team;
+        points: number;
+        wins: number;
+        finals: number;
+        thirds: number;
+        participations: number;
+        form: ('W' | 'D' | 'L')[];
+      }[];
+      players: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        position: string;
+        overall: number;
+        teamSlug: string;
+        teamName: string;
+        teamFlag: string | null;
+      }[];
+    }>('GET', '/rankings', null),
+
   /** Exchange a Discord access_token for a FootSim JWT. */
   exchangeDiscordToken: (discordToken: string) =>
     request<{

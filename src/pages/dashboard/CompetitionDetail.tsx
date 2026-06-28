@@ -201,12 +201,20 @@ export default function CompetitionDetail() {
       const injuries = current.injuries ?? [];
       const suspensions = current.suspensions ?? [];
 
+      const slugToTid: Record<string, string> = {};
+      const slugs: string[] = [];
+      for (const tid of current.teamIds) {
+        const slug = teamSnap[tid]?.slug;
+        if (slug) { slugs.push(slug); slugToTid[slug] = tid; }
+      }
+      const bulk = await backend.bulkTeams(slugs);
+      const bySlug = new Map(bulk.map((r) => [r.team.slug, r]));
+
       await Promise.all(
-        current.teamIds.map(async (tid) => {
-          const slug = teamSnap[tid]?.slug;
-          if (!slug) return;
-          const res = await backend.loadTeam(slug, ownerId);
+        slugs.map(async (slug) => {
+          const res = bySlug.get(slug);
           if (!res) return;
+          const tid = slugToTid[slug];
           const teamInjuries = injuries.filter((i) => i.teamId === tid);
           const teamSuspensions = suspensions.filter((s) => s.teamId === tid);
           await backend.saveTeam(
@@ -253,15 +261,23 @@ export default function CompetitionDetail() {
 
       let distributed = 0;
       let skipped = 0;
+      const slugToTidLpm: Record<string, string> = {};
+      const slugsLpm: string[] = [];
+      for (const tid of current.teamIds) {
+        const slug = snapshot[tid]?.slug;
+        if (slug) { slugsLpm.push(slug); slugToTidLpm[slug] = tid; }
+        else skipped++;
+      }
+      const bulkLpm = await backend.bulkTeams(slugsLpm);
+      const bySlugLpm = new Map(bulkLpm.map((r) => [r.team.slug, r]));
+
       await Promise.all(
-        current.teamIds.map(async (tid) => {
-          const slug = snapshot[tid]?.slug;
-          if (!slug) { skipped++; return; }
-          const res = await backend.loadTeam(slug, ownerId);
+        slugsLpm.map(async (slug) => {
+          const res = bySlugLpm.get(slug);
           if (!res) { skipped++; return; }
+          const tid = slugToTidLpm[slug];
           const pts = LPM_ZONE_POINTS[tid] ?? 0;
           if (pts === 0) { skipped++; return; }
-          // Append a synthetic recentMatch entry to carry the CMF bonus
           const bonusEntry: import('@/lib/github/matches').RecentMatchSummary = {
             matchId: `lpm-zone-${current.id}-${tid}`,
             playedAt: new Date().toISOString(),
@@ -296,12 +312,20 @@ export default function CompetitionDetail() {
         const teamSnap = current.teamSnapshot ?? {};
         const backend = new PrApiTeamBackend(effectivePat);
 
+        const slugToTidSave: Record<string, string> = {};
+        const slugsSave: string[] = [];
+        for (const tid of current.teamIds) {
+          const slug = teamSnap[tid]?.slug;
+          if (slug) { slugsSave.push(slug); slugToTidSave[slug] = tid; }
+        }
+        const bulkSave = await backend.bulkTeams(slugsSave);
+        const bySlugSave = new Map(bulkSave.map((r) => [r.team.slug, r]));
+
         // Update compHistory + recentMatches on every team
         await Promise.allSettled(
-          current.teamIds.map(async (tid) => {
-            const slug = teamSnap[tid]?.slug;
-            if (!slug) return;
-            const res = await backend.loadTeam(slug, ownerId);
+          slugsSave.map(async (slug) => {
+            const tid = slugToTidSave[slug];
+            const res = bySlugSave.get(slug);
             if (!res) return;
 
             // compHistory
@@ -394,11 +418,12 @@ export default function CompetitionDetail() {
       await Promise.allSettled(matchIds.map((mid) => matchBk.deleteMatch(mid)));
 
       // Strip compHistory + recentMatches from each team
+      const slugsDel = current.teamIds.map((tid) => snapshot[tid]?.slug).filter(Boolean) as string[];
+      const bulkDel = await teamBk.bulkTeams(slugsDel);
+      const bySlugDel = new Map(bulkDel.map((r) => [r.team.slug, r]));
       await Promise.all(
-        current.teamIds.map(async (tid) => {
-          const slug = snapshot[tid]?.slug;
-          if (!slug) return;
-          const res = await teamBk.loadTeam(slug, ownerId);
+        slugsDel.map(async (slug) => {
+          const res = bySlugDel.get(slug);
           if (!res) return;
           const compHistory = (res.team.compHistory ?? []).filter((e) => e.compId !== current.id);
           const recentMatches = (res.team.recentMatches ?? []).filter((r) => !compMatchIds.has(r.matchId));

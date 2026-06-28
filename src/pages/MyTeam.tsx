@@ -77,11 +77,9 @@ export default function MyTeam() {
 
     async function load() {
       try {
-        const teams = await backend.listTeams(session!.id);
-        const mine = teams.find((t) => t.managerDiscordId === session!.id);
-        if (!mine) { setData(null); return; }
-        const full = await backend.loadTeam(mine.slug, session!.id);
-        if (!full) { toast('error', 'Équipe introuvable.'); return; }
+        const all = await backend.bulkTeams();
+        const full = all.find((r) => r.team.managerDiscordId === session!.id) ?? null;
+        if (!full) { setData(null); return; }
         await applyFull(full);
       } catch (err) {
         toast('error', String(err));

@@ -14,7 +14,7 @@ type PlayerEntry = {
 
 export default function MeilleursJoueurs() {
   
-  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
+  const { prApiToken: effectivePat } = useBackendArgs();
 
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<PlayerEntry[]>([]);
@@ -26,17 +26,13 @@ export default function MeilleursJoueurs() {
       if (!effectivePat) { setLoading(false); return; }
       try {
         const bk = new PrApiTeamBackend(effectivePat);
-        const teams = await bk.listTeams(ownerId);
+        const results = await bk.bulkTeams();
         const all: PlayerEntry[] = [];
-        await Promise.all(
-          teams.map(async (team) => {
-            const data = await bk.loadTeam(team.slug, ownerId);
-            if (!data) return;
-            for (const p of data.players) {
-              all.push({ player: p, team });
-            }
-          }),
-        );
+        for (const { team, players } of results) {
+          for (const p of players) {
+            all.push({ player: p, team });
+          }
+        }
         all.sort((a, b) => b.player.overall - a.player.overall);
         setEntries(all);
       } catch (err) {

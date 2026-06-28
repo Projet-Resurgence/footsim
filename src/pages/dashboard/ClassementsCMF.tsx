@@ -3,81 +3,92 @@ import { Link, useLocation } from 'react-router-dom';
 import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 
-import { useBackendArgs } from '@/hooks/useBackendArgs';
-import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
-import { PrApiCompetitionBackend } from '@/lib/prapi/competitionBackend';
+import { prapi } from '@/lib/prapi/client';
 import { POSITION_LABEL, CULTURE_LABEL, CONTINENT_LABEL } from '@/lib/types';
 import type { Continent } from '@/lib/types';
 import type { Team, Position, Player, Formation } from '@/lib/types';
-import type { CompHistoryEntry, CompetitionKind, CompetitionScope, CompetitionImportance } from '@/lib/competition/types';
-import { calcCmfMatchPoints, participantSizeMult } from '@/lib/github/matches';
-import type { RecentMatchSummary } from '@/lib/github/matches';
 import { pickXI } from '@/lib/sim/lineup';
 import { PlayerView } from '@/components/team/PlayerView';
 import { TacticPitch } from '@/components/team/TeamTacticCard';
 
-// ─── Points system ────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type MatchResult = 'W' | 'D' | 'L';
+
+type CompHistoryResult = 'winner' | 'finalist' | 'third' | 'semi' | 'quarter' | 'round16' | 'round32' | 'round64' | 'participant';
+
+type RecentMatchSummary = {
+  scoreFor: number;
+  scoreAgainst: number;
+  opponentName: string;
+  homeAway: 'home' | 'away';
+  compKind?: string;
+  compScope?: string;
+  compImportance?: string;
+  participantCount?: number;
+  opponentStrength?: number;
+  cmfPoints?: number;
+  playedAt: string;
+};
+
+// ─── CMF point formulas (display only) ───────────────────────────────────────
 
 const CMF_MATCH_LIMIT = 10;
 
-const RESULT_BASE: Record<CompHistoryEntry['result'], number> = {
-  winner: 100,
-  finalist: 65,
-  third: 45,
-  semi: 30,
-  quarter: 22,
-  round16: 16,
-  round32: 11,
-  round64: 8,
-  participant: 8,
+const RESULT_BASE: Record<CompHistoryResult, number> = {
+  winner: 100, finalist: 65, third: 45, semi: 30,
+  quarter: 22, round16: 16, round32: 11, round64: 8, participant: 8,
 };
+const SCOPE_MULT: Record<string, number> = { internationale: 1.5, continentale: 1.3, regionale: 1.0, autre: 0.8 };
+const KIND_MULT: Record<string, number> = { officielle: 1.0, amicale: 0.2 };
+const IMPORTANCE_MULT: Record<string, number> = { mineur: 0.4, regional: 0.6, tournoi: 0.8, prestige: 1.1, continental: 1.4, mondial: 2.0 };
+const KIND_MATCH_MULT: Record<string, number> = { officielle: 1.5, amicale: 0.8 };
+const SCOPE_MATCH_MULT: Record<string, number> = { internationale: 1.5, continentale: 1.3, regionale: 1.0, autre: 0.8 };
+const IMPORTANCE_MATCH_MULT: Record<string, number> = { mineur: 0.4, regional: 0.6, tournoi: 0.8, prestige: 1.1, continental: 1.4, mondial: 2.0 };
 
-const SCOPE_MULT: Record<CompetitionScope, number> = {
-  internationale: 1.5,
-  continentale: 1.3,
-  regionale: 1.0,
-  autre: 0.8,
-};
+function participantSizeMult(count?: number): number {
+  if (!count) return 1.0;
+  if (count <= 2) return 0.20;
+  if (count <= 4) return 0.40;
+  if (count <= 8) return 0.80;
+  if (count <= 16) return 1.20;
+  if (count <= 32) return 1.50;
+  return 2.00;
+}
 
-const KIND_MULT: Record<CompetitionKind, number> = {
-  officielle: 1.0,
-  amicale: 0.2,
-};
+function goalDiffBonus(sf: number, sa: number): number {
+  const gap = sf - sa;
+  if (gap >= 4) return 1.0;
+  if (gap >= 2) return 0.5;
+  if (gap >= 1) return 0.0;
+  const loss = -gap;
+  if (loss >= 5) return -2.0;
+  if (loss >= 3) return -1.0;
+  if (loss >= 2) return -0.5;
+  return 0.0;
+}
 
-const IMPORTANCE_MULT: Record<CompetitionImportance, number> = {
-  mineur: 0.4,
-  regional: 0.6,
-  tournoi: 0.8,
-  prestige: 1.1,
-  continental: 1.4,
-  mondial: 2.0,
-};
-
-function entryPoints(entry: CompHistoryEntry): number {
-  const base = RESULT_BASE[entry.result] ?? 3;
-  const scope = SCOPE_MULT[entry.scope ?? 'autre'];
-  const kind = KIND_MULT[entry.kind ?? 'amicale'];
-  const importance = IMPORTANCE_MULT[entry.importance ?? 'tournoi'];
+function entryPoints(entry: { result?: string; scope?: string; kind?: string; importance?: string; participantCount?: number }): number {
+  const base = RESULT_BASE[(entry.result as CompHistoryResult) ?? 'participant'] ?? 8;
+  const scope = SCOPE_MULT[entry.scope ?? 'autre'] ?? 0.8;
+  const kind = KIND_MULT[entry.kind ?? 'amicale'] ?? 0.2;
+  const importance = IMPORTANCE_MULT[entry.importance ?? 'tournoi'] ?? 0.8;
   const size = participantSizeMult(entry.participantCount);
   return Math.round(base * scope * kind * importance * size);
 }
 
 function matchPoints(m: RecentMatchSummary): number {
   if (m.opponentStrength == null) return m.cmfPoints ?? 0;
-  return calcCmfMatchPoints({
-    scoreFor: m.scoreFor,
-    scoreAgainst: m.scoreAgainst,
-    opponentStrength: m.opponentStrength,
-    compKind: m.compKind,
-    compScope: m.compScope,
-    compImportance: m.compImportance,
-    participantCount: m.participantCount,
-  });
+  const { scoreFor: sf, scoreAgainst: sa, opponentStrength: opp = 50 } = m;
+  const kind = KIND_MATCH_MULT[m.compKind ?? 'amicale'] ?? 0.8;
+  const scope = SCOPE_MATCH_MULT[m.compScope ?? 'autre'] ?? 0.8;
+  const importance = IMPORTANCE_MATCH_MULT[m.compImportance ?? 'tournoi'] ?? 0.8;
+  const oppFactor = Math.min(2.5, Math.max(0.4, (opp / 50) ** 0.75));
+  const size = participantSizeMult(m.participantCount);
+  const base = sf > sa ? 3 : sf === sa ? 1 : -1;
+  const bonus = goalDiffBonus(sf, sa);
+  return Math.round((base * scope * kind * importance * oppFactor * size + bonus) * 10) / 10;
 }
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type MatchResult = 'W' | 'D' | 'L';
 
 type TeamRankEntry = {
   team: Team;
@@ -100,8 +111,6 @@ type Tab = 'equipes' | 'joueurs' | 'explications';
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
-  
-  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
   const location = useLocation();
   const isPublicRoute = !embedded && location.pathname === '/classements-cmf';
 
@@ -119,78 +128,13 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
 
   useEffect(() => {
     async function load() {
-      if (!effectivePat) { setLoading(false); return; }
       try {
-        const teamBk = new PrApiTeamBackend(effectivePat);
-        const compBk = new PrApiCompetitionBackend(effectivePat);
-        const [teams, allSummaries] = await Promise.all([
-          teamBk.listTeams(ownerId),
-          compBk.listCompetitions(),
-        ]);
-        const ongoingSummaries = allSummaries.filter((s) => s.status === 'ongoing');
-
-        const rankEntries: TeamRankEntry[] = [];
-        const players: PlayerEntry[] = [];
-
-        await Promise.all(
-          teams.map(async (team) => {
-            let teamPlayers: Player[] = [];
-            const roster = await teamBk.loadTeam(team.slug, ownerId);
-            teamPlayers = roster?.players ?? [];
-            for (const p of teamPlayers) {
-              players.push({ player: p, team });
-            }
-
-            // Team points: palmarès bonus + match points
-            const history = team.compHistory ?? [];
-            let points = 0;
-            let wins = 0, finals = 0, thirds = 0;
-            for (const entry of history) {
-              points += entryPoints(entry);
-              if (entry.result === 'winner') wins++;
-              else if (entry.result === 'finalist') finals++;
-              else if (entry.result === 'third') thirds++;
-            }
-
-            const sorted = [...(team.recentMatches ?? [])].sort((a, b) => b.playedAt.localeCompare(a.playedAt));
-            const recentOfficial = sorted.filter((m) => m.compKind === 'officielle').slice(0, CMF_MATCH_LIMIT);
-            const recentFriendly = sorted.filter((m) => m.compKind !== 'officielle').slice(0, CMF_MATCH_LIMIT);
-            const recent = [...recentOfficial, ...recentFriendly];
-            for (const m of recent) {
-              points += matchPoints(m);
-            }
-            points = Math.max(0, Math.round(points * 10) / 10);
-
-            const form: MatchResult[] = [...sorted].slice(0, 5).reverse().map((m) =>
-              m.scoreFor > m.scoreAgainst ? 'W' : m.scoreFor === m.scoreAgainst ? 'D' : 'L',
-            );
-
-            // Count ongoing participations not yet in compHistory
-            const ongoingCount = ongoingSummaries.filter((s) => s.teamIds?.includes(team.id)).length;
-
-            rankEntries.push({
-              team,
-              players: teamPlayers,
-              points,
-              wins,
-              finals,
-              thirds,
-              participations: history.length + ongoingCount,
-              form,
-            });
-          }),
-        );
-
-        rankEntries.sort((a, b) =>
-          b.points - a.points ||
-          (b.participations > 0 ? 1 : 0) - (a.participations > 0 ? 1 : 0) ||
-          b.wins - a.wins ||
-          b.finals - a.finals
-        );
-        players.sort((a, b) => b.player.overall - a.player.overall);
-
-        setTeamEntries(rankEntries);
-        setPlayerEntries(players);
+        const data = await prapi.rankings();
+        setTeamEntries(data.teams as TeamRankEntry[]);
+        setPlayerEntries(data.players.map((p) => ({
+          player: p as unknown as PlayerEntry['player'],
+          team: { slug: p.teamSlug, name: p.teamName, flag: p.teamFlag } as unknown as Team,
+        })));
       } catch (err) {
         toast('error', String(err));
       } finally {
@@ -198,7 +142,6 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
       }
     }
     load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
@@ -715,7 +658,7 @@ function FormIcon({ result }: { result: MatchResult }) {
 
 // ─── Expanded team detail ─────────────────────────────────────────────────────
 
-const RESULT_BADGE: Record<CompHistoryEntry['result'], { label: string; cls: string }> = {
+const RESULT_BADGE: Record<CompHistoryResult, { label: string; cls: string }> = {
   winner:    { label: '🏆 Vainqueur',    cls: 'border-warning/50 bg-warning/10 text-warning' },
   finalist:  { label: '🥈 Finaliste',    cls: 'border-zinc-400/40 bg-zinc-400/10 text-zinc-300' },
   third:     { label: '🥉 3e place',     cls: 'border-orange-400/40 bg-orange-400/10 text-orange-300' },
