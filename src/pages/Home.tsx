@@ -6,6 +6,7 @@ import { buildDiscordAuthUrl } from '@/lib/auth/discord';
 import { useSession } from '@/stores/session';
 import { useTeams } from '@/stores/teams';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
+import { prapi } from '@/lib/prapi/client';
 
 // ── Pitch SVG background ──────────────────────────────────────────────────────
 function PitchBackground() {
@@ -81,9 +82,7 @@ function LiveTicker() {
   const [pairs, setPairs] = useState<{ home: string; away: string; sh: number; sa: number }[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    const names: string[] = storeTeams.map((t) => t.name);
-    setLoaded(true);
+  function buildPairs(names: string[]) {
     if (names.length < 2) return;
     const shuffled = [...names].sort(() => Math.random() - 0.5).slice(0, 10);
     const built: { home: string; away: string; sh: number; sa: number }[] = [];
@@ -96,6 +95,21 @@ function LiveTicker() {
       });
     }
     if (built.length > 0) setPairs(built);
+  }
+
+  // On mount: fetch public team list directly (no auth required)
+  useEffect(() => {
+    prapi.get<{ name: string }[]>('/teams', null)
+      .then((teams) => { buildPairs(teams.map((t) => t.name)); })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Also react if store is populated (logged-in user)
+  useEffect(() => {
+    if (storeTeams.length > 0) buildPairs(storeTeams.map((t) => t.name));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeTeams.length]);
 
   const FALLBACK = [
