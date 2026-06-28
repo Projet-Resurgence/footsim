@@ -19,9 +19,9 @@ const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', 
 
 export default function MatchSetup() {
   const teams = useTeams((s) => s.teams);
-  const refresh = useTeams((s) => s.refresh);
+  const refreshIfStale = useTeams((s) => s.refreshIfStale);
   const fetchTeam = useTeams((s) => s.fetchTeam);
-  
+
   const start = useMatch((s) => s.start);
   const navigate = useNavigate();
   const { ownerId, prApiToken: effectivePat } = useBackendArgs();
@@ -40,8 +40,8 @@ export default function MatchSetup() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (ownerId && teams.length === 0) refresh(ownerId, null, effectivePat);
-  }, [effectivePat, teams.length, refresh]);
+    if (ownerId) refreshIfStale(ownerId, null, effectivePat);
+  }, [effectivePat, refreshIfStale]);
 
   function handleHomeSlug(slug: string) {
     setHomeSlug(slug);

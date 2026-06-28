@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { fetchDiscordUser, parseTokenFragment, isAdminId } from '@/lib/auth/discord';
 import { useSession } from '@/stores/session';
 import { usePrApiToken } from '@/stores/prApiToken';
+import { useTeams } from '@/stores/teams';
 import { prapi } from '@/lib/prapi/client';
 import { Spinner } from '@/components/ui/Spinner';
 
@@ -10,6 +11,7 @@ export default function Callback() {
   const navigate = useNavigate();
   const setSession = useSession((s) => s.setSession);
   const setToken = usePrApiToken((s) => s.setToken);
+  const refreshTeams = useTeams((s) => s.refresh);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,7 +56,8 @@ export default function Callback() {
         }
 
         try {
-          const teams = await prapi.get<{ id: string; managerDiscordId?: string }[]>('/teams', prApiToken);
+          await refreshTeams(user.id, null, prApiToken);
+          const teams = useTeams.getState().teams;
           const isManager = teams.some((t) => t.managerDiscordId === user.id);
           navigate(isManager ? '/my-team' : '/no-access', { replace: true });
         } catch {

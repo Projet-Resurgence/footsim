@@ -8,12 +8,12 @@ import { useBackendArgs } from '@/hooks/useBackendArgs';
 export default function Dashboard() {
   const teams = useTeams((s) => s.teams);
   const loading = useTeams((s) => s.loading);
-  const refresh = useTeams((s) => s.refresh);
+  const refreshIfStale = useTeams((s) => s.refreshIfStale);
   const { ownerId, prApiToken } = useBackendArgs();
 
   useEffect(() => {
-    if (ownerId) refresh(ownerId, null, prApiToken);
-  }, [ownerId, prApiToken, refresh]);
+    if (ownerId) refreshIfStale(ownerId, null, prApiToken);
+  }, [ownerId, prApiToken, refreshIfStale]);
 
   const totalPlayers = teams.reduce((sum, t) => sum + t.playerCount, 0);
 

@@ -209,8 +209,7 @@ export default function Home() {
   const isLoggedIn = useSession((s) => s.isLoggedIn());
   const isAdmin = useSession((s) => s.isAdmin());
   const session = useSession((s) => s.session);
-  const teamsStore = useTeams((s) => s.teams);
-  const refreshTeams = useTeams((s) => s.refresh);
+  const refreshIfStale = useTeams((s) => s.refreshIfStale);
   const { ownerId, prApiToken: effectivePat } = useBackendArgs();
   const navigate = useNavigate();
   const heroRef = useRef<HTMLDivElement>(null);
@@ -219,15 +218,15 @@ export default function Home() {
   const heroOpacity = useTransform(scrollYProgress, [0, 0.75], [1, 0]);
 
   useEffect(() => {
-    if (!effectivePat || teamsStore.length > 0) return;
-    refreshTeams(ownerId, null, effectivePat);
+    if (!effectivePat) return;
+    refreshIfStale(ownerId, null, effectivePat);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectivePat]);
 
   useEffect(() => {
     if (!isLoggedIn || isAdmin || !session) return;
     async function checkManager() {
-      if (teamsStore.length === 0) await refreshTeams(ownerId, null, effectivePat);
+      await refreshIfStale(ownerId, null, effectivePat);
       const mine = useTeams.getState().teams.find((t) => t.managerDiscordId === session!.id);
       if (mine) navigate('/my-team', { replace: true });
     }
