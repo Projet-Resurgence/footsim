@@ -29,4 +29,9 @@ export class PrApiMatchBackend {
   async deleteMatch(id: string): Promise<void> {
     await prapi.del(`/matches/${id}`, this.token);
   }
+
+  async deleteMatchesBulk(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    await prapi.post('/matches/bulk-delete', this.token, { ids });
+  }
 }

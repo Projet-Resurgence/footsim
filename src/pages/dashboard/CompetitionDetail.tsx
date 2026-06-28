@@ -210,19 +210,20 @@ export default function CompetitionDetail() {
       const bulk = await backend.bulkTeams(slugs);
       const bySlug = new Map(bulk.map((r) => [r.team.slug, r]));
 
-      await Promise.all(
-        slugs.map(async (slug) => {
-          const res = bySlug.get(slug);
-          if (!res) return;
-          const tid = slugToTid[slug];
-          const teamInjuries = injuries.filter((i) => i.teamId === tid);
-          const teamSuspensions = suspensions.filter((s) => s.teamId === tid);
-          await backend.saveTeam(
-            { ...res.team, injuries: teamInjuries, suspensions: teamSuspensions },
-            res.players,
-          );
-        }),
-      );
+      const medicalTasks = slugs.map((slug) => async () => {
+        const res = bySlug.get(slug);
+        if (!res) return;
+        const tid = slugToTid[slug];
+        const teamInjuries = injuries.filter((i) => i.teamId === tid);
+        const teamSuspensions = suspensions.filter((s) => s.teamId === tid);
+        await backend.saveTeam(
+          { ...res.team, injuries: teamInjuries, suspensions: teamSuspensions },
+          res.players,
+        );
+      });
+      for (let i = 0; i < medicalTasks.length; i += 5) {
+        await Promise.all(medicalTasks.slice(i, i + 5).map((fn) => fn()));
+      }
       toast('success', 'État médical synchronisé en DB.');
     } catch (err) {
       toast('error', String(err));
@@ -271,29 +272,30 @@ export default function CompetitionDetail() {
       const bulkLpm = await backend.bulkTeams(slugsLpm);
       const bySlugLpm = new Map(bulkLpm.map((r) => [r.team.slug, r]));
 
-      await Promise.all(
-        slugsLpm.map(async (slug) => {
-          const res = bySlugLpm.get(slug);
-          if (!res) { skipped++; return; }
-          const tid = slugToTidLpm[slug];
-          const pts = LPM_ZONE_POINTS[tid] ?? 0;
-          if (pts === 0) { skipped++; return; }
-          const bonusEntry: import('@/lib/github/matches').RecentMatchSummary = {
-            matchId: `lpm-zone-${current.id}-${tid}`,
-            playedAt: new Date().toISOString(),
-            opponentSlug: '',
-            opponentName: `LPM — Bonus zone (${current.name})`,
-            homeAway: 'home',
-            scoreFor: 0,
-            scoreAgainst: 0,
-            cmfPoints: pts,
-            compKind: current.kind,
-          };
-          const recentMatches = [...(res.team.recentMatches ?? []), bonusEntry].slice(-20);
-          await backend.saveTeam({ ...res.team, recentMatches }, res.players);
-          distributed++;
-        }),
-      );
+      const lpmTasks = slugsLpm.map((slug) => async () => {
+        const res = bySlugLpm.get(slug);
+        if (!res) { skipped++; return; }
+        const tid = slugToTidLpm[slug];
+        const pts = LPM_ZONE_POINTS[tid] ?? 0;
+        if (pts === 0) { skipped++; return; }
+        const bonusEntry: import('@/lib/github/matches').RecentMatchSummary = {
+          matchId: `lpm-zone-${current.id}-${tid}`,
+          playedAt: new Date().toISOString(),
+          opponentSlug: '',
+          opponentName: `LPM — Bonus zone (${current.name})`,
+          homeAway: 'home',
+          scoreFor: 0,
+          scoreAgainst: 0,
+          cmfPoints: pts,
+          compKind: current.kind,
+        };
+        const recentMatches = [...(res.team.recentMatches ?? []), bonusEntry].slice(-20);
+        await backend.saveTeam({ ...res.team, recentMatches }, res.players);
+        distributed++;
+      });
+      for (let i = 0; i < lpmTasks.length; i += 5) {
+        await Promise.all(lpmTasks.slice(i, i + 5).map((fn) => fn()));
+      }
       toast('success', `Points CMF LPM distribués : ${distributed} équipes mises à jour, ${skipped} ignorées.`);
     } catch (err) {
       toast('error', String(err));
@@ -322,77 +324,78 @@ export default function CompetitionDetail() {
         const bySlugSave = new Map(bulkSave.map((r) => [r.team.slug, r]));
 
         // Update compHistory + recentMatches on every team
-        await Promise.allSettled(
-          slugsSave.map(async (slug) => {
-            const tid = slugToTidSave[slug];
-            const res = bySlugSave.get(slug);
-            if (!res) return;
+        const saveTasks = slugsSave.map((slug) => async () => {
+          const tid = slugToTidSave[slug];
+          const res = bySlugSave.get(slug);
+          if (!res) return;
 
-            // compHistory
-            const prev = res.team.compHistory ?? [];
-            const idx = prev.findIndex((e) => e.compId === current.id);
-            const entry: CompHistoryEntry = {
-              compId: current.id,
-              compName: current.name,
-              year: current.year,
-              format: current.format,
-              kind: current.kind,
-              scope: current.scope,
-              importance: current.importance,
-              result: deriveTeamResult(tid, current),
-              phase: deriveTeamPhase(tid, current),
+          // compHistory
+          const prev = res.team.compHistory ?? [];
+          const idx = prev.findIndex((e) => e.compId === current.id);
+          const entry: CompHistoryEntry = {
+            compId: current.id,
+            compName: current.name,
+            year: current.year,
+            format: current.format,
+            kind: current.kind,
+            scope: current.scope,
+            importance: current.importance,
+            result: deriveTeamResult(tid, current),
+            phase: deriveTeamPhase(tid, current),
+            participantCount: current.teamIds.length,
+          };
+          const nextHistory = idx >= 0
+            ? prev.map((e, i) => i === idx ? entry : e)
+            : [...prev, entry];
+
+          // recentMatches — rebuild from all completed matches in competition
+          const existingOther = (res.team.recentMatches ?? []).filter(
+            (r) => !current.matches.some((m) => m.id === r.matchId),
+          );
+          const newEntries: RecentMatchSummary[] = [];
+          for (const m of current.matches) {
+            if (m.status !== 'completed' || !m.result) continue;
+            if (m.homeTeamId !== tid && m.awayTeamId !== tid) continue;
+            const isHome = m.homeTeamId === tid;
+            const oppId = isHome ? m.awayTeamId! : m.homeTeamId!;
+            const oppSnap = teamSnap[oppId];
+            const oppStrength = (oppSnap as any)?.globalStrength ?? 50;
+            const scoreFor = isHome ? m.result.home : m.result.away;
+            const scoreAgainst = isHome ? m.result.away : m.result.home;
+            const myGoals = isHome ? (m.matchSummary?.homeGoals ?? []) : (m.matchSummary?.awayGoals ?? []);
+            newEntries.push({
+              matchId: m.id,
+              playedAt: m.simulatedAt ?? new Date().toISOString(),
+              opponentSlug: oppSnap?.slug ?? '',
+              opponentName: oppSnap?.name ?? '',
+              homeAway: isHome ? 'home' : 'away',
+              homeTeamId: m.homeTeamId!,
+              awayTeamId: m.awayTeamId!,
+              scoreFor,
+              scoreAgainst,
+              opponentStrength: oppStrength,
+              compKind: current.kind,
+              compScope: current.scope,
+              compImportance: current.importance,
               participantCount: current.teamIds.length,
-            };
-            const nextHistory = idx >= 0
-              ? prev.map((e, i) => i === idx ? entry : e)
-              : [...prev, entry];
+              scorers: myGoals.length ? myGoals : undefined,
+              cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: current.kind, compScope: current.scope, compImportance: current.importance, participantCount: current.teamIds.length }),
+            });
+          }
+          const mergedRecent = [...existingOther, ...newEntries].slice(-20);
 
-            // recentMatches — rebuild from all completed matches in competition
-            const existingOther = (res.team.recentMatches ?? []).filter(
-              (r) => !current.matches.some((m) => m.id === r.matchId),
-            );
-            const newEntries: RecentMatchSummary[] = [];
-            for (const m of current.matches) {
-              if (m.status !== 'completed' || !m.result) continue;
-              if (m.homeTeamId !== tid && m.awayTeamId !== tid) continue;
-              const isHome = m.homeTeamId === tid;
-              const oppId = isHome ? m.awayTeamId! : m.homeTeamId!;
-              const oppSnap = teamSnap[oppId];
-              const oppStrength = (oppSnap as any)?.globalStrength ?? 50;
-              const scoreFor = isHome ? m.result.home : m.result.away;
-              const scoreAgainst = isHome ? m.result.away : m.result.home;
-              const myGoals = isHome ? (m.matchSummary?.homeGoals ?? []) : (m.matchSummary?.awayGoals ?? []);
-              newEntries.push({
-                matchId: m.id,
-                playedAt: m.simulatedAt ?? new Date().toISOString(),
-                opponentSlug: oppSnap?.slug ?? '',
-                opponentName: oppSnap?.name ?? '',
-                homeAway: isHome ? 'home' : 'away',
-                homeTeamId: m.homeTeamId!,
-                awayTeamId: m.awayTeamId!,
-                scoreFor,
-                scoreAgainst,
-                opponentStrength: oppStrength,
-                compKind: current.kind,
-                compScope: current.scope,
-                compImportance: current.importance,
-                participantCount: current.teamIds.length,
-                scorers: myGoals.length ? myGoals : undefined,
-                cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: current.kind, compScope: current.scope, compImportance: current.importance, participantCount: current.teamIds.length }),
-              });
-            }
-            const mergedRecent = [...existingOther, ...newEntries].slice(-20);
+          // injuries/suspensions from competition state
+          const teamInjuries = (current.injuries ?? []).filter((i) => i.teamId === tid);
+          const teamSuspensions = (current.suspensions ?? []).filter((s) => s.teamId === tid);
 
-            // injuries/suspensions from competition state
-            const teamInjuries = (current.injuries ?? []).filter((i) => i.teamId === tid);
-            const teamSuspensions = (current.suspensions ?? []).filter((s) => s.teamId === tid);
-
-            await backend.saveTeam(
-              { ...res.team, compHistory: nextHistory, recentMatches: mergedRecent, injuries: teamInjuries, suspensions: teamSuspensions },
-              res.players,
-            );
-          }),
-        );
+          await backend.saveTeam(
+            { ...res.team, compHistory: nextHistory, recentMatches: mergedRecent, injuries: teamInjuries, suspensions: teamSuspensions },
+            res.players,
+          );
+        });
+        for (let i = 0; i < saveTasks.length; i += 5) {
+          await Promise.all(saveTasks.slice(i, i + 5).map((fn) => fn()));
+        }
       }
 
       toast('success', 'Compétition sauvegardée.');
@@ -414,22 +417,23 @@ export default function CompetitionDetail() {
       const teamBk = teamBackend();
       const matchBk = new PrApiMatchBackend(effectivePat);
 
-      // Delete individual match records from DB
-      await Promise.allSettled(matchIds.map((mid) => matchBk.deleteMatch(mid)));
+      // Delete all match records in a single bulk request
+      await matchBk.deleteMatchesBulk(matchIds);
 
       // Strip compHistory + recentMatches from each team
       const slugsDel = current.teamIds.map((tid) => snapshot[tid]?.slug).filter(Boolean) as string[];
       const bulkDel = await teamBk.bulkTeams(slugsDel);
       const bySlugDel = new Map(bulkDel.map((r) => [r.team.slug, r]));
-      await Promise.all(
-        slugsDel.map(async (slug) => {
-          const res = bySlugDel.get(slug);
-          if (!res) return;
-          const compHistory = (res.team.compHistory ?? []).filter((e) => e.compId !== current.id);
-          const recentMatches = (res.team.recentMatches ?? []).filter((r) => !compMatchIds.has(r.matchId));
-          await teamBk.saveTeam({ ...res.team, compHistory, recentMatches }, res.players);
-        }),
-      );
+      const delTasks = slugsDel.map((slug) => async () => {
+        const res = bySlugDel.get(slug);
+        if (!res) return;
+        const compHistory = (res.team.compHistory ?? []).filter((e) => e.compId !== current.id);
+        const recentMatches = (res.team.recentMatches ?? []).filter((r) => !compMatchIds.has(r.matchId));
+        await teamBk.saveTeam({ ...res.team, compHistory, recentMatches }, res.players);
+      });
+      for (let i = 0; i < delTasks.length; i += 5) {
+        await Promise.all(delTasks.slice(i, i + 5).map((fn) => fn()));
+      }
 
       // Delete competition from DB
       await remove(current.id, '', effectivePat);
