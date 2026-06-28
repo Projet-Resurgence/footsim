@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { Team } from '@/lib/types';
 
 const VIDEOS = [
-  '/videos/celebration-but-1.mp4',
-  '/videos/celebration-but-2.mp4',
-  '/videos/celebration-but-3.mp4',
-  '/videos/celebration-but-4.mp4',
-  '/videos/celebration-goat-5.mp4',
-  '/videos/celebration-goal-6.mp4',
-  '/videos/celebration-goal-7.mp4',
+  '/footsim/videos/celebration-but-1.mp4',
+  '/footsim/videos/celebration-but-2.mp4',
+  '/footsim/videos/celebration-but-3.mp4',
+  '/footsim/videos/celebration-but-4.mp4',
+  '/footsim/videos/celebration-goat-5.mp4',
+  '/footsim/videos/celebration-goal-6.mp4',
+  '/footsim/videos/celebration-goal-7.mp4',
 ];
 
 type Props = {

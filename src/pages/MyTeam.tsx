@@ -19,7 +19,7 @@ import { COMPETITION_IMPORTANCE_LABEL } from '@/lib/competition/types';
 import { calcCmfMatchPoints } from '@/lib/github/matches';
 import type { RecentMatchSummary } from '@/lib/github/matches';
 import type { CultureWeight } from '@/lib/gen/names';
-import { loadLocalTactics, loadLocalSavedTactics, saveLocalSavedTactics } from '@/lib/localTactics';
+import { loadLocalTactics } from '@/lib/localTactics';
 import { PlayerView } from '@/components/team/PlayerView';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
 import type { Coach } from '@/lib/gen/coach';
@@ -56,27 +56,31 @@ export default function MyTeam() {
   const [nameWeights, setNameWeights] = useState<CultureWeight[]>([]);
   const [generatingNames, setGeneratingNames] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+  const namesImportRef = useRef<HTMLInputElement>(null);
+  const [savingNames, setSavingNames] = useState(false);
 
   useEffect(() => {
     if (!session || !prApiToken) return;
     const backend = new PrApiTeamBackend(prApiToken);
 
     async function applyFull(full: { team: Team; players: Player[] }) {
-      const local = loadLocalSavedTactics(full.team.id);
-      const merged = local.savedTactics.length > 0
-        ? local.savedTactics
-        : (full.team.savedTactics ?? []);
-      if (merged.length === 0) {
+      const dbTactics = full.team.savedTactics ?? [];
+      if (dbTactics.length === 0) {
+        // seed from legacy localStorage or team.tactics on first load
         const leg = loadLocalTactics(full.team.id) ?? full.team.tactics;
         if (leg) {
           const seeded: SavedTactic = { ...leg, id: crypto.randomUUID(), name: 'Tactique de base' };
           setSavedTactics([seeded]);
           setActiveTacticId(seeded.id);
-          saveLocalSavedTactics(full.team.id, [seeded], seeded.id);
+          // persist seed to DB immediately
+          const updatedTeam: Team = { ...full.team, savedTactics: [seeded], activeTacticId: seeded.id };
+          new PrApiTeamBackend(prApiToken!).saveTeam(updatedTeam, full.players).catch(() => {});
+          setData({ team: updatedTeam, players: full.players });
+          return;
         }
       } else {
-        setSavedTactics(merged);
-        setActiveTacticId(local.activeTacticId ?? full.team.activeTacticId);
+        setSavedTactics(dbTactics);
+        setActiveTacticId(full.team.activeTacticId);
       }
       setData({ team: full.team, players: full.players });
     }
@@ -105,22 +109,21 @@ export default function MyTeam() {
     if (!prApiToken) return;
     setLoadingComps(true);
     refreshComps('', prApiToken)
-      .then(() => setSummaries(compSummaries))
+      .then(() => setSummaries(useCompetition.getState().summaries))
       .catch(() => toast('error', 'Impossible de charger les compétitions.'))
       .finally(() => setLoadingComps(false));
   }, [tab, prApiToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   function persistSavedTactics(next: SavedTactic[], activeId?: string) {
-    if (!data) return;
+    if (!data || !prApiToken) return;
     setSavedTactics(next);
     setActiveTacticId(activeId);
-    saveLocalSavedTactics(data.team.id, next, activeId);
-    if (prApiToken) {
-      const updatedTeam: Team = { ...data.team, savedTactics: next, activeTacticId: activeId };
-      setData({ ...data, team: updatedTeam });
-      new PrApiTeamBackend(prApiToken).saveTeam(updatedTeam, data.players).catch(() => {});
-    }
+    const updatedTeam: Team = { ...data.team, savedTactics: next, activeTacticId: activeId };
+    setData({ ...data, team: updatedTeam });
+    new PrApiTeamBackend(prApiToken).saveTeam(updatedTeam, data.players).catch(() => {
+      toast('error', 'Échec de la sauvegarde des tactiques.');
+    });
   }
 
   async function saveTactics(tactics: TeamTactics) {
@@ -231,6 +234,41 @@ export default function MyTeam() {
     e.target.value = '';
   }
 
+  async function handleNamesImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !data || !prApiToken) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const json = JSON.parse(ev.target?.result as string) as { id: string; firstName: string; lastName: string }[];
+        if (!Array.isArray(json)) throw new Error('Format invalide');
+        const idToName = new Map(json.map((n) => [n.id, { firstName: n.firstName, lastName: n.lastName }]));
+        const updatedPlayers = data.players.map((p) => {
+          const names = idToName.get(p.id);
+          return names ? { ...p, ...names } : p;
+        });
+        const applied = updatedPlayers.filter((p, i) => {
+          const orig = data.players[i];
+          return p.firstName !== orig.firstName || p.lastName !== orig.lastName;
+        }).length;
+        setSavingNames(true);
+        try {
+          await new PrApiTeamBackend(prApiToken).saveTeam(data.team, updatedPlayers);
+          setData({ ...data, players: updatedPlayers });
+          toast('success', `${applied} joueur(s) renommé(s) et sauvegardés.`);
+        } catch {
+          toast('error', 'Échec de la sauvegarde des noms.');
+        } finally {
+          setSavingNames(false);
+        }
+      } catch {
+        toast('error', 'Fichier de noms invalide.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
   async function exportNames() {
     if (!data || nameWeights.length === 0) { toast('error', 'Sélectionne au moins une culture.'); return; }
     setGeneratingNames(true);
@@ -290,15 +328,7 @@ export default function MyTeam() {
           <h1 className="font-display text-3xl">{team.name}</h1>
           <p className="text-sm text-muted mt-1">Force {team.globalStrength} · {players.length} joueurs</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={exportTactics}>
-            ↓ Exporter la tactique
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => importRef.current?.click()}>
-            ↑ Importer
-          </Button>
-          <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-        </div>
+        <div />
       </div>
 
       {/* Tabs */}
@@ -326,7 +356,7 @@ export default function MyTeam() {
       {tab === 'tactique' && (
         <div className="rounded-lg border border-border bg-surface p-5 space-y-5">
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted">Tactiques locales. Sauvegarde locale uniquement.</p>
+            <p className="text-xs text-muted">Tactiques sauvegardées en base de données.</p>
             <div className="flex gap-2">
               <Button size="sm" variant="ghost" onClick={exportTactics}>↑ Exporter</Button>
               <Button size="sm" variant="ghost" onClick={() => importRef.current?.click()}>↓ Importer</Button>
@@ -430,13 +460,18 @@ export default function MyTeam() {
 
       {/* Noms */}
       {tab === 'noms' && (
-        <NomExportPanel
-          weights={nameWeights}
-          onChange={setNameWeights}
-          onExport={exportNames}
-          busy={generatingNames}
-          playerCount={data.players.length}
-        />
+        <>
+          <NomExportPanel
+            weights={nameWeights}
+            onChange={setNameWeights}
+            onExport={exportNames}
+            busy={generatingNames}
+            playerCount={data.players.length}
+            onImportClick={() => namesImportRef.current?.click()}
+            savingNames={savingNames}
+          />
+          <input ref={namesImportRef} type="file" accept=".json" className="hidden" onChange={handleNamesImport} />
+        </>
       )}
 
       {/* Postes */}
@@ -661,13 +696,15 @@ function CoachReadPanel({ coach, teamSlug, isAdmin }: { coach: Coach | null; tea
 }
 
 function NomExportPanel({
-  weights, onChange, onExport, busy, playerCount,
+  weights, onChange, onExport, busy, playerCount, onImportClick, savingNames,
 }: {
   weights: CultureWeight[];
   onChange: (w: CultureWeight[]) => void;
   onExport: () => void;
   busy: boolean;
   playerCount: number;
+  onImportClick: () => void;
+  savingNames: boolean;
 }) {
   const selected = weights.map((w) => w.culture);
   const total = weights.reduce((s, c) => s + c.weight, 0);
@@ -764,13 +801,22 @@ function NomExportPanel({
         </div>
       )}
 
-      <button
-        onClick={onExport}
-        disabled={busy || weights.length === 0 || playerCount === 0}
-        className="rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 transition-opacity"
-      >
-        {busy ? 'Génération…' : `↓ Télécharger JSON (${playerCount} joueurs)`}
-      </button>
+      <div className="flex flex-wrap gap-3">
+        <button
+          onClick={onExport}
+          disabled={busy || weights.length === 0 || playerCount === 0}
+          className="rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 transition-opacity"
+        >
+          {busy ? 'Génération…' : `↓ Télécharger JSON (${playerCount} joueurs)`}
+        </button>
+        <button
+          onClick={onImportClick}
+          disabled={savingNames || playerCount === 0}
+          className="rounded-md border border-border px-5 py-2.5 text-sm font-medium hover:border-accent/50 disabled:opacity-50 transition-colors"
+        >
+          {savingNames ? 'Sauvegarde…' : '↑ Importer des noms (JSON) → DB'}
+        </button>
+      </div>
     </div>
   );
 }

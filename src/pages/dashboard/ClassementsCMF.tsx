@@ -4,11 +4,10 @@ import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 
 import { useBackendArgs } from '@/hooks/useBackendArgs';
-import { listTeams, loadTeam } from '@/lib/github/store';
-import { listCompetitions } from '@/lib/github/competitions';
+import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
+import { PrApiCompetitionBackend } from '@/lib/prapi/competitionBackend';
 import { POSITION_LABEL, CULTURE_LABEL, CONTINENT_LABEL } from '@/lib/types';
 import type { Continent } from '@/lib/types';
-import { env } from '@/lib/env';
 import type { Team, Position, Player, Formation } from '@/lib/types';
 import type { CompHistoryEntry, CompetitionKind, CompetitionScope, CompetitionImportance } from '@/lib/competition/types';
 import { calcCmfMatchPoints, participantSizeMult } from '@/lib/github/matches';
@@ -102,8 +101,7 @@ type Tab = 'equipes' | 'joueurs' | 'explications';
 
 export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
   
-  const { prApiToken: effectivePat } = useBackendArgs();
-  const token = effectivePat ?? effectivePat ?? env.githubReadToken ?? null;
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
   const location = useLocation();
   const isPublicRoute = !embedded && location.pathname === '/classements-cmf';
 
@@ -121,27 +119,26 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
 
   useEffect(() => {
     async function load() {
+      if (!effectivePat) { setLoading(false); return; }
       try {
+        const teamBk = new PrApiTeamBackend(effectivePat);
+        const compBk = new PrApiCompetitionBackend(effectivePat);
         const [teams, allSummaries] = await Promise.all([
-          listTeams(token),
-          listCompetitions(token),
+          teamBk.listTeams(ownerId),
+          compBk.listCompetitions(),
         ]);
         const ongoingSummaries = allSummaries.filter((s) => s.status === 'ongoing');
 
         const rankEntries: TeamRankEntry[] = [];
         const players: PlayerEntry[] = [];
 
-        // listTeams already reads full team.json (including recentMatches + compHistory)
-        // Only load players roster if token is available (players.json requires auth)
         await Promise.all(
           teams.map(async (team) => {
             let teamPlayers: Player[] = [];
-            if (token) {
-              const roster = await loadTeam(team.slug, token);
-              teamPlayers = roster?.players ?? [];
-              for (const p of teamPlayers) {
-                players.push({ player: p, team });
-              }
+            const roster = await teamBk.loadTeam(team.slug, ownerId);
+            teamPlayers = roster?.players ?? [];
+            for (const p of teamPlayers) {
+              players.push({ player: p, team });
             }
 
             // Team points: palmarès bonus + match points
@@ -257,7 +254,6 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
       {tab === 'equipes' && (
         <TeamRanking
           entries={teamEntries}
-          token={token}
           onPlayerClick={setViewingPlayer}
           continentFilter={continentFilter}
           onContinentFilter={setContinentFilter}
@@ -938,7 +934,6 @@ function ExpandedTeamDetail({ entry, onPlayerClick }: { entry: TeamRankEntry; on
 
 function TeamRanking({ entries, onPlayerClick, continentFilter, onContinentFilter }: {
   entries: TeamRankEntry[];
-  token: string | null;
   onPlayerClick: (p: Player) => void;
   continentFilter: Continent | 'all';
   onContinentFilter: (c: Continent | 'all') => void;

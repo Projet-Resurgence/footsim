@@ -1,11 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSession } from '@/stores/session';
-import { useCredentials } from '@/stores/credentials';
 import { getAvatarUrl } from '@/lib/auth/discord';
 import { getThemeOverride, setThemeOverride, modeForHour, applyTheme } from '@/lib/theme';
-import { validatePat } from '@/lib/github/api';
-import { toast } from '@/components/ui/Toast';
-import { Spinner } from '@/components/ui/Spinner';
 import type { ThemeMode } from '@/lib/theme';
 
 function currentMode(): ThemeMode {
@@ -31,15 +27,9 @@ function MoonIcon() {
 
 export function AccountMenu() {
   const session = useSession((s) => s.session);
-  const isAdmin = useSession((s) => s.isAdmin());
   const logout = useSession((s) => s.logout);
-  const githubPat = useCredentials((s) => s.githubPat);
-  const setPat = useCredentials((s) => s.setPat);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<ThemeMode>(currentMode);
-  const [patDraft, setPatDraft] = useState('');
-  const [patReveal, setPatReveal] = useState(false);
-  const [patBusy, setPatBusy] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,29 +44,6 @@ export function AccountMenu() {
     setThemeOverride(next);
     setMode(next);
     applyTheme(next);
-  }
-
-  async function savePat() {
-    const trimmed = patDraft.trim();
-    if (!trimmed) return;
-    setPatBusy(true);
-    try {
-      const ok = await validatePat(trimmed);
-      if (!ok) { toast('error', 'Token GitHub invalide.'); return; }
-      setPat(trimmed);
-      setPatDraft('');
-      toast('success', 'Token GitHub enregistré.');
-    } catch (err) {
-      toast('error', String(err));
-    } finally {
-      setPatBusy(false);
-    }
-  }
-
-  function clearPat() {
-    setPat(null);
-    setPatDraft('');
-    toast('info', 'Token GitHub effacé.');
   }
 
   if (!session) return null;
@@ -134,50 +101,6 @@ export function AccountMenu() {
               </button>
             </div>
           </div>
-
-          {/* Token GitHub — admin only */}
-          {isAdmin && <div className="px-4 py-3 border-b border-border space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-muted">Token GitHub</div>
-              {githubPat && (
-                <span className="text-[10px] text-accent">● Actif</span>
-              )}
-            </div>
-            <div className="flex gap-1.5">
-              <input
-                type={patReveal ? 'text' : 'password'}
-                placeholder={githubPat ? '••••••••••••' : 'ghp_...'}
-                value={patDraft}
-                onChange={(e) => setPatDraft(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && savePat()}
-                className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2 py-1 text-xs text-text placeholder:text-muted/50 focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-              <button
-                onClick={() => setPatReveal((r) => !r)}
-                className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:text-text transition-colors"
-              >
-                {patReveal ? '🙈' : '👁'}
-              </button>
-            </div>
-            <div className="flex gap-1.5">
-              <button
-                onClick={savePat}
-                disabled={patBusy || !patDraft.trim()}
-                className="flex items-center gap-1 rounded-md bg-accent/10 px-2.5 py-1 text-xs text-accent hover:bg-accent/20 transition-colors disabled:opacity-40"
-              >
-                {patBusy ? <Spinner className="h-3 w-3" /> : null}
-                Enregistrer
-              </button>
-              {githubPat && (
-                <button
-                  onClick={clearPat}
-                  className="rounded-md px-2.5 py-1 text-xs text-muted hover:text-danger transition-colors"
-                >
-                  Effacer
-                </button>
-              )}
-            </div>
-          </div>}
 
           {/* Déconnexion */}
           <button

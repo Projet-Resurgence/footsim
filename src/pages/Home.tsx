@@ -6,8 +6,6 @@ import { buildDiscordAuthUrl } from '@/lib/auth/discord';
 import { useSession } from '@/stores/session';
 import { useTeams } from '@/stores/teams';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
-import { listTeams } from '@/lib/github/store';
-import { env } from '@/lib/env';
 
 // ── Pitch SVG background ──────────────────────────────────────────────────────
 function PitchBackground() {
@@ -85,15 +83,7 @@ function LiveTicker() {
 
   useEffect(() => {
     async function load() {
-      let names: string[] = storeTeams.map((t) => t.name);
-      if (names.length < 2) {
-        try {
-          const fetched = await listTeams(env.githubReadToken ?? null);
-          names = fetched.map((t) => t.name);
-        } catch {
-          // ignore
-        }
-      }
+      const names: string[] = storeTeams.map((t) => t.name);
       setLoaded(true);
       if (names.length < 2) return;
       const shuffled = [...names].sort(() => Math.random() - 0.5).slice(0, 10);
@@ -221,7 +211,7 @@ export default function Home() {
   useEffect(() => {
     if (!isLoggedIn || isAdmin || !session) return;
     async function checkManager() {
-      if (teamsStore.length === 0) await refreshTeams(ownerId, effectivePat);
+      if (teamsStore.length === 0) await refreshTeams(ownerId, null, effectivePat);
       const mine = useTeams.getState().teams.find((t) => t.managerDiscordId === session!.id);
       if (mine) navigate('/my-team', { replace: true });
     }

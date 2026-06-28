@@ -23,6 +23,11 @@ import { createMatchInjury, createSuspension, decrementInjuries, decrementSuspen
 import { PenaltyShootout } from '@/components/match/PenaltyShootout';
 import type { MatchInput, MatchState, Speed, CorruptionDeal } from '@/lib/sim/types';
 import type { SavedTactic, TacticStyle, Team } from '@/lib/types';
+import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
+import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
+import type { StoredMatch } from '@/lib/prapi/matchBackend';
+import type { RecentMatchSummary } from '@/lib/github/matches';
+import { calcCmfMatchPoints } from '@/lib/github/matches';
 
 export default function MultiplexLive() {
   const { competitionId, round } = useParams<{ competitionId: string; round: string }>();
@@ -30,7 +35,7 @@ export default function MultiplexLive() {
 
   const load = useCompetition((s) => s.load);
   const save = useCompetition((s) => s.save);
-  const saveLocal = useCompetition((s) => s.saveLocal);
+  const setCurrent = useCompetition((s) => s.setCurrent);
   const current = useCompetition((s) => s.current);
   const currentRef = useRef(current);
   useEffect(() => { currentRef.current = current; }, [current]);
@@ -57,7 +62,7 @@ export default function MultiplexLive() {
 
   const [loading, setLoading] = useState(true);
   const [paused, setPaused] = useState(false);
-  const [savingGh, setSavingGh] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<Parameters<typeof save>[0] | null>(null);
   const pendingUpdateRef = useRef(pendingUpdate);
   useEffect(() => { pendingUpdateRef.current = pendingUpdate; }, [pendingUpdate]);
@@ -106,7 +111,7 @@ export default function MultiplexLive() {
         const needStore = roundMatches.some(
           (m) => !comp.teamSnapshot?.[m.homeTeamId!]?.slug || !comp.teamSnapshot?.[m.awayTeamId!]?.slug,
         );
-        if (needStore && teamsStore.length === 0) await refreshTeams(ownerId, effectivePat);
+        if (needStore && teamsStore.length === 0) await refreshTeams(ownerId, null, effectivePat);
 
         const inputs: Array<{ compMatchId: string; input: MatchInput; homeSavedTactics: import('@/lib/types').SavedTactic[]; awaySavedTactics: import('@/lib/types').SavedTactic[] }> = [];
 
@@ -124,7 +129,7 @@ export default function MultiplexLive() {
         }
         const uniqueSlugs = Array.from(new Set(slugMap.values()));
         const teamDataArr = await Promise.all(
-          uniqueSlugs.map((slug) => fetchTeam(slug, ownerId, effectivePat)),
+          uniqueSlugs.map((slug) => fetchTeam(slug, ownerId, null, effectivePat)),
         );
         const teamDataMap = new Map<string, NonNullable<typeof teamDataArr[number]>>();
         for (let i = 0; i < uniqueSlugs.length; i++) {
@@ -833,67 +838,102 @@ export default function MultiplexLive() {
       pendingDrameHommage: Object.keys(updatedPendingDrameHommage).length > 0 ? updatedPendingDrameHommage : undefined,
       pendingCmfEnquete: Object.keys(updatedPendingCmfEnquete).length > 0 ? updatedPendingCmfEnquete : undefined,
     };
-    // Auto-persist to localStorage immediately — ensures currentRound advances
-    // even if the user navigates away before clicking "Enregistrer localement"
     console.log('[MultiplexLive] saving nextState', { currentRound: nextState.currentRound, matchStatuses: nextState.matches.map(m => ({ round: m.round, status: m.status })) });
     resultsComputedRef.current = true;
-    saveLocal(nextState);
+    setCurrent(nextState);
     setPendingUpdate(nextState);
+    if (effectivePat) {
+      setSaving(true);
+      save(nextState, '', effectivePat).catch(() => {}).finally(() => setSaving(false));
+
+      // Save StoredMatch + recentMatches for each slot
+      const matchBk = new PrApiMatchBackend(effectivePat);
+      const teamBk = new PrApiTeamBackend(effectivePat);
+      const teamSnap = current.teamSnapshot ?? {};
+
+      for (const slot of slots) {
+        if (!slot.state || slot.state.status !== 'fulltime') continue;
+        const compMatch = current.matches.find((m) => m.id === slot.compMatchId);
+        if (!compMatch?.homeTeamId || !compMatch?.awayTeamId) continue;
+
+        // Save full match record
+        const storedMatch: StoredMatch = {
+          id: slot.compMatchId,
+          input: {
+            home: { team: slot.home, players: slot.homePlayers },
+            away: { team: slot.away, players: slot.awayPlayers },
+            rules: rulesForPhase(current.config, compMatch.phase),
+          } as any,
+          state: slot.state,
+          home: { team: slot.home, players: slot.homePlayers },
+          away: { team: slot.away, players: slot.awayPlayers },
+          playedAt: compMatch.simulatedAt ?? new Date().toISOString(),
+        };
+        matchBk.saveMatch(storedMatch).catch(() => {});
+
+        // Save recentMatches on both teams
+        const homeId = compMatch.homeTeamId;
+        const awayId = compMatch.awayTeamId;
+        const homeSnap = teamSnap[homeId];
+        const awaySnap = teamSnap[awayId];
+        const playedAt = compMatch.simulatedAt ?? new Date().toISOString();
+        const participantCount = current.teamIds.length;
+
+        const makeSummary = (isHome: boolean): RecentMatchSummary => {
+          const oppSnap = isHome ? awaySnap : homeSnap;
+          const oppStrength = (oppSnap as any)?.globalStrength ?? 50;
+          const scoreFor = isHome ? slot.state!.score.home : slot.state!.score.away;
+          const scoreAgainst = isHome ? slot.state!.score.away : slot.state!.score.home;
+          return {
+            matchId: slot.compMatchId,
+            playedAt,
+            opponentSlug: oppSnap?.slug ?? '',
+            opponentName: oppSnap?.name ?? '',
+            homeAway: isHome ? 'home' : 'away',
+            homeTeamId: homeId,
+            awayTeamId: awayId,
+            scoreFor,
+            scoreAgainst,
+            opponentStrength: oppStrength,
+            compKind: current.kind,
+            compScope: current.scope,
+            compImportance: current.importance,
+            participantCount,
+            cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: current.kind, compScope: current.scope, compImportance: current.importance, participantCount }),
+          };
+        };
+
+        for (const [tid, isHome] of [[homeId, true], [awayId, false]] as [string, boolean][]) {
+          const slug = teamSnap[tid]?.slug;
+          if (!slug) continue;
+          const summary = makeSummary(isHome);
+          teamBk.loadTeam(slug, '').then((res) => {
+            if (!res) return;
+            const existing = (res.team.recentMatches ?? []).filter((r) => r.matchId !== slot.compMatchId);
+            const merged = [...existing, summary].slice(-20);
+            teamBk.saveTeam({ ...res.team, recentMatches: merged }, res.players).catch(() => {});
+          }).catch(() => {});
+        }
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allFinished]);
 
-  function handleSaveLocal() {
-    if (!pendingUpdate) return;
-    saveLocal(pendingUpdate);
-    toast('success', 'Résultats enregistrés localement.');
-    setPendingUpdate(null);
-  }
-
-  async function handleSaveGitHub() {
-    if (!pendingUpdate || !effectivePat) return;
-    setSavingGh(true);
-    try {
-      await save(pendingUpdate, '', effectivePat);
-      toast('success', 'Résultats sauvegardés sur GitHub.');
-      setPendingUpdate(null);
-    } catch (err) {
-      toast('error', `Erreur : ${err}`);
-    } finally {
-      setSavingGh(false);
-    }
-  }
-
-  // Auto-simulate: save and jump to next round (or back to competition if done)
+  // Auto-simulate: jump to next round once save completes (save already triggered in allFinished effect)
   useEffect(() => {
-    if (!autoSimulate || !pendingUpdate || !effectivePat) return;
-    let cancelled = false;
-    async function autoSave() {
-      setSavingGh(true);
-      try {
-        await save(pendingUpdate!, '', effectivePat);
-        if (cancelled) return;
-        setPendingUpdate(null);
-        const nextRound = pendingUpdate!.currentRound;
-        const hasMore = pendingUpdate!.matches.some(
-          (m) => m.round === nextRound && m.status === 'pending' && m.homeTeamId && m.awayTeamId,
-        );
-        if (hasMore && pendingUpdate!.status !== 'completed') {
-          navigate(`/competition/${competitionId}/round/${nextRound}`, { replace: true });
-        } else {
-          sessionStorage.removeItem('footsim.autoSimulate');
-          navigate(`/dashboard/competitions/${competitionId}`, { replace: true });
-        }
-      } catch (err) {
-        toast('error', `Auto-simulation : erreur sauvegarde — ${err}`);
-        sessionStorage.removeItem('footsim.autoSimulate');
-      } finally {
-        if (!cancelled) setSavingGh(false);
-      }
+    if (!autoSimulate || !pendingUpdate || saving) return;
+    const nextRound = pendingUpdate.currentRound;
+    const hasMore = pendingUpdate.matches.some(
+      (m) => m.round === nextRound && m.status === 'pending' && m.homeTeamId && m.awayTeamId,
+    );
+    if (hasMore && pendingUpdate.status !== 'completed') {
+      navigate(`/competition/${competitionId}/round/${nextRound}`, { replace: true });
+    } else {
+      sessionStorage.removeItem('footsim.autoSimulate');
+      navigate(`/dashboard/competitions/${competitionId}`, { replace: true });
     }
-    autoSave();
-    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingUpdate]);
+  }, [pendingUpdate, saving]);
 
   function launchAll() {
     if (!pendingInputs) return;
@@ -1162,19 +1202,9 @@ export default function MultiplexLive() {
         {allFinished && (
           <div className="px-3 py-1.5 border-b border-accent/30 bg-accent/5 flex items-center justify-between gap-2 flex-shrink-0 text-xs">
             <span className="font-medium">Tous les matchs sont terminés.</span>
-            <div className="flex gap-2">
-              {pendingUpdate && (
-                <>
-                  <Button size="sm" onClick={handleSaveLocal}>Local</Button>
-                  <Button size="sm" variant="ghost" onClick={handleSaveGitHub} disabled={savingGh}>
-                    {savingGh ? <Spinner className="mr-1 h-3 w-3" /> : null}↑ GitHub
-                  </Button>
-                </>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => { setFullscreen(false); navigate(`/dashboard/competitions/${competitionId}`); }}>
-                Retour
-              </Button>
-            </div>
+            <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setFullscreen(false); navigate(`/dashboard/competitions/${competitionId}`); }}>
+              {saving ? <Spinner className="mr-1 h-3 w-3" /> : null}Terminé
+            </Button>
           </div>
         )}
 
@@ -1218,19 +1248,9 @@ export default function MultiplexLive() {
       {allFinished && (
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 flex items-center justify-between gap-3 flex-wrap">
           <span className="font-medium">Tous les matchs sont terminés.</span>
-          <div className="flex gap-2 flex-wrap">
-            {pendingUpdate && (
-              <>
-                <Button size="sm" onClick={handleSaveLocal}>Enregistrer en local</Button>
-                <Button size="sm" variant="ghost" onClick={handleSaveGitHub} disabled={savingGh}>
-                  {savingGh ? <Spinner className="mr-1 h-3 w-3" /> : null}↑ GitHub
-                </Button>
-              </>
-            )}
-            <Button size="sm" variant="ghost" onClick={() => navigate(`/dashboard/competitions/${competitionId}`)}>
-              Retour à la compétition
-            </Button>
-          </div>
+          <Button size="sm" disabled={saving} onClick={() => navigate(`/dashboard/competitions/${competitionId}`)}>
+            {saving ? <Spinner className="mr-1 h-3 w-3" /> : null}Terminé
+          </Button>
         </div>
       )}
 

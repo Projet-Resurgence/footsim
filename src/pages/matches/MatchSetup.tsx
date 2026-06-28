@@ -40,7 +40,7 @@ export default function MatchSetup() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (ownerId && teams.length === 0) refresh(ownerId, effectivePat);
+    if (ownerId && teams.length === 0) refresh(ownerId, null, effectivePat);
   }, [effectivePat, teams.length, refresh]);
 
   function handleHomeSlug(slug: string) {
@@ -68,7 +68,7 @@ export default function MatchSetup() {
     if (homeSlug === awaySlug) { toast('error', 'Les deux équipes doivent être différentes.'); return; }
     setBusy(true);
     try {
-      const [home, away] = await Promise.all([fetchTeam(homeSlug, ownerId, effectivePat), fetchTeam(awaySlug, ownerId, effectivePat)]);
+      const [home, away] = await Promise.all([fetchTeam(homeSlug, ownerId, null, effectivePat), fetchTeam(awaySlug, ownerId, null, effectivePat)]);
       if (!home || !away) { toast('error', 'Impossible de charger les équipes.'); return; }
       if (home.players.length < 11 || away.players.length < 11) {
         toast('error', 'Chaque équipe doit avoir au moins 11 joueurs.');

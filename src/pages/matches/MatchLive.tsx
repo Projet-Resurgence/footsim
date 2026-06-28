@@ -19,8 +19,14 @@ import { computeMotm } from '@/lib/competition/statsAccumulator';
 import { isRevealed } from '@/lib/sim/corruption';
 import type { SavedTactic, TacticStyle, Team } from '@/lib/types';
 import { loadLocalSavedTactics } from '@/lib/localTactics';
+import { useBackendArgs } from '@/hooks/useBackendArgs';
+import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
+import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
+import type { StoredMatch } from '@/lib/prapi/matchBackend';
+import type { RecentMatchSummary } from '@/lib/github/matches';
 
 export default function MatchLive() {
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
   const state = useMatch((s) => s.state);
   const input = useMatch((s) => s.input);
   const paused = useMatch((s) => s.paused);
@@ -85,10 +91,60 @@ export default function MatchLive() {
     }
   }, [state?.status]);
 
-  // On finish: trigger penalty replay or corruption reveal
+  // On finish: save recentMatches to DB + trigger penalty replay or corruption reveal
   useEffect(() => {
     if (!finished || !state || !input || savedRef.current) return;
     savedRef.current = true;
+
+    if (effectivePat) {
+      const playedAt = new Date().toISOString();
+
+      // Save full match record
+      const matchBk = new PrApiMatchBackend(effectivePat);
+      const storedMatch: StoredMatch = {
+        id: input.matchId,
+        input,
+        state,
+        home: { team: input.home.team, players: input.home.players },
+        away: { team: input.away.team, players: input.away.players },
+        playedAt,
+      };
+      matchBk.saveMatch(storedMatch).catch(() => {});
+
+      const backend = new PrApiTeamBackend(effectivePat);
+      const matchId = input.matchId;
+      const homeTeam = input.home.team;
+      const awayTeam = input.away.team;
+      const score = state.score;
+
+      for (const isHome of [true, false]) {
+        const myTeam = isHome ? homeTeam : awayTeam;
+        const oppTeam = isHome ? awayTeam : homeTeam;
+        const scoreFor = isHome ? score.home : score.away;
+        const scoreAgainst = isHome ? score.away : score.home;
+        if (!myTeam.slug) continue;
+        const summary: RecentMatchSummary = {
+          matchId,
+          playedAt,
+          opponentSlug: oppTeam.slug ?? '',
+          opponentName: oppTeam.name,
+          homeAway: isHome ? 'home' : 'away',
+          homeTeamId: homeTeam.id,
+          awayTeamId: awayTeam.id,
+          scoreFor,
+          scoreAgainst,
+          opponentStrength: oppTeam.globalStrength ?? 50,
+          compKind: 'amicale',
+        };
+        backend.loadTeam(myTeam.slug, ownerId).then((res) => {
+          if (!res) return;
+          const existing = (res.team.recentMatches ?? []).filter((r) => r.matchId !== matchId);
+          const merged = [...existing, summary].slice(-20);
+          backend.saveTeam({ ...res.team, recentMatches: merged }, res.players).catch(() => {});
+        }).catch(() => {});
+      }
+    }
+
     if (state.penaltyScore) {
       setShowPenalties(true);
     } else {

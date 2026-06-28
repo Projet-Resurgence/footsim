@@ -27,16 +27,9 @@ export default function Competitions() {
   const refresh = useCompetition((s) => s.refresh);
   const { prApiToken } = useBackendArgs();
   const isAdmin = useSession((s) => s.isAdmin());
-  const [recoverOpen, setRecoverOpen] = useState(false);
-  const [recoverId, setRecoverId] = useState('');
-  const [recovering] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'setup' | 'ongoing' | 'completed'>('all');
   const [kindFilter, setKindFilter] = useState<'all' | CompetitionKind>('all');
-
-  async function handleRecover() {
-    // recover not available without GitHub backend
-  }
 
   useEffect(() => {
     refresh('', prApiToken);
@@ -165,37 +158,10 @@ export default function Competitions() {
           <h1 className="mb-1 font-display text-4xl">Compétitions</h1>
           <p className="text-muted">Ligues, coupes, tournois à groupes.</p>
         </div>
-        <div className="flex gap-2 flex-wrap justify-end">
-          <Button variant="ghost" size="sm" onClick={() => setRecoverOpen((v) => !v)}>
-            🔍 Récupérer
-          </Button>
-          <Link to="/dashboard/competitions/new">
-            <Button>Créer une compétition</Button>
-          </Link>
-        </div>
+        <Link to="/dashboard/competitions/new">
+          <Button>Créer une compétition</Button>
+        </Link>
       </div>
-
-      {recoverOpen && (
-        <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-          <div className="text-sm font-medium">Récupérer une compétition orpheline</div>
-          <p className="text-xs text-muted">Entre l'ID de la compétition (nom du fichier sans .json dans <code>data/competitions/</code>).</p>
-          <div className="flex gap-2">
-            <Input
-              className="flex-1"
-              placeholder="Ex : abc123xyz"
-              value={recoverId}
-              onChange={(e) => setRecoverId(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleRecover()}
-            />
-            <Button size="sm" onClick={handleRecover} disabled={recovering || !recoverId.trim()}>
-              {recovering ? '…' : 'Récupérer'}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setRecoverOpen(false); setRecoverId(''); }}>
-              Annuler
-            </Button>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

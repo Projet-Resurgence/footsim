@@ -85,7 +85,7 @@ export default function ClubNew() {
       // Load league + national roster
       const [league, rosterData] = await Promise.all([
         loadLeague(leagueId, effectivePat),
-        fetchTeam(nationSlug, ownerId, effectivePat),
+        fetchTeam(nationSlug, ownerId, null, effectivePat),
       ]);
       if (!league) throw new Error('Championnat introuvable.');
       if (!rosterData) throw new Error('Roster national introuvable. Assure-toi que l\'équipe est chargée.');

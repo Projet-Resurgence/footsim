@@ -18,9 +18,14 @@ import { useCompetition } from '@/stores/competition';
 import { useTeams } from '@/stores/teams';
 
 import { useBackendArgs } from '@/hooks/useBackendArgs';
-import { saveMatch, extractGoalsAndCards } from '@/lib/github/matches';
-import type { SaveMatchMeta } from '@/lib/github/matches';
+import { extractGoalsAndCards, calcCmfMatchPoints } from '@/lib/github/matches';
+import type { RecentMatchSummary } from '@/lib/github/matches';
 import { batchUpdateTeamMedical } from '@/lib/github/store';
+import type { CompHistoryEntry } from '@/lib/competition/types';
+import { deriveTeamResult, deriveTeamPhase } from '@/lib/competition/teamResult';
+import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
+import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
+import type { StoredMatch } from '@/lib/prapi/matchBackend';
 import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary } from '@/lib/competition/types';
@@ -58,11 +63,10 @@ export default function CompetitionMatchLive() {
   const startMatch = useMatch((s) => s.start);
   const updateSideTactic = useMatch((s) => s.updateSideTactic);
 
-  const dirty = useCompetition((s) => s.dirty);
   const currentRef = useRef<typeof current>(null);
   useEffect(() => { currentRef.current = current; }, [current]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [saving] = useState(false);
   const [motm, setMotm] = useState<MotmResult | null>(null);
   const [corruptionRevealed, setCorruptionRevealed] = useState(false);
   const [winnerTeamId, setWinnerTeamId] = useState<string | null>(null);
@@ -105,7 +109,7 @@ export default function CompetitionMatchLive() {
         const snapHome = comp.teamSnapshot?.[compMatch.homeTeamId]?.slug;
         const snapAway = comp.teamSnapshot?.[compMatch.awayTeamId]?.slug;
         if ((!snapHome || !snapAway) && teamsStore.length === 0) {
-          await refreshTeams(ownerId, effectivePat);
+          await refreshTeams(ownerId, null, effectivePat);
         }
 
         const homeSlug = snapHome ?? teamsStore.find((t) => t.id === compMatch.homeTeamId)?.slug;
@@ -114,8 +118,8 @@ export default function CompetitionMatchLive() {
         if (!homeSlug || !awaySlug) { toast('error', 'Équipes introuvables.'); return; }
 
         const [homeData, awayData] = await Promise.all([
-          fetchTeam(homeSlug, ownerId, effectivePat),
-          fetchTeam(awaySlug, ownerId, effectivePat),
+          fetchTeam(homeSlug, ownerId, null, effectivePat),
+          fetchTeam(awaySlug, ownerId, null, effectivePat),
         ]);
 
         if (!homeData || !awayData) { toast('error', 'Données équipes introuvables.'); return; }
@@ -914,24 +918,125 @@ export default function CompetitionMatchLive() {
         pendingCmfEnquete: Object.keys(updatedPendingCmfEnquete).length > 0 ? updatedPendingCmfEnquete : undefined,
       };
 
-      // Résultat appliqué en mémoire + localStorage — sauvegarde GitHub manuelle
+      // Applique en mémoire + localStorage
       setCurrent(updated);
 
-      // Fin de compétition : persister l'état médical sur chaque team.json
-      if (allDone && effectivePat) {
-        const teamSnap = snap!.teamSnapshot ?? {};
-        const slugs = snap!.teamIds.map((tid) => teamSnap[tid]?.slug).filter(Boolean) as string[];
-        const teamIdBySlug: Record<string, string> = {};
-        for (const tid of snap!.teamIds) {
-          const slug = teamSnap[tid]?.slug;
-          if (slug) teamIdBySlug[slug] = tid;
-        }
-        batchUpdateTeamMedical(slugs, teamIdBySlug, updatedInjuries, updatedSuspensions, effectivePat).catch(() => {
-          // non-bloquant — la compétition est déjà enregistrée
+      // Auto-save en DB après chaque match
+      if (effectivePat) {
+        save(updated, '', effectivePat).catch(() => {
+          toast('error', 'Sauvegarde DB échouée — données en local seulement.');
         });
+
+        // Save full match record
+        const matchBk = new PrApiMatchBackend(effectivePat);
+        const storedMatch: StoredMatch = {
+          id: matchId!,
+          input: matchInput!,
+          state: matchState!,
+          home: { team: matchInput!.home.team, players: matchInput!.home.players },
+          away: { team: matchInput!.away.team, players: matchInput!.away.players },
+          playedAt: new Date().toISOString(),
+        };
+        matchBk.saveMatch(storedMatch).catch(() => {});
+
+        const teamSnap = snap!.teamSnapshot ?? {};
+        const backend = new PrApiTeamBackend(effectivePat);
+
+        // Sync recentMatches sur les 2 équipes du match
+        const thisMatch = updated.matches.find((m) => m.id === matchId);
+        if (thisMatch?.result && thisMatch.homeTeamId && thisMatch.awayTeamId) {
+          const homeId = thisMatch.homeTeamId;
+          const awayId = thisMatch.awayTeamId;
+          const homeSnap = teamSnap[homeId];
+          const awaySnap = teamSnap[awayId];
+          const playedAt = thisMatch.simulatedAt ?? new Date().toISOString();
+          const participantCount = snap!.teamIds.length;
+
+          const makeSummary = (isHome: boolean): RecentMatchSummary => {
+            const oppSnap = isHome ? awaySnap : homeSnap;
+            const oppStrength = (oppSnap as any)?.globalStrength ?? 50;
+            const scoreFor = isHome ? thisMatch.result!.home : thisMatch.result!.away;
+            const scoreAgainst = isHome ? thisMatch.result!.away : thisMatch.result!.home;
+            return {
+              matchId: thisMatch.id ?? '',
+              playedAt,
+              opponentSlug: oppSnap?.slug ?? '',
+              opponentName: oppSnap?.name ?? '',
+              homeAway: isHome ? 'home' : 'away',
+              homeTeamId: homeId,
+              awayTeamId: awayId,
+              scoreFor,
+              scoreAgainst,
+              opponentStrength: oppStrength,
+              compKind: snap!.kind,
+              compScope: snap!.scope,
+              compImportance: snap!.importance,
+              participantCount,
+              cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: snap!.kind, compScope: snap!.scope, compImportance: snap!.importance, participantCount }),
+            };
+          };
+
+          for (const [tid, isHome] of [[homeId, true], [awayId, false]] as [string, boolean][]) {
+            const slug = teamSnap[tid]?.slug;
+            if (!slug) continue;
+            const summary = makeSummary(isHome);
+            backend.loadTeam(slug, '').then((res) => {
+              if (!res) return;
+              const existing = (res.team.recentMatches ?? []).filter((r) => r.matchId !== matchId);
+              const merged = [...existing, summary].slice(-20);
+              backend.saveTeam({ ...res.team, recentMatches: merged }, res.players).catch(() => {});
+            }).catch(() => {});
+          }
+        }
+
+        // Si compétition terminée : sync compHistory + médical sur toutes les équipes
+        if (allDone) {
+          const entries = snap!.teamIds
+            .map((tid) => ({ tid, slug: teamSnap[tid]?.slug }))
+            .filter((x): x is { tid: string; slug: string } => !!x.slug);
+
+          for (const { tid, slug } of entries) {
+            backend.loadTeam(slug, '').then((res) => {
+              if (!res) return;
+              const prev = res.team.compHistory ?? [];
+              const idx = prev.findIndex((e) => e.compId === updated.id);
+              const entry: CompHistoryEntry = {
+                compId: updated.id,
+                compName: updated.name,
+                year: updated.year,
+                format: updated.format,
+                kind: updated.kind,
+                scope: updated.scope,
+                importance: updated.importance,
+                result: deriveTeamResult(tid, updated),
+                phase: deriveTeamPhase(tid, updated),
+                participantCount: updated.teamIds.length,
+              };
+              const nextHistory = idx >= 0
+                ? prev.map((e, i) => i === idx ? entry : e)
+                : [...prev, entry];
+              const teamInjuries = updatedInjuries.filter((i) => i.teamId === tid);
+              const teamSuspensions = updatedSuspensions.filter((s) => s.teamId === tid);
+              backend.saveTeam(
+                { ...res.team, compHistory: nextHistory, injuries: teamInjuries, suspensions: teamSuspensions },
+                res.players,
+              ).catch(() => {});
+            }).catch(() => {});
+          }
+        } else {
+          // Sync médical à chaque match (blessures/suspensions en cours)
+          const teamSnap2 = snap!.teamSnapshot ?? {};
+          const slugs = snap!.teamIds.map((tid) => teamSnap2[tid]?.slug).filter(Boolean) as string[];
+          const teamIdBySlug: Record<string, string> = {};
+          for (const tid of snap!.teamIds) {
+            const slug = teamSnap2[tid]?.slug;
+            if (slug) teamIdBySlug[slug] = tid;
+          }
+          batchUpdateTeamMedical(slugs, teamIdBySlug, updatedInjuries, updatedSuspensions, effectivePat).catch(() => {});
+        }
       }
 
-      toast('success', revealed ? 'Scandale ! Résultats mis à jour.' : 'Résultat enregistré localement.');
+      toast('success', revealed ? 'Scandale ! Résultats mis à jour et sauvegardés.' : 'Match sauvegardé en DB.');
     }
     persist();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1149,53 +1254,9 @@ export default function CompetitionMatchLive() {
               <div className="text-sm font-medium text-warning">{motm.rating.toFixed(1)} / 10</div>
             </div>
           )}
-          {dirty && (
-            <div className="flex flex-wrap justify-center gap-3 pt-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={saving}
-                onClick={async () => {
-                  if (!effectivePat || !current) return;
-                  setSaving(true);
-                  try {
-                    const matchMeta: SaveMatchMeta = {
-                      compKind: current.kind,
-                      compScope: current.scope,
-                      compImportance: current.importance,
-                      homeStrength: current.teamSnapshot?.[matchInput.home.team.id]?.globalStrength ?? matchInput.home.team.globalStrength,
-                      awayStrength: current.teamSnapshot?.[matchInput.away.team.id]?.globalStrength ?? matchInput.away.team.globalStrength,
-                      participantCount: current.teamIds?.length,
-                    };
-                    await saveMatch(matchInput, matchState, effectivePat, matchMeta);
-                    toast('success', 'Match sauvegardé sur GitHub.');
-                  } catch (err) {
-                    toast('error', `Match : ${err}`);
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-              >
-                {saving ? <Spinner className="h-4 w-4" /> : 'Sauvegarder le match'}
-              </Button>
-              <Button
-                size="sm"
-                disabled={saving}
-                onClick={async () => {
-                  if (!effectivePat || !current) return;
-                  setSaving(true);
-                  try {
-                    await save(current, '', effectivePat);
-                    toast('success', 'Compétition sauvegardée sur GitHub.');
-                  } catch (err) {
-                    toast('error', `Compétition : ${err}`);
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-              >
-                {saving ? <Spinner className="h-4 w-4" /> : 'Sauvegarder la compétition'}
-              </Button>
+          {saving && (
+            <div className="flex justify-center pt-1">
+              <Spinner className="h-4 w-4" />
             </div>
           )}
         </div>

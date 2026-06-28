@@ -3,7 +3,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
 
 import { useBackendArgs } from '@/hooks/useBackendArgs';
-import { listTeams, loadTeam } from '@/lib/github/store';
+import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import { POSITION_LABEL, CULTURE_LABEL } from '@/lib/types';
 import type { Team, Position } from '@/lib/types';
 
@@ -14,8 +14,7 @@ type PlayerEntry = {
 
 export default function MeilleursJoueurs() {
   
-  const { prApiToken: effectivePat } = useBackendArgs();
-  const token = effectivePat ?? effectivePat ?? null;
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
 
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<PlayerEntry[]>([]);
@@ -24,12 +23,14 @@ export default function MeilleursJoueurs() {
 
   useEffect(() => {
     async function load() {
+      if (!effectivePat) { setLoading(false); return; }
       try {
-        const teams = await listTeams(token);
+        const bk = new PrApiTeamBackend(effectivePat);
+        const teams = await bk.listTeams(ownerId);
         const all: PlayerEntry[] = [];
         await Promise.all(
           teams.map(async (team) => {
-            const data = await loadTeam(team.slug, token);
+            const data = await bk.loadTeam(team.slug, ownerId);
             if (!data) return;
             for (const p of data.players) {
               all.push({ player: p, team });

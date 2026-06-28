@@ -14,8 +14,6 @@ import type { Player, SavedTactic, Team, TeamTactics, Culture, Continent } from 
 import type { CompHistoryEntry } from '@/lib/competition/types';
 import { FORMAT_LABEL } from '@/lib/competition/types';
 import type { RecentMatchSummary } from '@/lib/github/matches';
-import { resyncCompetitionMatchHistory } from '@/lib/github/matches';
-import { listCompetitions } from '@/lib/github/competitions';
 import { CULTURE_LABEL, CONTINENT_LABEL, CULTURES_BY_CONTINENT } from '@/lib/types';
 import { FlagUpload } from '@/components/team/FlagUpload';
 import { Input } from '@/components/ui/Input';
@@ -37,7 +35,6 @@ export default function TeamDetail() {
 
   const [data, setData] = useState<{ team: Team; players: Player[] } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dirty, setDirty] = useState(false);
   const [unpublished, setUnpublished] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -86,7 +83,6 @@ const [regenStrength, setRegenStrength] = useState(false);
             setData(local);
             setUnpublished(!local.team.publishedAt);
           }
-          setDirty(false);
           return;
         }
         // No local copy — fetch from GitHub
@@ -94,7 +90,6 @@ const [regenStrength, setRegenStrength] = useState(false);
         if (!res) toast('error', 'Équipe introuvable.');
         setData(res);
         setUnpublished(!res?.team.publishedAt);
-        setDirty(false);
       } catch (err) {
         toast('error', String(err));
       } finally {
@@ -121,10 +116,14 @@ const [regenStrength, setRegenStrength] = useState(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.team.id]);
 
-  function mutate(next: { team: Team; players: Player[] }) {
+  function mutate(next: { team: Team; players: Player[] }, opts?: { silent?: boolean }) {
     setData(next);
-    setDirty(true);
     setUnpublished(true);
+    if (effectivePat) {
+      saveTeam({ ...next.team, ownerId }, next.players, null, effectivePat).catch(() => {
+        if (!opts?.silent) toast('error', 'Échec de la sauvegarde en base.');
+      });
+    }
   }
 
   function mutateSavedTactics(next: SavedTactic[], activeId?: string) {
@@ -134,23 +133,18 @@ const [regenStrength, setRegenStrength] = useState(false);
     mutate({ ...data, team: { ...data.team, savedTactics: next, activeTacticId: activeId } });
   }
 
-  async function saveLocal() {
+  async function publish() {
     if (!data) return;
     setPublishing(true);
     try {
       await saveTeam({ ...data.team, ownerId }, data.players, null, effectivePat);
-      setDirty(false);
       setUnpublished(false);
-      toast('success', 'Équipe enregistrée en DB.');
+      toast('success', 'Équipe publiée sur GitHub.');
     } catch (err) {
       toast('error', String(err));
     } finally {
       setPublishing(false);
     }
-  }
-
-  async function publish() {
-    return saveLocal();
   }
 
   async function addPlayers(extra: number) {
@@ -187,7 +181,7 @@ const [regenStrength, setRegenStrength] = useState(false);
     const players = data.players.map((p) => (p.id === next.id ? next : p));
     mutate({ team: data.team, players });
     setEditingId(null);
-    toast('success', 'Joueur mis à jour.');
+    toast('success', 'Joueur mis à jour et sauvegardé.');
   }
 
   function deletePlayer(id: string) {
@@ -195,7 +189,7 @@ const [regenStrength, setRegenStrength] = useState(false);
     const players = data.players.filter((p) => p.id !== id);
     mutate({ team: { ...data.team, playerCount: players.length }, players });
     setEditingId(null);
-    toast('success', 'Joueur supprimé.');
+    toast('success', 'Joueur supprimé et sauvegardé.');
   }
 
 async function applyNewStrength(strength: number) {
@@ -292,7 +286,6 @@ async function applyNewStrength(strength: number) {
     try {
       const teamToPublish = { ...data.team, savedTactics, activeTacticId };
       await saveTeam(teamToPublish, data.players, null, effectivePat);
-      setDirty(false);
       setUnpublished(false);
       toast('success', 'Tactiques publiées sur GitHub.');
     } catch (err) {
@@ -439,16 +432,14 @@ async function applyNewStrength(strength: number) {
       },
       players: updatedPlayers,
     });
+    if (!culturesChanged) toast('success', 'Paramètres sauvegardés.');
   }
 
   return (
     <div className="space-y-8">
       <button
         className="text-sm text-muted hover:text-text"
-        onClick={async () => {
-          if (dirty && data) await saveTeam({ ...data.team, ownerId }, data.players, null);
-          navigate('/dashboard/teams');
-        }}
+        onClick={() => navigate('/dashboard/teams')}
       >
         ← Équipes
       </button>
@@ -498,16 +489,9 @@ async function applyNewStrength(strength: number) {
 
         {/* Publish / delete zone */}
         <div className="flex flex-col items-end gap-2">
-          {(dirty || unpublished) && (
+          {unpublished && effectivePat && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-warning">{dirty ? 'Non enregistré' : 'Non publié'}</span>
-              {dirty && (
-                <Button size="sm" variant="ghost" onClick={saveLocal} disabled={publishing}>
-                  {publishing ? <Spinner className="mr-1" /> : null}
-                  Enregistrer
-                </Button>
-              )}
-              <Button size="sm" onClick={publish} disabled={publishing || !effectivePat}>
+              <Button size="sm" onClick={publish} disabled={publishing}>
                 {publishing ? <Spinner className="mr-1" /> : null}
                 ↑ GitHub
               </Button>
@@ -531,26 +515,6 @@ async function applyNewStrength(strength: number) {
         </div>
       </div>
 
-      {/* Sticky save/publish bar */}
-      {(dirty || unpublished) && (
-        <div className="sticky top-0 z-20 flex items-center justify-between rounded-lg border border-warning/30 bg-warning/10 px-4 py-2">
-          <span className="text-sm text-warning">
-            {dirty ? 'Modifications non enregistrées.' : 'Modifications locales non publiées sur GitHub.'}
-          </span>
-          <div className="flex gap-2">
-            {dirty && (
-              <Button size="sm" variant="ghost" onClick={saveLocal} disabled={publishing}>
-                {publishing ? <Spinner className="mr-1" /> : null}
-                Enregistrer
-              </Button>
-            )}
-            <Button size="sm" onClick={publish} disabled={publishing || !effectivePat}>
-              {publishing ? <Spinner className="mr-1" /> : null}
-              ↑ GitHub
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* Tab bar */}
       <div className="flex items-center gap-1 border-b border-border">
@@ -622,7 +586,6 @@ async function applyNewStrength(strength: number) {
             positionMap={team.tactics?.positionMap}
             onSaveAutoXI={effectivePat ? async (lineupIds) => {
               if (!data) return;
-              // Update active tactic lineup or create one
               const activeId = activeTacticId ?? savedTactics[0]?.id;
               const formation = team.tactics?.formation ?? team.formation;
               if (activeId) {
@@ -634,12 +597,7 @@ async function applyNewStrength(strength: number) {
                 const newT = { id: crypto.randomUUID(), name: 'XI auto', formation, lineup: lineupIds, style: 'possession' as const };
                 mutateSavedTactics([...savedTactics, newT], newT.id);
               }
-              // Publish to GitHub
-              const updated = { ...data.team, savedTactics, activeTacticId };
-              await saveTeam({ ...updated, ownerId }, data.players, null, effectivePat);
-              setDirty(false);
-              setUnpublished(false);
-              toast('success', 'XI sauvegardé et publié.');
+              toast('success', 'XI sauvegardé en DB.');
             } : undefined}
           />
           <RosterTable players={players} onSelect={setEditingId} />
@@ -727,11 +685,9 @@ async function applyNewStrength(strength: number) {
           onDelete={(matchId) => {
             const next = (team.recentMatches ?? []).filter((m) => m.matchId !== matchId);
             mutate({ team: { ...team, recentMatches: next }, players });
-            setDirty(true);
           }}
           onDeleteAll={() => {
             mutate({ team: { ...team, recentMatches: [] }, players });
-            setDirty(true);
           }}
         />
       )}
@@ -740,10 +696,6 @@ async function applyNewStrength(strength: number) {
         <StatsIndividuellesTab
           recentMatches={team.recentMatches ?? []}
           players={players}
-          teamSlug={team.slug}
-          teamId={team.id}
-          pat={effectivePat}
-          onResync={(updated) => mutate({ team: { ...team, recentMatches: updated }, players })}
         />
       )}
 
@@ -1560,61 +1512,10 @@ function RecentMatchDetails({ m }: { m: RecentMatchSummary }) {
 function StatsIndividuellesTab({
   recentMatches,
   players,
-  teamSlug,
-  teamId,
-  pat,
-  onResync,
 }: {
   recentMatches: RecentMatchSummary[];
   players: Player[];
-  teamSlug: string;
-  teamId: string;
-  pat: string | null;
-  onResync: (updated: RecentMatchSummary[]) => void;
 }) {
-  const [resyncing, setResyncing] = useState(false);
-
-  async function handleResync() {
-    if (!pat) return;
-    setResyncing(true);
-    try {
-      const { readJson } = await import('@/lib/github/api');
-      const { listTeams } = await import('@/lib/github/store');
-      const [comps, allTeams] = await Promise.all([listCompetitions(pat), listTeams(pat)]);
-      const teamSlugs: Record<string, string> = {};
-      for (const t of allTeams) teamSlugs[t.id] = t.slug;
-      let synced = 0;
-      for (const summary of comps) {
-        // Include both ongoing and completed competitions
-        if (summary.status === 'setup') continue;
-        const comp = await readJson<import('@/lib/competition/types').Competition>(
-          `data/competitions/${summary.id}.json`, pat
-        );
-        if (!comp) continue;
-        const teamInComp = comp.data.teamIds.some((id) => {
-          const snap = comp.data.teamSnapshot?.[id];
-          return snap?.slug === teamSlug || id === teamSlug || id === teamId;
-        });
-        if (!teamInComp) continue;
-        const r = await resyncCompetitionMatchHistory(comp.data, pat, {
-          compKind: comp.data.kind,
-          compScope: comp.data.scope,
-          compImportance: comp.data.importance,
-          teamSlugs,
-        });
-        synced += r.synced;
-        if (r.skipped > 0) toast('info', `${summary.name} : ${r.skipped} match(s) ignorés (pas de fichier match).`);
-      }
-      type TW = import('@/lib/types').Team & { recentMatches?: RecentMatchSummary[] };
-      const fresh = await readJson<TW>(`data/teams/${teamSlug}/team.json`, pat);
-      if (fresh) onResync(fresh.data.recentMatches ?? []);
-      toast('success', `Resync terminé — ${synced} match(s) mis à jour.`);
-    } catch {
-      toast('error', 'Erreur lors du resync.');
-    } finally {
-      setResyncing(false);
-    }
-  }
 
   type PlayerStat = { goals: number; assists: number };
   const stats = new Map<string, PlayerStat>();
@@ -1641,14 +1542,6 @@ function StatsIndividuellesTab({
 
   return (
     <div className="space-y-8">
-      {pat && (
-        <div className="flex justify-end">
-          <Button size="sm" variant="ghost" onClick={handleResync} disabled={resyncing}>
-            {resyncing ? <Spinner className="mr-1" /> : null}
-            Resync depuis GitHub
-          </Button>
-        </div>
-      )}
 
       {rows.length === 0 ? (
         <div className="py-16 text-center text-muted text-sm">

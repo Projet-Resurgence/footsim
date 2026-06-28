@@ -14,7 +14,7 @@ import { buildRoundRobin, simulateDay } from '@/lib/sim/season';
 export default function LeagueDetail() {
   const { leagueId: encoded = '' } = useParams<{ leagueId: string }>();
   const leagueId = decodeURIComponent(encoded);
-  const { ownerId, pat, isAdmin } = useBackendArgs();
+  const { ownerId, prApiToken, isAdmin } = useBackendArgs();
   const session = useSession((s) => s.session);
   const loadLeague = useLeagues((s) => s.loadLeague);
   const saveLeague = useLeagues((s) => s.saveLeague);
@@ -38,7 +38,7 @@ export default function LeagueDetail() {
 
   useEffect(() => {
     setLoading(true);
-    loadLeague(leagueId, pat)
+    loadLeague(leagueId, null, prApiToken)
       .then((l) => {
         if (!l) toast('error', 'Championnat introuvable.');
         setLeague(l);
@@ -46,7 +46,7 @@ export default function LeagueDetail() {
       })
       .catch((err) => toast('error', String(err)))
       .finally(() => setLoading(false));
-  }, [leagueId, pat, loadLeague]);
+  }, [leagueId, prApiToken, loadLeague]);
 
   function mutate(next: League) {
     setLeague(next);
@@ -57,7 +57,7 @@ export default function LeagueDetail() {
     if (!league) return;
     setSaving(true);
     try {
-      await saveLeague(league, pat);
+      await saveLeague(league, null, prApiToken);
       setDirty(false);
       toast('success', 'Championnat sauvegardé.');
     } catch (err) {
@@ -71,7 +71,7 @@ export default function LeagueDetail() {
     if (!league) return;
     setDeletingLeague(true);
     try {
-      await removeLeague(league.id, league.nationSlug, pat);
+      await removeLeague(league.id, league.nationSlug, null, prApiToken);
       toast('success', 'Championnat supprimé.');
       navigate(`/dashboard/teams/${league.nationSlug}`);
     } catch (err) {
@@ -127,11 +127,11 @@ export default function LeagueDetail() {
 
     setSimulatingDay(true);
     try {
-      const roster = await fetchTeam(league.nationSlug, ownerId, pat);
+      const roster = await fetchTeam(league.nationSlug, ownerId, null, prApiToken);
       const allPlayers = roster?.players ?? [];
       const updated = await simulateDay(season, day, allPlayers, league.divisions);
       mutate({ ...league, season: { ...updated, status: updated.currentDay >= totalDays ? 'finished' : 'running' } });
-      await saveLeague({ ...league, season: { ...updated, status: updated.currentDay >= totalDays ? 'finished' : 'running' } }, pat);
+      await saveLeague({ ...league, season: { ...updated, status: updated.currentDay >= totalDays ? 'finished' : 'running' } }, null, prApiToken);
       setDirty(false);
       toast('success', `Journée ${day + 1} simulée.`);
     } catch (err) {
@@ -145,7 +145,7 @@ export default function LeagueDetail() {
     if (!league?.season) return;
     setSimulatingAll(true);
     try {
-      const roster = await fetchTeam(league.nationSlug, ownerId, pat);
+      const roster = await fetchTeam(league.nationSlug, ownerId, null, prApiToken);
       const allPlayers = roster?.players ?? [];
       let season = league.season;
       const totalDays = Math.max(...season.divisionSeasons.map((ds) => ds.schedule.length));
@@ -154,7 +154,7 @@ export default function LeagueDetail() {
       }
       const finalSeason = { ...season, status: 'finished' as const };
       mutate({ ...league, season: finalSeason });
-      await saveLeague({ ...league, season: finalSeason }, pat);
+      await saveLeague({ ...league, season: finalSeason }, null, prApiToken);
       setDirty(false);
       toast('success', 'Saison terminée.');
     } catch (err) {

@@ -19,7 +19,7 @@ import { needsKnockoutDraw, getQualifiersByRank, seedKnockoutWithOrder, sortStan
 import { LPMDrawCeremony, type LPMPair } from '@/components/competition/LPMDrawCeremony';
 import { buildKnockoutPots, conductKnockoutDraw } from '@/lib/competition/draw';
 import type { DrawResult } from '@/lib/competition/draw';
-import type { Competition, CompMatch, PlayerCompStats, CompHistoryEntry, CompetitionKind, CompetitionScope, CompetitionImportance } from '@/lib/competition/types';
+import type { Competition, CompMatch, PlayerCompStats, CompetitionKind, CompetitionScope, CompetitionImportance } from '@/lib/competition/types';
 import { COMPETITION_KIND_LABEL, COMPETITION_SCOPE_LABEL, COMPETITION_IMPORTANCE_LABEL } from '@/lib/competition/types';
 import type { CorruptionDeal } from '@/lib/sim/types';
 import type { Team } from '@/lib/types';
@@ -28,9 +28,13 @@ import type { PressItem, PressMention, PressMentionPlayer, PressMentionCoach } f
 import { PRESS_CATEGORY_COLOR, PRESS_CATEGORY_LABEL, generateCmfItems } from '@/lib/competition/press';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
-import { calcCmfMatchPoints } from '@/lib/github/matches';
+import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
 import type { Injury, Suspension } from '@/lib/competition/injuries';
 import { SEVERITY_COLOR, CAUSE_LABEL } from '@/lib/competition/injuries';
+import type { CompHistoryEntry } from '@/lib/competition/types';
+import { deriveTeamResult, deriveTeamPhase } from '@/lib/competition/teamResult';
+import type { RecentMatchSummary } from '@/lib/github/matches';
+import { calcCmfMatchPoints } from '@/lib/github/matches';
 
 export default function CompetitionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -43,7 +47,6 @@ export default function CompetitionDetail() {
   const remove = useCompetition((s) => s.remove);
   const setCurrent = useCompetition((s) => s.setCurrent);
   const current = useCompetition((s) => s.current);
-  const dirty = useCompetition((s) => s.dirty);
   const teams = useTeams((s) => s.teams);
   const refreshTeams = useTeams((s) => s.refresh);
   
@@ -54,7 +57,7 @@ export default function CompetitionDetail() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [resyncing, setResyncing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [syncingMedical, setSyncingMedical] = useState(false);
   const [distributingLpm, setDistributingLpm] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'bracket' | 'rounds' | 'stats' | 'presse' | 'morale' | 'medical' | 'suspensions'>('overview');
@@ -164,54 +167,6 @@ export default function CompetitionDetail() {
 
 
 
-  async function handleSync() {
-    if (!effectivePat || !current) return;
-    setSyncing(true);
-    try {
-      await save(current, '', effectivePat);
-
-      // When completed, update compHistory on each participating team
-      if (current.status === 'completed') {
-        const snapshot = current.teamSnapshot ?? {};
-        const entries = current.teamIds
-          .map((tid) => ({ tid, slug: snapshot[tid]?.slug }))
-          .filter((x): x is { tid: string; slug: string } => !!x.slug);
-
-        await Promise.all(entries.map(async ({ tid, slug }) => {
-          const backend = teamBackend();
-          const res = await backend.loadTeam(slug, ownerId);
-          if (!res) return;
-          const prev = res.team.compHistory ?? [];
-          const idx = prev.findIndex((e) => e.compId === current.id);
-          const entry: CompHistoryEntry = {
-            compId: current.id,
-            compName: current.name,
-            year: current.year,
-            format: current.format,
-            kind: current.kind,
-            scope: current.scope,
-            importance: current.importance,
-            result: deriveTeamResult(tid, current),
-            phase: deriveTeamPhase(tid, current),
-            participantCount: current.teamIds.length,
-          };
-          const next = idx >= 0
-            ? prev.map((e, i) => i === idx ? entry : e)
-            : [...prev, entry];
-          const changed = idx < 0 || JSON.stringify(prev[idx]) !== JSON.stringify(entry);
-          if (!changed) return;
-          await backend.saveTeam({ ...res.team, compHistory: next }, res.players);
-        }));
-      }
-
-      toast('success', 'Compétition sauvegardée en DB.');
-    } catch (err) {
-      toast('error', String(err));
-    } finally {
-      setSyncing(false);
-    }
-  }
-
   async function handlePatchSnapshot() {
     if (!effectivePat || !current) return;
     await ensureTeams();
@@ -234,79 +189,6 @@ export default function CompetitionDetail() {
       toast('error', String(err));
     } finally {
       setSyncing(false);
-    }
-  }
-
-  async function handleResyncMatchHistory() {
-    if (!effectivePat || !current) return;
-    setResyncing(true);
-    try {
-      const snapshot = current.teamSnapshot ?? {};
-      const backend = teamBackend();
-      const completedMatches = current.matches.filter((m) => m.status === 'completed' && m.result != null);
-      const participantCount = current.teamIds.length;
-
-      const byTeam: Record<string, import('@/lib/github/matches').RecentMatchSummary[]> = {};
-      for (const m of completedMatches) {
-        const homeId = m.homeTeamId;
-        const awayId = m.awayTeamId;
-        if (!homeId || !awayId || !m.result) continue;
-        const homeSnap = snapshot[homeId];
-        const awaySnap = snapshot[awayId];
-        if (!homeSnap?.slug || !awaySnap?.slug) continue;
-
-        const playedAt = m.simulatedAt ?? new Date().toISOString();
-        const makeSummary = (isHome: boolean): import('@/lib/github/matches').RecentMatchSummary => {
-          const oppSnap = isHome ? awaySnap : homeSnap;
-          const oppStrength = (oppSnap as any).globalStrength ?? 50;
-          const scoreFor = isHome ? m.result!.home : m.result!.away;
-          const scoreAgainst = isHome ? m.result!.away : m.result!.home;
-          return {
-            matchId: m.id ?? '',
-            playedAt,
-            opponentSlug: oppSnap.slug ?? '',
-            opponentName: oppSnap.name ?? '',
-            homeAway: isHome ? 'home' : 'away',
-            homeTeamId: homeId,
-            awayTeamId: awayId,
-            scoreFor,
-            scoreAgainst,
-            opponentStrength: oppStrength,
-            compKind: current.kind,
-            cmfPoints: calcCmfMatchPoints({
-              scoreFor,
-              scoreAgainst,
-              opponentStrength: oppStrength,
-              compKind: current.kind,
-              compScope: current.scope,
-              compImportance: current.importance,
-              participantCount,
-            }),
-          };
-        };
-        (byTeam[homeId] ??= []).push(makeSummary(true));
-        (byTeam[awayId] ??= []).push(makeSummary(false));
-      }
-
-      let synced = 0;
-      const compMatchIds = new Set(current.matches.map((m) => m.id));
-      await Promise.all(
-        Object.entries(byTeam).map(async ([teamId, newEntries]) => {
-          const slug = snapshot[teamId]?.slug;
-          if (!slug) return;
-          const res = await backend.loadTeam(slug, ownerId);
-          if (!res) return;
-          const existing = (res.team.recentMatches ?? []).filter((r) => !compMatchIds.has(r.matchId));
-          const merged = [...existing, ...newEntries].slice(-20);
-          await backend.saveTeam({ ...res.team, recentMatches: merged }, res.players);
-          synced++;
-        }),
-      );
-      toast('success', `Historique resynchronisé : ${synced} équipes mises à jour.`);
-    } catch (err) {
-      toast('error', String(err));
-    } finally {
-      setResyncing(false);
     }
   }
 
@@ -404,30 +286,126 @@ export default function CompetitionDetail() {
     }
   }
 
+  async function handleSave() {
+    if (!effectivePat || !current) return;
+    setSaving(true);
+    try {
+      await save(current, '', effectivePat);
+
+      if (current.status === 'completed') {
+        const teamSnap = current.teamSnapshot ?? {};
+        const backend = new PrApiTeamBackend(effectivePat);
+
+        // Update compHistory + recentMatches on every team
+        await Promise.allSettled(
+          current.teamIds.map(async (tid) => {
+            const slug = teamSnap[tid]?.slug;
+            if (!slug) return;
+            const res = await backend.loadTeam(slug, ownerId);
+            if (!res) return;
+
+            // compHistory
+            const prev = res.team.compHistory ?? [];
+            const idx = prev.findIndex((e) => e.compId === current.id);
+            const entry: CompHistoryEntry = {
+              compId: current.id,
+              compName: current.name,
+              year: current.year,
+              format: current.format,
+              kind: current.kind,
+              scope: current.scope,
+              importance: current.importance,
+              result: deriveTeamResult(tid, current),
+              phase: deriveTeamPhase(tid, current),
+              participantCount: current.teamIds.length,
+            };
+            const nextHistory = idx >= 0
+              ? prev.map((e, i) => i === idx ? entry : e)
+              : [...prev, entry];
+
+            // recentMatches — rebuild from all completed matches in competition
+            const existingOther = (res.team.recentMatches ?? []).filter(
+              (r) => !current.matches.some((m) => m.id === r.matchId),
+            );
+            const newEntries: RecentMatchSummary[] = [];
+            for (const m of current.matches) {
+              if (m.status !== 'completed' || !m.result) continue;
+              if (m.homeTeamId !== tid && m.awayTeamId !== tid) continue;
+              const isHome = m.homeTeamId === tid;
+              const oppId = isHome ? m.awayTeamId! : m.homeTeamId!;
+              const oppSnap = teamSnap[oppId];
+              const oppStrength = (oppSnap as any)?.globalStrength ?? 50;
+              const scoreFor = isHome ? m.result.home : m.result.away;
+              const scoreAgainst = isHome ? m.result.away : m.result.home;
+              newEntries.push({
+                matchId: m.id,
+                playedAt: m.simulatedAt ?? new Date().toISOString(),
+                opponentSlug: oppSnap?.slug ?? '',
+                opponentName: oppSnap?.name ?? '',
+                homeAway: isHome ? 'home' : 'away',
+                homeTeamId: m.homeTeamId!,
+                awayTeamId: m.awayTeamId!,
+                scoreFor,
+                scoreAgainst,
+                opponentStrength: oppStrength,
+                compKind: current.kind,
+                compScope: current.scope,
+                compImportance: current.importance,
+                participantCount: current.teamIds.length,
+                cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: current.kind, compScope: current.scope, compImportance: current.importance, participantCount: current.teamIds.length }),
+              });
+            }
+            const mergedRecent = [...existingOther, ...newEntries].slice(-20);
+
+            // injuries/suspensions from competition state
+            const teamInjuries = (current.injuries ?? []).filter((i) => i.teamId === tid);
+            const teamSuspensions = (current.suspensions ?? []).filter((s) => s.teamId === tid);
+
+            await backend.saveTeam(
+              { ...res.team, compHistory: nextHistory, recentMatches: mergedRecent, injuries: teamInjuries, suspensions: teamSuspensions },
+              res.players,
+            );
+          }),
+        );
+      }
+
+      toast('success', 'Compétition sauvegardée.');
+    } catch (err) {
+      toast('error', String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleDelete() {
     if (!effectivePat || !current) return;
     if (!confirm(`Supprimer « ${current.name} » ? Cette action est irréversible.`)) return;
     setDeleting(true);
     try {
-      // Delete competition from DB
-      await remove(current.id, '', effectivePat);
+      const snapshot = current.teamSnapshot ?? {};
+      const matchIds = current.matches.map((m) => m.id).filter(Boolean) as string[];
+      const compMatchIds = new Set(matchIds);
+      const teamBk = teamBackend();
+      const matchBk = new PrApiMatchBackend(effectivePat);
+
+      // Delete individual match records from DB
+      await Promise.allSettled(matchIds.map((mid) => matchBk.deleteMatch(mid)));
 
       // Strip compHistory + recentMatches from each team
-      const snapshot = current.teamSnapshot ?? {};
-      const compMatchIds = new Set(current.matches.map((m) => m.id).filter(Boolean));
-      const backend = teamBackend();
-
       await Promise.all(
         current.teamIds.map(async (tid) => {
           const slug = snapshot[tid]?.slug;
           if (!slug) return;
-          const res = await backend.loadTeam(slug, ownerId);
+          const res = await teamBk.loadTeam(slug, ownerId);
           if (!res) return;
           const compHistory = (res.team.compHistory ?? []).filter((e) => e.compId !== current.id);
           const recentMatches = (res.team.recentMatches ?? []).filter((r) => !compMatchIds.has(r.matchId));
-          await backend.saveTeam({ ...res.team, compHistory, recentMatches }, res.players);
+          await teamBk.saveTeam({ ...res.team, compHistory, recentMatches }, res.players);
         }),
       );
+
+      // Delete competition from DB
+      await remove(current.id, '', effectivePat);
       navigate(backTo);
     } catch (err) {
       toast('error', String(err));
@@ -692,17 +670,9 @@ export default function CompetitionDetail() {
                 🔧 Réparer noms
               </Button>
             )}
-            <Button size="sm" variant="ghost" onClick={handleResyncMatchHistory} disabled={resyncing}>
-              {resyncing ? <Spinner className="h-4 w-4" /> : '🔄 Resync historique'}
-            </Button>
             {isLPM && current.status === 'completed' && (
               <Button size="sm" variant="ghost" onClick={handleDistributeLpmZone} disabled={distributingLpm}>
                 {distributingLpm ? <Spinner className="h-4 w-4" /> : '★ Points CMF LPM'}
-              </Button>
-            )}
-            {dirty && (
-              <Button size="sm" variant="ghost" onClick={handleSync} disabled={syncing}>
-                {syncing ? <Spinner className="h-4 w-4" /> : '↑ Sauvegarder'}
               </Button>
             )}
             {current.status !== 'completed' && (
@@ -726,6 +696,11 @@ export default function CompetitionDetail() {
                 }}
               >
                 ⚡ Simuler tout
+              </Button>
+            )}
+            {(current.status === 'ongoing' || current.status === 'completed') && (
+              <Button size="sm" variant="ghost" onClick={handleSave} disabled={saving}>
+                {saving ? <Spinner className="h-4 w-4" /> : 'Sauvegarde'}
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={handleDelete} disabled={deleting}>
@@ -944,7 +919,7 @@ export default function CompetitionDetail() {
 
           {activeTab === 'medical' && (
             <div className="space-y-4">
-              {current.status === 'completed' && isAdmin && effectivePat && (
+              {(current.status === 'completed' || current.status === 'ongoing') && isAdmin && effectivePat && (
                 <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3">
                   <span className="text-xs text-muted">Synchroniser l'état médical sur les fiches équipes (blessés restants après cette compétition)</span>
                   <Button size="sm" variant="ghost" onClick={handleSyncMedical} disabled={syncingMedical}>
@@ -1737,57 +1712,6 @@ function PlayerCompPopup({
   );
 }
 
-const PHASE_ORDER = ['group', 'league', 'lpm_playoff', 'R64', 'R32', 'R16', 'QF', 'SF', '3rd', 'F'];
-
-function deriveTeamPhase(teamId: string, comp: Competition): string | undefined {
-  const played = comp.matches.filter(
-    (m) => m.status === 'completed' && (m.homeTeamId === teamId || m.awayTeamId === teamId),
-  );
-  if (played.length === 0) return undefined;
-  return played.reduce((best, m) => {
-    const bi = PHASE_ORDER.indexOf(best);
-    const mi = PHASE_ORDER.indexOf(m.phase);
-    return mi > bi ? m.phase : best;
-  }, played[0].phase);
-}
-
-function deriveTeamResult(teamId: string, comp: Competition): CompHistoryEntry['result'] {
-  if (comp.winner === teamId) return 'winner';
-
-  const finalMatch = comp.matches.find((m) => m.phase === 'F' && m.status === 'completed');
-  if (finalMatch && (finalMatch.homeTeamId === teamId || finalMatch.awayTeamId === teamId)) {
-    return 'finalist';
-  }
-
-  // Manual 3rd place assignment (when no 3rd-place match was played)
-  if (comp.manualThird === teamId) return 'third';
-
-  const thirdMatch = comp.matches.find((m) => m.phase === '3rd' && m.status === 'completed');
-  if (thirdMatch) {
-    const thirdWinner = thirdMatch.result
-      ? (thirdMatch.result.home > thirdMatch.result.away ? thirdMatch.homeTeamId : thirdMatch.awayTeamId)
-      : null;
-    if (thirdWinner === teamId) return 'third';
-    if (thirdMatch.homeTeamId === teamId || thirdMatch.awayTeamId === teamId) return 'semi';
-  }
-
-  const sfMatches = comp.matches.filter((m) => m.phase === 'SF' && m.status === 'completed');
-  if (sfMatches.some((m) => m.homeTeamId === teamId || m.awayTeamId === teamId)) return 'semi';
-
-  const qfMatches = comp.matches.filter((m) => m.phase === 'QF' && m.status === 'completed');
-  if (qfMatches.some((m) => m.homeTeamId === teamId || m.awayTeamId === teamId)) return 'quarter';
-
-  const r16Matches = comp.matches.filter((m) => m.phase === 'R16' && m.status === 'completed');
-  if (r16Matches.some((m) => m.homeTeamId === teamId || m.awayTeamId === teamId)) return 'round16';
-
-  const r32Matches = comp.matches.filter((m) => m.phase === 'R32' && m.status === 'completed');
-  if (r32Matches.some((m) => m.homeTeamId === teamId || m.awayTeamId === teamId)) return 'round32';
-
-  const r64Matches = comp.matches.filter((m) => m.phase === 'R64' && m.status === 'completed');
-  if (r64Matches.some((m) => m.homeTeamId === teamId || m.awayTeamId === teamId)) return 'round64';
-
-  return 'participant';
-}
 
 /** Replace mention names in text with clickable spans */
 function renderBodyWithMentions(body: string, mentions: PressMention[] | undefined, onMention: (m: PressMention) => void) {

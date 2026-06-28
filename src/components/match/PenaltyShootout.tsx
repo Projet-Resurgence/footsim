@@ -138,6 +138,15 @@ export function PenaltyShootout({ state, home, away, onDone }: Props) {
             {homeScore > awayScore ? home.name : away.name} remporte la séance !
           </motion.div>
         )}
+
+        {!done && (
+          <button
+            onClick={onDone}
+            className="text-xs text-muted hover:text-text transition-colors underline underline-offset-2"
+          >
+            Passer
+          </button>
+        )}
       </motion.div>
     </motion.div>
   );

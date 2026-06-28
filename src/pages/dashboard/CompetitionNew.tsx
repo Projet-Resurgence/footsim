@@ -89,7 +89,7 @@ export default function CompetitionNew() {
   const presetLabelRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (ownerId && teams.length === 0) refresh(ownerId, effectivePat);
+    if (ownerId && teams.length === 0) refresh(ownerId, null, effectivePat);
   }, [effectivePat, teams.length, refresh]);
 
   function currentPresetData(withTeams: boolean): Omit<CompetitionPreset, 'id' | 'label' | 'savedAt'> {

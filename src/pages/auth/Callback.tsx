@@ -4,8 +4,6 @@ import { fetchDiscordUser, parseTokenFragment, isAdminId } from '@/lib/auth/disc
 import { useSession } from '@/stores/session';
 import { usePrApiToken } from '@/stores/prApiToken';
 import { prapi } from '@/lib/prapi/client';
-import { GithubTeamBackend } from '@/lib/github/backend';
-import { env } from '@/lib/env';
 import { Spinner } from '@/components/ui/Spinner';
 
 export default function Callback() {
@@ -30,26 +28,36 @@ export default function Callback() {
           expiresAt: Date.now() + parsed.expiresIn * 1000,
         });
 
-        // Exchange Discord token for PR_API FootSim JWT
-        try {
-          const result = await prapi.exchangeDiscordToken(parsed.accessToken);
-          setToken(result.token, result.is_admin);
-        } catch {
-          // Non-fatal — falls back to GitHub / IndexedDB backends
-        }
-
         if (isAdminId(user.id)) {
+          // Exchange and navigate to dashboard
+          try {
+            const result = await prapi.exchangeDiscordToken(parsed.accessToken);
+            setToken(result.token, result.is_admin);
+          } catch (e) {
+            setError(`Échec d'authentification PR_API: ${e instanceof Error ? e.message : String(e)}`);
+            return;
+          }
           navigate('/dashboard', { replace: true });
           return;
         }
 
-        // Check if user is a team manager (via GitHub read token if configured)
-        if (env.githubReadToken) {
-          const ghBackend = new GithubTeamBackend(env.githubReadToken);
-          const teams = await ghBackend.listTeams(user.id);
+        // Non-admin: exchange token then check team membership via PR_API
+        let prApiToken: string | null = null;
+        try {
+          const result = await prapi.exchangeDiscordToken(parsed.accessToken);
+          setToken(result.token, result.is_admin);
+          prApiToken = result.token;
+        } catch {
+          // No PR_API access — go to no-access
+          navigate('/no-access', { replace: true });
+          return;
+        }
+
+        try {
+          const teams = await prapi.get<{ id: string; managerDiscordId?: string }[]>('/teams', prApiToken);
           const isManager = teams.some((t) => t.managerDiscordId === user.id);
           navigate(isManager ? '/my-team' : '/no-access', { replace: true });
-        } else {
+        } catch {
           navigate('/no-access', { replace: true });
         }
       })
