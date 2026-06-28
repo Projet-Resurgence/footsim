@@ -143,5 +143,5 @@ export const router = createBrowserRouter(
       ),
     },
   ],
-  { basename: '/footsim' },
+  { basename: '/' },
 );
