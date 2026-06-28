@@ -2,7 +2,48 @@
 
 ## Project
 
-FootSim — static SPA simulating football matches between countries from "Projet Résurgence". Single-admin (Discord ID `772821169664426025`). Hosted on GitHub Pages (`BJBellum/footsim`). Persistence in `BJBellum/footsim-data` via GitHub Contents API.
+FootSim — SPA simulating football matches between countries from "Projet Résurgence". Admin: Discord ID `772821169664426025`. Served at `foot.projet-resurgence.fr` via Docker. Persistence: **PR_API** (primary, JWT auth) → GitHub Contents API (legacy fallback) → IndexedDB (offline fallback).
+
+## PR_API Integration
+
+- Auth: Discord implicit flow → `/footsim/auth/discord/exchange` → FootSim JWT stored in `footsim.prapi_token` (localStorage via Zustand persist)
+- Backend selector: `prApiToken` present → PR_API; `githubPat` present → GitHub; else → IndexedDB
+- New files: `src/lib/prapi/client.ts`, `teamBackend.ts`, `leagueBackend.ts`, `competitionBackend.ts`, `matchBackend.ts`
+- New store: `src/stores/prApiToken.ts`
+- Env var: `VITE_PR_API_URL` (required) — baked at Vite build time
+
+## PR_API Routes (prefix `/footsim`)
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/footsim/auth/discord/exchange` | none | Discord token → FootSim JWT |
+| GET | `/footsim/teams` | JWT | List all teams |
+| GET | `/footsim/teams/:slug` | JWT | Team + players |
+| PUT | `/footsim/teams/:slug` | JWT admin | Save team + players |
+| DELETE | `/footsim/teams/:slug` | JWT admin | Delete team |
+| POST | `/footsim/matches` | JWT admin | Save match |
+| GET | `/footsim/matches/:id` | JWT | Load match |
+| GET | `/footsim/leagues/:nationSlug` | JWT | List leagues |
+| PUT | `/footsim/leagues/:id` | JWT admin | Save league |
+| DELETE | `/footsim/leagues/:id` | JWT admin | Delete league |
+| GET | `/footsim/competitions` | JWT | List competition summaries |
+| GET | `/footsim/competitions/:id` | JWT | Load competition |
+| PUT | `/footsim/competitions/:id` | JWT admin | Save competition |
+| DELETE | `/footsim/competitions/:id` | JWT admin | Delete competition |
+
+## DB Migration (after deploying PR_API changes)
+
+```bash
+docker compose exec pr-api alembic revision --autogenerate -m "footsim tables"
+docker compose exec pr-api alembic upgrade head
+```
+
+## Docker
+
+- Service: `footsim` (nginx static, port 80 internal)
+- Nginx: `foot.projet-resurgence.fr` → `http://footsim:80`
+- Build args: `VITE_DISCORD_CLIENT_ID`, `VITE_DISCORD_REDIRECT_URI`, `VITE_ADMIN_DISCORD_ID`, `VITE_PR_API_URL`
+- Add to `.env`: `FOOTSIM_DISCORD_REDIRECT_URI`, `FOOTSIM_ADMIN_DISCORD_ID`, `FOOTSIM_PR_API_URL`
 
 ## Stack
 

@@ -7,10 +7,9 @@ import { TacticsPanel } from '@/components/team/TacticsPanel';
 import { StartingXI } from '@/components/team/StartingXI';
 import { TacticsSummary } from '@/components/team/TacticsSummary';
 import { useSession } from '@/stores/session';
-import { useCredentials } from '@/stores/credentials';
-import { GithubTeamBackend } from '@/lib/github/backend';
-import { saveTeamWithRoster } from '@/lib/github/store';
-import { listCompetitions } from '@/lib/github/competitions';
+import { usePrApiToken } from '@/stores/prApiToken';
+import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
+import { useCompetition } from '@/stores/competition';
 import { POSITIONS, POSITION_LABEL, POSITION_FULL, CULTURES_BY_CONTINENT, CULTURE_LABEL } from '@/lib/types';
 import type { Continent } from '@/lib/types';
 import { FORMAT_LABEL } from '@/lib/competition/types';
@@ -21,12 +20,9 @@ import { calcCmfMatchPoints } from '@/lib/github/matches';
 import type { RecentMatchSummary } from '@/lib/github/matches';
 import type { CultureWeight } from '@/lib/gen/names';
 import { loadLocalTactics, loadLocalSavedTactics, saveLocalSavedTactics } from '@/lib/localTactics';
-import { env } from '@/lib/env';
 import { PlayerView } from '@/components/team/PlayerView';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
 import type { Coach } from '@/lib/gen/coach';
-
-const ghPublic = new GithubTeamBackend(env.githubReadToken ?? null);
 
 const STATUS_LABEL: Record<string, string> = {
   setup: 'Configuration',
@@ -44,7 +40,9 @@ type Tab = 'tactique' | 'joueurs' | 'noms' | 'postes' | 'competitions' | 'palmar
 export default function MyTeam() {
   const session = useSession((s) => s.session);
   const isAdmin = useSession((s) => s.isAdmin());
-  const pat = useCredentials((s) => s.githubPat);
+  const prApiToken = usePrApiToken((s) => s.token);
+  const refreshComps = useCompetition((s) => s.refresh);
+  const compSummaries = useCompetition((s) => s.summaries);
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{ team: Team; players: Player[] } | null>(null);
@@ -60,18 +58,8 @@ export default function MyTeam() {
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!session) return;
-    const cacheKey = `footsim.myteam.slug.${session.id}`;
-
-    async function resolveSlug(): Promise<string | null> {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) return cached;
-      const teams = await ghPublic.listTeams(session!.id);
-      const mine = teams.find((t) => t.managerDiscordId === session!.id);
-      if (!mine) return null;
-      localStorage.setItem(cacheKey, mine.slug);
-      return mine.slug;
-    }
+    if (!session || !prApiToken) return;
+    const backend = new PrApiTeamBackend(prApiToken);
 
     async function applyFull(full: { team: Team; players: Player[] }) {
       const local = loadLocalSavedTactics(full.team.id);
@@ -95,19 +83,10 @@ export default function MyTeam() {
 
     async function load() {
       try {
-        const slug = await resolveSlug();
-        if (!slug) { setData(null); return; }
-
-        let full = await ghPublic.loadTeam(slug, session!.id);
-        if (!full) {
-          // slug stale — bust cache, refetch list
-          localStorage.removeItem(cacheKey);
-          const teams = await ghPublic.listTeams(session!.id);
-          const mine = teams.find((t) => t.managerDiscordId === session!.id);
-          if (!mine) { setData(null); return; }
-          localStorage.setItem(cacheKey, mine.slug);
-          full = await ghPublic.loadTeam(mine.slug, session!.id);
-        }
+        const teams = await backend.listTeams(session!.id);
+        const mine = teams.find((t) => t.managerDiscordId === session!.id);
+        if (!mine) { setData(null); return; }
+        const full = await backend.loadTeam(mine.slug, session!.id);
         if (!full) { toast('error', 'Équipe introuvable.'); return; }
         await applyFull(full);
       } catch (err) {
@@ -118,17 +97,18 @@ export default function MyTeam() {
     }
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id]);
+  }, [session?.id, prApiToken]);
 
   useEffect(() => {
     if (tab !== 'competitions' && tab !== 'palmares') return;
-    if (summaries.length > 0) return; // already loaded
+    if (compSummaries.length > 0) { setSummaries(compSummaries); return; }
+    if (!prApiToken) return;
     setLoadingComps(true);
-    listCompetitions(env.githubReadToken ?? null)
-      .then(setSummaries)
+    refreshComps('', prApiToken)
+      .then(() => setSummaries(compSummaries))
       .catch(() => toast('error', 'Impossible de charger les compétitions.'))
       .finally(() => setLoadingComps(false));
-  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, prApiToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   function persistSavedTactics(next: SavedTactic[], activeId?: string) {
@@ -136,13 +116,10 @@ export default function MyTeam() {
     setSavedTactics(next);
     setActiveTacticId(activeId);
     saveLocalSavedTactics(data.team.id, next, activeId);
-    // Also persist to GitHub so other clients (multiplex, competition match) see the active tactic
-    if (isAdmin && pat) {
+    if (prApiToken) {
       const updatedTeam: Team = { ...data.team, savedTactics: next, activeTacticId: activeId };
       setData({ ...data, team: updatedTeam });
-      saveTeamWithRoster(updatedTeam, data.players, pat).catch(() => {
-        // non-blocking — localStorage is the source of truth for local sessions
-      });
+      new PrApiTeamBackend(prApiToken).saveTeam(updatedTeam, data.players).catch(() => {});
     }
   }
 

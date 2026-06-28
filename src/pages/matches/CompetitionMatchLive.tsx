@@ -16,7 +16,7 @@ import { PenaltyShootout } from '@/components/match/PenaltyShootout';
 import { useMatch } from '@/stores/match';
 import { useCompetition } from '@/stores/competition';
 import { useTeams } from '@/stores/teams';
-import { useCredentials } from '@/stores/credentials';
+
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { saveMatch, extractGoalsAndCards } from '@/lib/github/matches';
 import type { SaveMatchMeta } from '@/lib/github/matches';
@@ -43,9 +43,9 @@ export default function CompetitionMatchLive() {
   const teamsStore = useTeams((s) => s.teams);
   const fetchTeam = useTeams((s) => s.fetchTeam);
   const refreshTeams = useTeams((s) => s.refresh);
-  const pat = useCredentials((s) => s.githubPat);
+  
   const navigate = useNavigate();
-  const { ownerId, pat: effectivePat } = useBackendArgs();
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
 
   const matchState = useMatch((s) => s.state);
   const matchInput = useMatch((s) => s.input);
@@ -88,10 +88,10 @@ export default function CompetitionMatchLive() {
   }, [competitionId, matchId]);
 
   useEffect(() => {
-    if (!pat || !competitionId || !matchId) return;
+    if (!effectivePat || !competitionId || !matchId) return;
     async function setup() {
       try {
-        const comp = await load(competitionId!, pat!);
+        const comp = await load(competitionId!, '', effectivePat);
         if (!comp) { toast('error', 'Compétition introuvable.'); return; }
 
         const compMatch = comp.matches.find((m) => m.id === matchId);
@@ -217,7 +217,7 @@ export default function CompetitionMatchLive() {
     }
     setup();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pat, competitionId, matchId]);
+  }, [effectivePat, competitionId, matchId]);
 
   // Detect goals for celebration
   useEffect(() => {
@@ -272,7 +272,7 @@ export default function CompetitionMatchLive() {
   // Save result to competition on finish
   useEffect(() => {
     const snap = currentRef.current ?? current;
-    if (!finished || !matchState || !matchInput || !pat || !snap || !matchId || savedRef.current) return;
+    if (!finished || !matchState || !matchInput || !effectivePat || !snap || !matchId || savedRef.current) return;
     savedRef.current = true;
 
     async function persist() {
@@ -918,7 +918,7 @@ export default function CompetitionMatchLive() {
       setCurrent(updated);
 
       // Fin de compétition : persister l'état médical sur chaque team.json
-      if (allDone && pat) {
+      if (allDone && effectivePat) {
         const teamSnap = snap!.teamSnapshot ?? {};
         const slugs = snap!.teamIds.map((tid) => teamSnap[tid]?.slug).filter(Boolean) as string[];
         const teamIdBySlug: Record<string, string> = {};
@@ -926,7 +926,7 @@ export default function CompetitionMatchLive() {
           const slug = teamSnap[tid]?.slug;
           if (slug) teamIdBySlug[slug] = tid;
         }
-        batchUpdateTeamMedical(slugs, teamIdBySlug, updatedInjuries, updatedSuspensions, pat).catch(() => {
+        batchUpdateTeamMedical(slugs, teamIdBySlug, updatedInjuries, updatedSuspensions, effectivePat).catch(() => {
           // non-bloquant — la compétition est déjà enregistrée
         });
       }
@@ -1156,7 +1156,7 @@ export default function CompetitionMatchLive() {
                 variant="ghost"
                 disabled={saving}
                 onClick={async () => {
-                  if (!pat || !current) return;
+                  if (!effectivePat || !current) return;
                   setSaving(true);
                   try {
                     const matchMeta: SaveMatchMeta = {
@@ -1167,7 +1167,7 @@ export default function CompetitionMatchLive() {
                       awayStrength: current.teamSnapshot?.[matchInput.away.team.id]?.globalStrength ?? matchInput.away.team.globalStrength,
                       participantCount: current.teamIds?.length,
                     };
-                    await saveMatch(matchInput, matchState, pat, matchMeta);
+                    await saveMatch(matchInput, matchState, effectivePat, matchMeta);
                     toast('success', 'Match sauvegardé sur GitHub.');
                   } catch (err) {
                     toast('error', `Match : ${err}`);
@@ -1182,10 +1182,10 @@ export default function CompetitionMatchLive() {
                 size="sm"
                 disabled={saving}
                 onClick={async () => {
-                  if (!pat || !current) return;
+                  if (!effectivePat || !current) return;
                   setSaving(true);
                   try {
-                    await save(current, pat);
+                    await save(current, '', effectivePat);
                     toast('success', 'Compétition sauvegardée sur GitHub.');
                   } catch (err) {
                     toast('error', `Compétition : ${err}`);

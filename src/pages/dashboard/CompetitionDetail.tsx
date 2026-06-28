@@ -12,7 +12,7 @@ import { DrawCeremony } from '@/components/competition/DrawCeremony';
 import { PreMatchModal } from '@/components/competition/PreMatchModal';
 import { useCompetition } from '@/stores/competition';
 import { useTeams } from '@/stores/teams';
-import { useCredentials } from '@/stores/credentials';
+
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { useSession } from '@/stores/session';
 import { needsKnockoutDraw, getQualifiersByRank, seedKnockoutWithOrder, sortStandings, seedLPMPlayoffs } from '@/lib/competition/scheduler';
@@ -48,9 +48,9 @@ export default function CompetitionDetail() {
   const dirty = useCompetition((s) => s.dirty);
   const teams = useTeams((s) => s.teams);
   const refreshTeams = useTeams((s) => s.refresh);
-  const pat = useCredentials((s) => s.githubPat);
+  
   const navigate = useNavigate();
-  const { ownerId, pat: effectivePat } = useBackendArgs();
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
   const isAdmin = useSession((s) => s.isAdmin());
 
   const [loading, setLoading] = useState(true);
@@ -66,14 +66,14 @@ export default function CompetitionDetail() {
   const [preMatchModal, setPreMatchModal] = useState<{ matchId: string; home: Team; away: Team } | null>(null);
 
   // For public repos, reads work without a token. PAT only needed for writes.
-  const readToken = pat ?? env.githubReadToken ?? '';
+  const readToken = effectivePat ?? env.githubReadToken ?? '';
 
   useEffect(() => {
     if (!id) { setLoading(false); return; }
 
     async function init() {
       // Load competition first (usually instant from localStorage)
-      const comp = current?.id === id ? current : await load(id!, readToken);
+      const comp = current?.id === id ? current : await load(id!, '', effectivePat);
 
       // If teamSnapshot covers all teamIds, skip the expensive listTeams call entirely.
       // Teams store is still loaded lazily when admin needs it (handleSync, handleDelete use teams directly).
@@ -114,7 +114,7 @@ export default function CompetitionDetail() {
       pressItems: [...(current.pressItems ?? []), ...cmfDebut],
     };
     setCurrent(updated);
-    if (pat) save(updated, pat).catch(() => {/* non-blocking */});
+    if (effectivePat) save(updated, '', effectivePat).catch(() => {/* non-blocking */});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, current?.status, current?.cmfDebutGenerated, current?.drawRevealed]);
 
@@ -127,13 +127,13 @@ export default function CompetitionDetail() {
       <div className="space-y-4">
         <Link to={backTo} className="text-sm text-muted hover:text-text">{backLabel}</Link>
         <p className="text-muted">Compétition introuvable.</p>
-        {isAdmin && pat && id && (
+        {isAdmin && effectivePat && id && (
           <Button
             variant="danger"
             size="sm"
             onClick={async () => {
               try {
-                await remove(id, pat);
+                await remove(id, '', effectivePat);
                 navigate(backTo);
               } catch (err) {
                 toast('error', String(err));
@@ -169,11 +169,11 @@ export default function CompetitionDetail() {
   }
 
   async function handleSync() {
-    if (!pat || !current) return;
+    if (!effectivePat || !current) return;
     await ensureTeams();
     setSyncing(true);
     try {
-      await save(current, pat);
+      await save(current, '', effectivePat);
 
       // When competition is completed, append/update compHistory — one Git commit for all teams
       if (current.status === 'completed') {
@@ -186,7 +186,7 @@ export default function CompetitionDetail() {
         const reads = await Promise.all(
           participatingEntries.map(async ({ tid, slug }) => ({
             tid, slug,
-            existing: await ghReadJson<import('@/lib/types').Team>(`data/teams/${slug}/team.json`, pat),
+            existing: await ghReadJson<import('@/lib/types').Team>(`data/teams/${slug}/team.json`, effectivePat),
           })),
         );
         const files: Array<{ path: string; content: unknown }> = [];
@@ -215,7 +215,7 @@ export default function CompetitionDetail() {
           files.push({ path: `data/teams/${slug}/team.json`, content: { ...team, compHistory: next } });
         }
         if (files.length > 0) {
-          await commitFiles(files, `chore(teams): update palmares ${current.name} (${files.length} équipes)`, pat);
+          await commitFiles(files, `chore(teams): update palmares ${current.name} (${files.length} équipes)`, effectivePat);
         }
       }
 
@@ -228,7 +228,7 @@ export default function CompetitionDetail() {
   }
 
   async function handlePatchSnapshot() {
-    if (!pat || !current) return;
+    if (!effectivePat || !current) return;
     await ensureTeams();
     const snapshot: Record<string, { name: string; flag: string; slug?: string }> = {};
     for (const id of current.teamIds) {
@@ -243,7 +243,7 @@ export default function CompetitionDetail() {
     setCurrent(updated);
     setSyncing(true);
     try {
-      await save(updated, pat);
+      await save(updated, '', effectivePat);
       toast('success', 'Noms et drapeaux mis à jour.');
     } catch (err) {
       toast('error', String(err));
@@ -253,7 +253,7 @@ export default function CompetitionDetail() {
   }
 
   async function handleResyncMatchHistory() {
-    if (!pat || !current) return;
+    if (!effectivePat || !current) return;
     setResyncing(true);
     try {
       const strengths: Record<string, number> = {};
@@ -262,10 +262,10 @@ export default function CompetitionDetail() {
         if (snap?.globalStrength) strengths[id] = snap.globalStrength;
       }
       const { listTeams } = await import('@/lib/github/store');
-      const allTeams = await listTeams(pat);
+      const allTeams = await listTeams(effectivePat);
       const teamSlugs: Record<string, string> = {};
       for (const t of allTeams) teamSlugs[t.id] = t.slug;
-      const { synced } = await resyncCompetitionMatchHistory(current, pat, {
+      const { synced } = await resyncCompetitionMatchHistory(current, effectivePat, {
         compKind: current.kind,
         compScope: current.scope,
         compImportance: current.importance,
@@ -282,7 +282,7 @@ export default function CompetitionDetail() {
   }
 
   async function handleSyncMedical() {
-    if (!pat || !current) return;
+    if (!effectivePat || !current) return;
     setSyncingMedical(true);
     try {
       const teamSnap = current.teamSnapshot ?? {};
@@ -292,7 +292,7 @@ export default function CompetitionDetail() {
         const slug = teamSnap[tid]?.slug;
         if (slug) teamIdBySlug[slug] = tid;
       }
-      await batchUpdateTeamMedical(slugs, teamIdBySlug, current.injuries ?? [], current.suspensions ?? [], pat);
+      await batchUpdateTeamMedical(slugs, teamIdBySlug, current.injuries ?? [], current.suspensions ?? [], effectivePat);
       toast('success', 'État médical synchronisé sur les équipes.');
     } catch (err) {
       toast('error', String(err));
@@ -302,12 +302,12 @@ export default function CompetitionDetail() {
   }
 
   async function handleDistributeLpmZone() {
-    if (!pat || !current || current.format !== 'lpm') return;
+    if (!effectivePat || !current || current.format !== 'lpm') return;
     setDistributingLpm(true);
     try {
       const { sortStandings } = await import('@/lib/competition/scheduler');
       const { listTeams } = await import('@/lib/github/store');
-      const allTeams = await listTeams(pat);
+      const allTeams = await listTeams(effectivePat);
       const teamSlugs: Record<string, string> = {};
       for (const t of allTeams) teamSlugs[t.id] = t.slug;
 
@@ -324,7 +324,7 @@ export default function CompetitionDetail() {
         else if (!homeWon && m.awayTeamId) playoffQualifiedIds.add(m.awayTeamId);
       }
 
-      const { distributed, skipped } = await distributeLpmZonePoints(current, pat, { ranks, playoffQualifiedIds, teamSlugs });
+      const { distributed, skipped } = await distributeLpmZonePoints(current, effectivePat, { ranks, playoffQualifiedIds, teamSlugs });
       toast('success', `Points CMF LPM distribués : ${distributed} équipes mises à jour, ${skipped} ignorées.`);
     } catch (err) {
       toast('error', String(err));
@@ -334,7 +334,7 @@ export default function CompetitionDetail() {
   }
 
   async function handleDelete() {
-    if (!pat || !current) return;
+    if (!effectivePat || !current) return;
     if (!confirm(`Supprimer « ${current.name} » ? Cette action est irréversible.`)) return;
     await ensureTeams();
     setDeleting(true);
@@ -344,16 +344,16 @@ export default function CompetitionDetail() {
         .filter((m) => m.matchFileId)
         .map((m) => m.matchFileId as string);
       if (matchFileIds.length > 0) {
-        await deleteCompetitionMatchFiles(matchFileIds, pat);
+        await deleteCompetitionMatchFiles(matchFileIds, effectivePat);
       }
-      await remove(current.id, pat);
+      await remove(current.id, effectivePat);
       const snapshot = current.teamSnapshot ?? {};
       const participatingSlugs = current.teamIds.map((tid) => snapshot[tid]?.slug).filter((s): s is string => !!s);
       // Strip compHistory entries
-      await batchUpdateTeamCompHistory(participatingSlugs, pat, { mode: 'remove', compId: current.id });
+      await batchUpdateTeamCompHistory(participatingSlugs, effectivePat, { mode: 'remove', compId: current.id });
       // Strip recentMatches entries for all matches in this competition
       const compMatchIds = new Set(current.matches.map((m) => m.id).filter(Boolean));
-      await batchRemoveTeamRecentMatches(participatingSlugs, compMatchIds, pat, current.id);
+      await batchRemoveTeamRecentMatches(participatingSlugs, compMatchIds, effectivePat, current.id);
       navigate(backTo);
     } catch (err) {
       toast('error', String(err));
@@ -466,7 +466,7 @@ export default function CompetitionDetail() {
   }
 
   async function simulateRound(round: number) {
-    if (!pat || !current) return;
+    if (!effectivePat || !current) return;
     const roundMatches = current.matches.filter(
       (m) => m.round === round && m.status === 'pending' && m.homeTeamId && m.awayTeamId,
     );
@@ -510,10 +510,10 @@ export default function CompetitionDetail() {
             const round = roundDraw.round;
             const isScheduleDraw = roundDraw.isScheduleDraw;
             setRoundDraw(null);
-            if (isScheduleDraw && pat) {
+            if (isScheduleDraw && effectivePat) {
               const updated = { ...current, drawRevealed: true };
               setCurrent(updated);
-              try { await save(updated, pat); } catch { /* non-blocking */ }
+              try { await save(updated, '', effectivePat); } catch { /* non-blocking */ }
               // stay on page — no navigate
             } else {
               navigate(`/competition/${current.id}/round/${round}`);
@@ -870,7 +870,7 @@ export default function CompetitionDetail() {
 
           {activeTab === 'medical' && (
             <div className="space-y-4">
-              {current.status === 'completed' && isAdmin && pat && (
+              {current.status === 'completed' && isAdmin && effectivePat && (
                 <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3">
                   <span className="text-xs text-muted">Synchroniser l'état médical sur les fiches équipes (blessés restants après cette compétition)</span>
                   <Button size="sm" variant="ghost" onClick={handleSyncMedical} disabled={syncingMedical}>

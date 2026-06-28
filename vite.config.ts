@@ -5,7 +5,7 @@ import path from 'node:path';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/',
+  base: '/footsim/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

@@ -1,15 +1,19 @@
 import { useSession } from '@/stores/session';
-import { useCredentials } from '@/stores/credentials';
+import { usePrApiToken } from '@/stores/prApiToken';
 
 export function useBackendArgs() {
   const session = useSession((s) => s.session);
   const isAdmin = useSession((s) => s.isAdmin());
-  const pat = useCredentials((s) => s.githubPat);
+  const prApiToken = usePrApiToken((s) => s.token);
+  const prApiIsAdmin = usePrApiToken((s) => s.isAdmin);
 
   const ownerId = session?.id ?? '';
-  // Admin uses PAT for GitHub. Non-admin: if they configured a PAT, use GitHub too
-  // (lets them sync tactics with the admin). Without PAT → IndexedDB.
-  const effectivePat = pat ?? null;
 
-  return { ownerId, pat: effectivePat, isAdmin };
+  return {
+    ownerId,
+    pat: null as string | null,
+    isAdmin,
+    prApiToken,
+    prApiIsAdmin,
+  };
 }

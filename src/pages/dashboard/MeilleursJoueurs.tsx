@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
-import { useCredentials } from '@/stores/credentials';
+
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { listTeams, loadTeam } from '@/lib/github/store';
 import { POSITION_LABEL, CULTURE_LABEL } from '@/lib/types';
@@ -13,9 +13,9 @@ type PlayerEntry = {
 };
 
 export default function MeilleursJoueurs() {
-  const pat = useCredentials((s) => s.githubPat);
-  const { pat: effectivePat } = useBackendArgs();
-  const token = pat ?? effectivePat ?? null;
+  
+  const { prApiToken: effectivePat } = useBackendArgs();
+  const token = effectivePat ?? effectivePat ?? null;
 
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<PlayerEntry[]>([]);

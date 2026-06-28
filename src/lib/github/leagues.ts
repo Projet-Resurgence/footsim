@@ -15,6 +15,7 @@ function authHeaders(token: string) {
 }
 
 async function listLeagueFiles(nationSlug: string, token: string): Promise<string[]> {
+  if (!env.dataRepo || !env.dataBranch) return [];
   const res = await fetch(
     `${API}/repos/${env.dataRepo}/contents/data/leagues/${nationSlug}?ref=${env.dataBranch}`,
     { headers: authHeaders(token) },

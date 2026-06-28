@@ -211,7 +211,7 @@ export default function Home() {
   const session = useSession((s) => s.session);
   const teamsStore = useTeams((s) => s.teams);
   const refreshTeams = useTeams((s) => s.refresh);
-  const { ownerId, pat } = useBackendArgs();
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
   const navigate = useNavigate();
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
@@ -221,7 +221,7 @@ export default function Home() {
   useEffect(() => {
     if (!isLoggedIn || isAdmin || !session) return;
     async function checkManager() {
-      if (teamsStore.length === 0) await refreshTeams(ownerId, pat);
+      if (teamsStore.length === 0) await refreshTeams(ownerId, effectivePat);
       const mine = useTeams.getState().teams.find((t) => t.managerDiscordId === session!.id);
       if (mine) navigate('/my-team', { replace: true });
     }

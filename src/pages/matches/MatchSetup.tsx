@@ -10,7 +10,7 @@ import type { CorruptionDeal, MatchRules, Speed } from '@/lib/sim/types';
 import { DEFAULT_RULES } from '@/lib/sim/types';
 import { CorruptionPanel } from '@/components/match/CorruptionPanel';
 import { useTeams } from '@/stores/teams';
-import { useCredentials } from '@/stores/credentials';
+
 import { useMatch } from '@/stores/match';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { resolveActiveTactic, loadLocalSavedTactics } from '@/lib/localTactics';
@@ -21,10 +21,10 @@ export default function MatchSetup() {
   const teams = useTeams((s) => s.teams);
   const refresh = useTeams((s) => s.refresh);
   const fetchTeam = useTeams((s) => s.fetchTeam);
-  const pat = useCredentials((s) => s.githubPat);
+  
   const start = useMatch((s) => s.start);
   const navigate = useNavigate();
-  const { ownerId, pat: effectivePat } = useBackendArgs();
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
 
   const [homeSlug, setHomeSlug] = useState<string>('');
   const [awaySlug, setAwaySlug] = useState<string>('');
@@ -41,7 +41,7 @@ export default function MatchSetup() {
 
   useEffect(() => {
     if (ownerId && teams.length === 0) refresh(ownerId, effectivePat);
-  }, [pat, teams.length, refresh]);
+  }, [effectivePat, teams.length, refresh]);
 
   function handleHomeSlug(slug: string) {
     setHomeSlug(slug);

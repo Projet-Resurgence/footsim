@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { useMultiplex } from '@/stores/multiplex';
 import { useCompetition } from '@/stores/competition';
 import { useTeams } from '@/stores/teams';
-import { useCredentials } from '@/stores/credentials';
+
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
@@ -37,9 +37,9 @@ export default function MultiplexLive() {
   const teamsStore = useTeams((s) => s.teams);
   const fetchTeam = useTeams((s) => s.fetchTeam);
   const refreshTeams = useTeams((s) => s.refresh);
-  const pat = useCredentials((s) => s.githubPat);
+  
   const navigate = useNavigate();
-  const { ownerId, pat: effectivePat } = useBackendArgs();
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
 
   const slots = useMultiplex((s) => s.slots);
   const slotsRef = useRef(slots);
@@ -82,11 +82,11 @@ export default function MultiplexLive() {
   const [tabQueue, setTabQueue] = useState<TabSlot[]>([]);
   const [tabIndex, setTabIndex] = useState(0);
   useEffect(() => {
-    if (!pat || !competitionId) return;
+    if (!effectivePat || !competitionId) return;
 
     async function setup() {
       try {
-        const comp = await load(competitionId!, pat!);
+        const comp = await load(competitionId!, '', effectivePat);
         if (!comp) { toast('error', 'Compétition introuvable.'); return; }
 
         const roundMatches = comp.matches.filter(
@@ -222,7 +222,7 @@ export default function MultiplexLive() {
 
     return () => stopAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pat, competitionId, roundNum]);
+  }, [effectivePat, competitionId, roundNum]);
 
   // Compute pending update when all finished — does NOT auto-save
   useEffect(() => {
@@ -850,10 +850,10 @@ export default function MultiplexLive() {
   }
 
   async function handleSaveGitHub() {
-    if (!pendingUpdate || !pat) return;
+    if (!pendingUpdate || !effectivePat) return;
     setSavingGh(true);
     try {
-      await save(pendingUpdate, pat);
+      await save(pendingUpdate, '', effectivePat);
       toast('success', 'Résultats sauvegardés sur GitHub.');
       setPendingUpdate(null);
     } catch (err) {
@@ -865,12 +865,12 @@ export default function MultiplexLive() {
 
   // Auto-simulate: save and jump to next round (or back to competition if done)
   useEffect(() => {
-    if (!autoSimulate || !pendingUpdate || !pat) return;
+    if (!autoSimulate || !pendingUpdate || !effectivePat) return;
     let cancelled = false;
     async function autoSave() {
       setSavingGh(true);
       try {
-        await save(pendingUpdate!, pat!);
+        await save(pendingUpdate!, '', effectivePat);
         if (cancelled) return;
         setPendingUpdate(null);
         const nextRound = pendingUpdate!.currentRound;

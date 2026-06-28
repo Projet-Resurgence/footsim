@@ -2,6 +2,13 @@ import { env } from '@/lib/env';
 
 const API = 'https://api.github.com';
 
+function needGithubEnv(): { dataRepo: string; dataBranch: string } {
+  if (!env.dataRepo || !env.dataBranch) {
+    throw new Error('VITE_DATA_REPO and VITE_DATA_BRANCH are required for GitHub backend');
+  }
+  return { dataRepo: env.dataRepo, dataBranch: env.dataBranch };
+}
+
 function authHeaders(token: string | null) {
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
@@ -37,8 +44,9 @@ export async function readJson<T>(
   path: string,
   token: string | null,
 ): Promise<{ data: T; sha: string } | null> {
+  const { dataRepo, dataBranch } = needGithubEnv();
   const res = await fetch(
-    `${API}/repos/${env.dataRepo}/contents/${path}?ref=${env.dataBranch}`,
+    `${API}/repos/${dataRepo}/contents/${path}?ref=${dataBranch}`,
     { headers: authHeaders(token) },
   );
   if (res.status === 404) return null;
@@ -47,7 +55,7 @@ export async function readJson<T>(
   if (json.encoding === 'none') {
     // File too large for inline base64 — use Git Blobs API (always returns base64)
     const blobRes = await fetch(
-      `${API}/repos/${env.dataRepo}/git/blobs/${json.sha}`,
+      `${API}/repos/${dataRepo}/git/blobs/${json.sha}`,
       { headers: authHeaders(token) },
     );
     if (!blobRes.ok) throw new Error(`GitHub blob ${path}: ${blobRes.status}`);
@@ -69,16 +77,17 @@ export type WriteOptions = {
 };
 
 export async function writeJson(opts: WriteOptions): Promise<{ sha: string }> {
+  const { dataRepo, dataBranch } = needGithubEnv();
   const content = utf8ToBase64(JSON.stringify(opts.data, null, 2));
 
   async function attempt(sha: string | undefined): Promise<Response> {
-    return fetch(`${API}/repos/${env.dataRepo}/contents/${opts.path}`, {
+    return fetch(`${API}/repos/${dataRepo}/contents/${opts.path}`, {
       method: 'PUT',
       headers: { ...authHeaders(opts.token), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: opts.message,
         content,
-        branch: env.dataBranch,
+        branch: dataBranch,
         ...(sha ? { sha } : {}),
       }),
     });
@@ -107,10 +116,11 @@ export async function deleteFile(
   token: string,
   message: string,
 ): Promise<void> {
-  const res = await fetch(`${API}/repos/${env.dataRepo}/contents/${path}`, {
+  const { dataRepo, dataBranch } = needGithubEnv();
+  const res = await fetch(`${API}/repos/${dataRepo}/contents/${path}`, {
     method: 'DELETE',
     headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, sha, branch: env.dataBranch }),
+    body: JSON.stringify({ message, sha, branch: dataBranch }),
   });
   if (!res.ok && res.status !== 404) {
     const text = await res.text();
@@ -127,8 +137,7 @@ export async function commitFiles(
   message: string,
   token: string,
 ): Promise<void> {
-  const repo = env.dataRepo;
-  const branch = env.dataBranch;
+  const { dataRepo: repo, dataBranch: branch } = needGithubEnv();
   const h = authHeaders(token);
 
   // 1. Get branch HEAD SHA
@@ -181,8 +190,9 @@ export async function commitFiles(
 }
 
 export async function listDir(path: string, token: string | null): Promise<string[]> {
+  const { dataRepo, dataBranch } = needGithubEnv();
   const res = await fetch(
-    `${API}/repos/${env.dataRepo}/contents/${path}?ref=${env.dataBranch}`,
+    `${API}/repos/${dataRepo}/contents/${path}?ref=${dataBranch}`,
     { headers: authHeaders(token) },
   );
   if (res.status === 404) return [];

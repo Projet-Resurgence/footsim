@@ -9,11 +9,11 @@ export default function Dashboard() {
   const teams = useTeams((s) => s.teams);
   const loading = useTeams((s) => s.loading);
   const refresh = useTeams((s) => s.refresh);
-  const { ownerId, pat, isAdmin } = useBackendArgs();
+  const { ownerId, prApiToken } = useBackendArgs();
 
   useEffect(() => {
-    if (ownerId) refresh(ownerId, pat);
-  }, [ownerId, pat, refresh]);
+    if (ownerId) refresh(ownerId, null, prApiToken);
+  }, [ownerId, prApiToken, refresh]);
 
   const totalPlayers = teams.reduce((sum, t) => sum + t.playerCount, 0);
 
@@ -24,14 +24,7 @@ export default function Dashboard() {
         <p className="text-muted">Bienvenue dans FootSim.</p>
       </div>
 
-      {isAdmin && !pat ? (
-        <p className="text-muted">
-          Configure ton token GitHub dans{' '}
-          <Link to="/dashboard/settings" className="text-accent underline">
-            Réglages
-          </Link>.
-        </p>
-      ) : (
+      {(
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Card label="Équipes" value={loading ? <Spinner /> : teams.length} />
           <Card

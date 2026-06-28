@@ -7,6 +7,11 @@ import {
   deleteCompetition,
   invalidateIndexCache,
 } from '@/lib/github/competitions';
+import { PrApiCompetitionBackend } from '@/lib/prapi/competitionBackend';
+
+function makePrBackend(prApiToken: string | null) {
+  return prApiToken ? new PrApiCompetitionBackend(prApiToken) : null;
+}
 
 const LS_KEY = (id: string) => `footsim.competition.${id}`;
 
@@ -45,10 +50,10 @@ type State = {
   current: Competition | null;
   loading: boolean;
   dirty: boolean;
-  refresh: (token: string) => Promise<void>;
-  load: (id: string, token: string) => Promise<Competition | null>;
-  save: (competition: Competition, token: string) => Promise<void>;
-  remove: (id: string, token: string) => Promise<void>;
+  refresh: (token: string, prApiToken?: string | null) => Promise<void>;
+  load: (id: string, token: string, prApiToken?: string | null) => Promise<Competition | null>;
+  save: (competition: Competition, token: string, prApiToken?: string | null) => Promise<void>;
+  remove: (id: string, token: string, prApiToken?: string | null) => Promise<void>;
   setCurrent: (c: Competition | null) => void;
   saveLocal: (competition: Competition) => void;
 };
@@ -59,17 +64,20 @@ export const useCompetition = create<State>((set, get) => ({
   loading: false,
   dirty: false,
 
-  async refresh(token) {
+  async refresh(token, prApiToken = null) {
     set({ loading: true });
     try {
-      const summaries = await listCompetitions(token);
+      const pr = makePrBackend(prApiToken);
+      const summaries = pr
+        ? await pr.listCompetitions()
+        : await listCompetitions(token);
       set({ summaries });
     } finally {
       set({ loading: false });
     }
   },
 
-  async load(id, token) {
+  async load(id, token, prApiToken = null) {
     // localStorage wins — it holds unsaved match results
     const local = lsRead(id);
     const storeCurrent = get().current;
@@ -93,14 +101,22 @@ export const useCompetition = create<State>((set, get) => ({
       }
       return merged;
     }
-    const comp = await loadCompetition(id, token);
+    const pr = makePrBackend(prApiToken);
+    const comp = pr
+      ? await pr.loadCompetition(id)
+      : await loadCompetition(id, token);
     if (comp) lsWrite(comp);
     set({ current: comp, dirty: false });
     return comp;
   },
 
-  async save(competition, token) {
-    await saveCompetition(competition, token);
+  async save(competition, token, prApiToken = null) {
+    const pr = makePrBackend(prApiToken);
+    if (pr) {
+      await pr.saveCompetition(competition);
+    } else {
+      await saveCompetition(competition, token);
+    }
     // After GitHub save, only mark dirty=false if the store still holds this exact version.
     // Never overwrite local state — saveLocal/setCurrent are always more recent.
     const storeCurrent = get().current;
@@ -128,10 +144,15 @@ export const useCompetition = create<State>((set, get) => ({
     set({ summaries: next });
   },
 
-  async remove(id, token) {
-    await deleteCompetition(id, token);
+  async remove(id, token, prApiToken = null) {
+    const pr = makePrBackend(prApiToken);
+    if (pr) {
+      await pr.deleteCompetition(id);
+    } else {
+      await deleteCompetition(id, token);
+      invalidateIndexCache();
+    }
     lsDelete(id);
-    invalidateIndexCache();
     set({ summaries: get().summaries.filter((c) => c.id !== id) });
     if (get().current?.id === id) set({ current: null, dirty: false });
   },

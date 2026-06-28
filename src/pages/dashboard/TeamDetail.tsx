@@ -29,7 +29,7 @@ const ADD_COUNTS = [100, 200, 500, 1000];
 
 export default function TeamDetail() {
   const { slug = '' } = useParams();
-  const { ownerId, pat: effectivePat } = useBackendArgs();
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
   const fetchTeam = useTeams((s) => s.fetchTeam);
   const saveTeam = useTeams((s) => s.saveTeam);
   const removeTeam = useTeams((s) => s.removeTeam);
@@ -73,7 +73,7 @@ const [regenStrength, setRegenStrength] = useState(false);
         if (local) {
           // If GitHub version exists too, merge: prefer local data but keep publishedAt from GH
           if (effectivePat) {
-            const remote = await fetchTeam(slug, ownerId, effectivePat).catch(() => null);
+            const remote = await fetchTeam(slug, ownerId, null, effectivePat).catch(() => null);
             if (remote && remote.team.publishedAt) {
               const merged = { ...local, team: { ...local.team, publishedAt: remote.team.publishedAt } };
               setData(merged);
@@ -90,7 +90,7 @@ const [regenStrength, setRegenStrength] = useState(false);
           return;
         }
         // No local copy — fetch from GitHub
-        const res = await fetchTeam(slug, ownerId, effectivePat);
+        const res = await fetchTeam(slug, ownerId, null, effectivePat);
         if (!res) toast('error', 'Équipe introuvable.');
         setData(res);
         setUnpublished(!res?.team.publishedAt);
@@ -153,7 +153,7 @@ const [regenStrength, setRegenStrength] = useState(false);
     if (!data) return;
     setPublishing(true);
     try {
-      await saveTeam(data.team, data.players, effectivePat);
+      await saveTeam(data.team, data.players, null, effectivePat);
       setDirty(false);
       setUnpublished(false);
       toast('success', 'Publié sur GitHub.');
@@ -302,7 +302,7 @@ async function applyNewStrength(strength: number) {
     setPublishing(true);
     try {
       const teamToPublish = { ...data.team, savedTactics, activeTacticId };
-      await saveTeam(teamToPublish, data.players, effectivePat);
+      await saveTeam(teamToPublish, data.players, null, effectivePat);
       setDirty(false);
       setUnpublished(false);
       toast('success', 'Tactiques publiées sur GitHub.');
@@ -360,7 +360,7 @@ async function applyNewStrength(strength: number) {
     if (!data) return;
     setDeleting(true);
     try {
-      await removeTeam(data.team.slug, ownerId, effectivePat);
+      await removeTeam(data.team.slug, ownerId, null, effectivePat);
       toast('success', 'Équipe supprimée.');
       navigate('/dashboard/teams');
     } catch (err) {
@@ -647,7 +647,7 @@ async function applyNewStrength(strength: number) {
               }
               // Publish to GitHub
               const updated = { ...data.team, savedTactics, activeTacticId };
-              await saveTeam({ ...updated, ownerId }, data.players, effectivePat);
+              await saveTeam({ ...updated, ownerId }, data.players, null, effectivePat);
               setDirty(false);
               setUnpublished(false);
               toast('success', 'XI sauvegardé et publié.');

@@ -17,7 +17,7 @@ const LOGO_SIZE = 500;
 export default function ClubNew() {
   const { leagueId: encoded = '', divisionId = '' } = useParams<{ leagueId: string; divisionId: string }>();
   const leagueId = decodeURIComponent(encoded);
-  const { ownerId, pat } = useBackendArgs();
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
 
   const loadLeague = useLeagues((s) => s.loadLeague);
   const saveLeague = useLeagues((s) => s.saveLeague);
@@ -84,8 +84,8 @@ export default function ClubNew() {
     try {
       // Load league + national roster
       const [league, rosterData] = await Promise.all([
-        loadLeague(leagueId, pat),
-        fetchTeam(nationSlug, ownerId, pat),
+        loadLeague(leagueId, effectivePat),
+        fetchTeam(nationSlug, ownerId, effectivePat),
       ]);
       if (!league) throw new Error('Championnat introuvable.');
       if (!rosterData) throw new Error('Roster national introuvable. Assure-toi que l\'équipe est chargée.');
@@ -127,8 +127,8 @@ export default function ClubNew() {
 
       // Save both
       await Promise.all([
-        saveLeague(updatedLeague, pat),
-        saveTeam({ ...rosterData.team }, updatedPlayers, pat),
+        saveLeague(updatedLeague, effectivePat),
+        saveTeam({ ...rosterData.team }, updatedPlayers, effectivePat),
       ]);
 
       toast('success', `Club "${name.trim()}" créé avec ${playerIds.length} joueurs.`);

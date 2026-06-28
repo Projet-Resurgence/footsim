@@ -1,47 +1,15 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Spinner } from '@/components/ui/Spinner';
-import { toast } from '@/components/ui/Toast';
-import { useCredentials } from '@/stores/credentials';
 import { useSession } from '@/stores/session';
-import { validatePat } from '@/lib/github/api';
 
 export default function Settings() {
   const session = useSession((s) => s.session);
   const logout = useSession((s) => s.logout);
   const isAdmin = useSession((s) => s.isAdmin());
-  const githubPat = useCredentials((s) => s.githubPat);
-  const setPat = useCredentials((s) => s.setPat);
   const navigate = useNavigate();
-  const [draft, setDraft] = useState(githubPat ?? '');
-  const [reveal, setReveal] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  async function save() {
-    setBusy(true);
-    try {
-      const ok = await validatePat(draft.trim());
-      if (!ok) { toast('error', 'Token GitHub invalide.'); return; }
-      setPat(draft.trim());
-      toast('success', 'Token GitHub enregistré.');
-    } catch (err) {
-      toast('error', String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function clear() {
-    setPat(null);
-    setDraft('');
-    toast('info', 'Token GitHub effacé.');
-  }
 
   function disconnect() {
     logout();
-    setPat(null);
     navigate('/', { replace: true });
   }
 
@@ -49,11 +17,6 @@ export default function Settings() {
     <div className="max-w-2xl space-y-10">
       <div>
         <h1 className="mb-6 font-display text-4xl">Réglages</h1>
-        {!isAdmin && (
-          <p className="text-sm text-muted">
-            Configure un token GitHub pour synchroniser tes équipes et tactiques avec l'admin.
-          </p>
-        )}
       </div>
 
       {/* Profil Discord */}
@@ -77,42 +40,6 @@ export default function Settings() {
         <Button variant="ghost" onClick={disconnect}>
           Se déconnecter
         </Button>
-      </section>
-
-      {/* Token GitHub */}
-      <section className="space-y-3 rounded-lg border border-border bg-surface p-6">
-        <h2 className="font-display text-xl">Token GitHub</h2>
-        <p className="text-sm text-muted">
-          {isAdmin
-            ? <>Personal Access Token avec scope <code className="rounded bg-border/40 px-1">repo</code>. Requis pour gérer les données.</>
-            : <>Optionnel. Avec un PAT scope <code className="rounded bg-border/40 px-1">repo</code> sur le dépôt footsim-data, tes équipes et tactiques sont visibles par l'admin.</>
-          }
-          {' '}Stocké uniquement dans ton navigateur.
-        </p>
-        <div className="flex gap-2">
-          <Input
-            type={reveal ? 'text' : 'password'}
-            placeholder="ghp_..."
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-          />
-          <Button variant="ghost" onClick={() => setReveal((r) => !r)}>
-            {reveal ? 'Masquer' : 'Afficher'}
-          </Button>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={save} disabled={busy || !draft.trim()}>
-            {busy ? <Spinner className="mr-2" /> : null}
-            Enregistrer
-          </Button>
-          <Button variant="ghost" onClick={clear} disabled={!githubPat}>
-            Effacer
-          </Button>
-        </div>
-        {githubPat
-          ? <p className="text-xs text-accent">Token enregistré — données sur GitHub.</p>
-          : <p className="text-xs text-muted">Sans token — données en local (IndexedDB).</p>
-        }
       </section>
     </div>
   );

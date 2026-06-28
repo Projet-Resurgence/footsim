@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
-import { useCredentials } from '@/stores/credentials';
+
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { listTeams, loadTeam } from '@/lib/github/store';
 import { listCompetitions } from '@/lib/github/competitions';
@@ -101,9 +101,9 @@ type Tab = 'equipes' | 'joueurs' | 'explications';
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
-  const pat = useCredentials((s) => s.githubPat);
-  const { pat: effectivePat } = useBackendArgs();
-  const token = pat ?? effectivePat ?? env.githubReadToken ?? null;
+  
+  const { prApiToken: effectivePat } = useBackendArgs();
+  const token = effectivePat ?? effectivePat ?? env.githubReadToken ?? null;
   const location = useLocation();
   const isPublicRoute = !embedded && location.pathname === '/classements-cmf';
 

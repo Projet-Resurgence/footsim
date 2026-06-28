@@ -3,10 +3,12 @@ import type { League, Player } from '@/lib/types';
 import type { ILeagueBackend } from '@/lib/leagueBackend';
 import { GithubLeagueBackend } from '@/lib/github/leagues';
 import { IdbLeagueBackend } from '@/lib/idb/leagues';
+import { PrApiLeagueBackend } from '@/lib/prapi/leagueBackend';
 
 const idbBackend = new IdbLeagueBackend();
 
-function getBackend(pat: string | null): ILeagueBackend {
+function getBackend(pat: string | null, prApiToken: string | null = null): ILeagueBackend {
+  if (prApiToken) return new PrApiLeagueBackend(prApiToken);
   if (pat) return new GithubLeagueBackend(pat);
   return idbBackend;
 }
@@ -16,10 +18,10 @@ type State = {
   loading: boolean;
   error: string | null;
 
-  fetchLeagues: (nationSlug: string, pat: string | null) => Promise<void>;
-  loadLeague: (id: string, pat: string | null) => Promise<League | null>;
-  saveLeague: (league: League, pat: string | null) => Promise<void>;
-  removeLeague: (id: string, nationSlug: string, pat: string | null) => Promise<void>;
+  fetchLeagues: (nationSlug: string, pat: string | null, prApiToken?: string | null) => Promise<void>;
+  loadLeague: (id: string, pat: string | null, prApiToken?: string | null) => Promise<League | null>;
+  saveLeague: (league: League, pat: string | null, prApiToken?: string | null) => Promise<void>;
+  removeLeague: (id: string, nationSlug: string, pat: string | null, prApiToken?: string | null) => Promise<void>;
 };
 
 export const useLeagues = create<State>((set, get) => ({
@@ -27,28 +29,28 @@ export const useLeagues = create<State>((set, get) => ({
   loading: false,
   error: null,
 
-  async fetchLeagues(nationSlug, pat) {
+  async fetchLeagues(nationSlug, pat, prApiToken = null) {
     set({ loading: true, error: null });
     try {
-      const leagues = await getBackend(pat).listLeagues(nationSlug);
+      const leagues = await getBackend(pat, prApiToken).listLeagues(nationSlug);
       set({ leagues, loading: false });
     } catch (err) {
       set({ error: String(err), loading: false });
     }
   },
 
-  async loadLeague(id, pat) {
-    return getBackend(pat).loadLeague(id);
+  async loadLeague(id, pat, prApiToken = null) {
+    return getBackend(pat, prApiToken).loadLeague(id);
   },
 
-  async saveLeague(league, pat) {
-    await getBackend(pat).saveLeague(league);
+  async saveLeague(league, pat, prApiToken = null) {
+    await getBackend(pat, prApiToken).saveLeague(league);
     const next = [...get().leagues.filter((l) => l.id !== league.id), league];
     set({ leagues: next });
   },
 
-  async removeLeague(id, nationSlug, pat) {
-    await getBackend(pat).deleteLeague(id, nationSlug);
+  async removeLeague(id, nationSlug, pat, prApiToken = null) {
+    await getBackend(pat, prApiToken).deleteLeague(id, nationSlug);
     set({ leagues: get().leagues.filter((l) => l.id !== id) });
   },
 }));

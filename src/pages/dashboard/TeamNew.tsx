@@ -20,7 +20,7 @@ const COUNTS = [100, 200, 500, 1000, 2000, 3000, 4000, 5000];
 
 export default function TeamNew() {
   const session = useSession((s) => s.session);
-  const { pat } = useBackendArgs();
+  const { prApiToken } = useBackendArgs();
   const saveTeam = useTeams((s) => s.saveTeam);
   const navigate = useNavigate();
 
@@ -136,7 +136,7 @@ export default function TeamNew() {
     if (!draft) return;
     setPublishing(true);
     try {
-      await saveTeam(draft.team, draft.players, pat);
+      await saveTeam(draft.team, draft.players, null, prApiToken);
       toast('success', `${draft.team.name} publiée avec ${draft.players.length} joueurs.`);
       navigate(`/dashboard/teams/${draft.team.slug}`);
     } catch (err) {

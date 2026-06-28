@@ -10,7 +10,7 @@ import { useSession } from '@/stores/session';
 
 export default function LeagueNew() {
   const { slug: nationSlug = '' } = useParams<{ slug: string }>();
-  const { ownerId, pat } = useBackendArgs();
+  const { ownerId, prApiToken: effectivePat } = useBackendArgs();
   const session = useSession((s) => s.session);
   const saveLeague = useLeagues((s) => s.saveLeague);
   const navigate = useNavigate();
@@ -52,7 +52,7 @@ export default function LeagueNew() {
           createdBy: session?.id ?? ownerId,
           ownerId,
         },
-        pat,
+        effectivePat,
       );
       toast('success', `Championnat "${name.trim()}" créé.`);
       navigate(`/dashboard/leagues/${encodeURIComponent(nationSlug + '/' + id)}`);

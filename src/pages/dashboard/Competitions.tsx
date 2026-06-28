@@ -3,13 +3,11 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { SkeletonCard } from '@/components/ui/Skeleton';
-import { toast } from '@/components/ui/Toast';
 import { useCompetition } from '@/stores/competition';
-import { useCredentials } from '@/stores/credentials';
 import { useSession } from '@/stores/session';
+import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { FORMAT_LABEL, COMPETITION_KIND_LABEL } from '@/lib/competition/types';
 import type { CompetitionSummary, CompetitionKind } from '@/lib/competition/types';
-import { loadCompetition, saveCompetition } from '@/lib/github/competitions';
 
 const STATUS_LABEL: Record<string, string> = {
   setup: 'Configuration',
@@ -27,40 +25,23 @@ export default function Competitions() {
   const summaries = useCompetition((s) => s.summaries);
   const loading = useCompetition((s) => s.loading);
   const refresh = useCompetition((s) => s.refresh);
-  const pat = useCredentials((s) => s.githubPat);
+  const { prApiToken } = useBackendArgs();
   const isAdmin = useSession((s) => s.isAdmin());
   const [recoverOpen, setRecoverOpen] = useState(false);
   const [recoverId, setRecoverId] = useState('');
-  const [recovering, setRecovering] = useState(false);
+  const [recovering] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'setup' | 'ongoing' | 'completed'>('all');
   const [kindFilter, setKindFilter] = useState<'all' | CompetitionKind>('all');
 
   async function handleRecover() {
-    if (!pat || !recoverId.trim()) return;
-    setRecovering(true);
-    try {
-      const comp = await loadCompetition(recoverId.trim(), pat);
-      if (!comp) {
-        toast('error', `Aucun fichier trouvé pour l'ID « ${recoverId.trim()} ».`);
-        return;
-      }
-      await saveCompetition(comp, pat);
-      await refresh(pat);
-      toast('success', `« ${comp.name} » récupérée et réindexée.`);
-      setRecoverOpen(false);
-      setRecoverId('');
-    } catch (err) {
-      toast('error', String(err));
-    } finally {
-      setRecovering(false);
-    }
+    // recover not available without GitHub backend
   }
 
   useEffect(() => {
-    if (pat) refresh(pat);
+    refresh('', prApiToken);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pat]);
+  }, [prApiToken]);
 
   const filtered = summaries.filter((s) => {
     const matchSearch = !search.trim() || s.name.toLowerCase().includes(search.trim().toLowerCase());
@@ -159,9 +140,7 @@ export default function Competitions() {
           <h1 className="mb-1 font-display text-4xl">Compétitions</h1>
           <p className="text-muted">Ligues, coupes, tournois administrés par l'organisateur.</p>
         </div>
-        {!pat ? (
-          <p className="text-muted text-sm">Les compétitions sont gérées par l'administrateur.</p>
-        ) : loading ? (
+        {loading ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} lines={3} />)}
           </div>
@@ -218,12 +197,7 @@ export default function Competitions() {
         </div>
       )}
 
-      {!pat ? (
-        <p className="text-muted">
-          Configure ton token GitHub dans{' '}
-          <Link to="/dashboard/settings" className="text-accent underline">Réglages</Link>.
-        </p>
-      ) : loading ? (
+      {loading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} lines={3} />)}
         </div>
