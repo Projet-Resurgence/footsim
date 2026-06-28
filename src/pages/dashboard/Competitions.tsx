@@ -105,7 +105,7 @@ export default function Competitions() {
               </div>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {byYear[year].map((s) => (
-                  <CompetitionCard key={s.id} summary={s} />
+                  <CompetitionCard key={s.id} summary={s} isAdmin={isAdmin} />
                 ))}
               </div>
             </div>
@@ -182,10 +182,11 @@ export default function Competitions() {
   );
 }
 
-function CompetitionCard({ summary }: { summary: CompetitionSummary }) {
+function CompetitionCard({ summary, isAdmin }: { summary: CompetitionSummary; isAdmin: boolean }) {
   const isAmicale = summary.kind === 'amicale';
+  const to = isAdmin ? `/dashboard/competitions/${summary.id}` : `/competitions/${summary.id}`;
   return (
-    <Link to={`/dashboard/competitions/${summary.id}`} className="block">
+    <Link to={to} className="block">
       <div className="rounded-lg border border-border bg-surface p-5 hover:border-accent/50 transition-colors space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="font-display text-xl truncate">{summary.name}</div>

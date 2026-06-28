@@ -39,9 +39,9 @@ import { calcCmfMatchPoints } from '@/lib/github/matches';
 export default function CompetitionDetail() {
   const { id } = useParams<{ id: string }>();
   const { pathname } = useLocation();
-  const isPublicView = pathname.startsWith('/competition-view');
-  const backTo = isPublicView ? '/my-team' : '/dashboard/competitions';
-  const backLabel = isPublicView ? '← My Team' : '← Compétitions';
+  const isPublicView = pathname.startsWith('/competition-view') || pathname.startsWith('/competitions/');
+  const backTo = isPublicView ? '/competitions' : '/dashboard/competitions';
+  const backLabel = '← Compétitions';
   const load = useCompetition((s) => s.load);
   const save = useCompetition((s) => s.save);
   const remove = useCompetition((s) => s.remove);
@@ -461,7 +461,8 @@ export default function CompetitionDetail() {
     const updated: Competition = { ...current, matches: updatedMatches };
     setCurrent(updated);
     setLpmDraw(null);
-    toast('success', 'Barrages LPM générés — sauvegarde via le bouton GitHub.');
+    if (effectivePat) save(updated, '', effectivePat).catch(() => {});
+    toast('success', 'Barrages LPM générés.');
   }
 
   function startKnockoutDraw() {
@@ -490,7 +491,8 @@ export default function CompetitionDetail() {
     const updated: Competition = { ...current, matches: updatedMatches };
     setCurrent(updated);
     setKnockoutDraw(null);
-    toast('success', 'Tirage phase finale effectué — sauvegarde via le bouton GitHub.');
+    if (effectivePat) save(updated, '', effectivePat).catch(() => {});
+    toast('success', 'Tirage phase finale effectué.');
   }
 
   function openMatchModal(matchId: string) {

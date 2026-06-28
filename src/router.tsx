@@ -42,6 +42,7 @@ const LeagueNew = lazyWithReload(() => import('@/pages/dashboard/LeagueNew'));
 const LeagueDetail = lazyWithReload(() => import('@/pages/dashboard/LeagueDetail'));
 const ClubNew = lazyWithReload(() => import('@/pages/dashboard/ClubNew'));
 const MatchSetup = lazyWithReload(() => import('@/pages/matches/MatchSetup'));
+const PlaySetup = lazyWithReload(() => import('@/pages/matches/PlaySetup'));
 const MatchLive = lazyWithReload(() => import('@/pages/matches/MatchLive'));
 const CompetitionMatchLive = lazyWithReload(() => import('@/pages/matches/CompetitionMatchLive'));
 const MultiplexLive = lazyWithReload(() => import('@/pages/matches/MultiplexLive'));
@@ -103,10 +104,30 @@ export const router = createBrowserRouter(
       ],
     },
     {
+      path: '/competitions',
+      element: (
+        <RequireAuth>
+          <DashboardLayout />
+        </RequireAuth>
+      ),
+      children: [
+        { index: true, element: <S><Competitions /></S> },
+        { path: ':id', element: <S><CompetitionDetail /></S> },
+      ],
+    },
+    {
       path: '/competition-view/:id',
       element: (
         <RequireAuth>
           <S><CompetitionDetail /></S>
+        </RequireAuth>
+      ),
+    },
+    {
+      path: '/play',
+      element: (
+        <RequireAuth>
+          <S><PlaySetup /></S>
         </RequireAuth>
       ),
     },
@@ -121,9 +142,9 @@ export const router = createBrowserRouter(
     {
       path: '/match/:id',
       element: (
-        <RequireAdmin>
+        <RequireAuth>
           <S><MatchLive /></S>
-        </RequireAdmin>
+        </RequireAuth>
       ),
     },
     {

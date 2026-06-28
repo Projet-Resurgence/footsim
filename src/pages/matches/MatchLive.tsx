@@ -20,6 +20,7 @@ import { isRevealed } from '@/lib/sim/corruption';
 import type { SavedTactic, TacticStyle, Team } from '@/lib/types';
 import { loadLocalSavedTactics } from '@/lib/localTactics';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
+import { useSession } from '@/stores/session';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
 import type { StoredMatch } from '@/lib/prapi/matchBackend';
@@ -28,6 +29,10 @@ import type { RecentMatchSummary } from '@/lib/github/matches';
 
 export default function MatchLive() {
   const { ownerId, prApiToken: effectivePat } = useBackendArgs();
+  const session = useSession((s) => s.session);
+  const isAdmin = useSession((s) => s.isAdmin());
+  const setupPath = isAdmin ? '/match' : '/play';
+  const homePath = isAdmin ? '/dashboard' : '/my-team';
   const state = useMatch((s) => s.state);
   const input = useMatch((s) => s.input);
   const paused = useMatch((s) => s.paused);
@@ -188,7 +193,7 @@ export default function MatchLive() {
       <main className="flex min-h-screen flex-col items-center justify-center gap-3">
         <Spinner className="h-6 w-6" />
         <p className="text-muted text-sm">Préparation du match…</p>
-        <Link to="/match" className="text-accent text-sm underline">Retour à la configuration</Link>
+        <Link to={setupPath} className="text-accent text-sm underline">Retour à la configuration</Link>
       </main>
     );
   }
@@ -209,9 +214,9 @@ export default function MatchLive() {
       />
 
       <div className="flex items-center justify-between">
-        <Link to="/dashboard" className="text-sm text-muted hover:text-text">← Dashboard</Link>
+        <Link to={homePath} className="text-sm text-muted hover:text-text">← {isAdmin ? 'Dashboard' : 'Mon équipe'}</Link>
         {finished ? (
-          <Button size="sm" onClick={() => navigate('/match')}>Nouveau match</Button>
+          <Button size="sm" onClick={() => navigate(setupPath)}>Nouveau match</Button>
         ) : null}
       </div>
 
@@ -282,6 +287,12 @@ export default function MatchLive() {
           awayPlayers={input.away.players}
           onSub={(side, outId, inId) => { manualSub(side, outId, inId); setShowSubPanel(false); }}
           onClose={() => setShowSubPanel(false)}
+          allowedSides={isAdmin ? undefined : (() => {
+            const sides: ('home' | 'away')[] = [];
+            if (input.home.team.managerDiscordId === session?.id) sides.push('home');
+            if (input.away.team.managerDiscordId === session?.id) sides.push('away');
+            return sides.length > 0 ? sides : ['home'];
+          })()}
         />
       )}
 

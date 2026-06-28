@@ -10,6 +10,7 @@ type Props = {
   awayPlayers: Player[];
   onSub: (side: 'home' | 'away', outId: string, inId: string) => void;
   onClose: () => void;
+  allowedSides?: ('home' | 'away')[];
 };
 
 function posFamily(pos: string): string[] {
@@ -139,8 +140,9 @@ function SideSubs({
   );
 }
 
-export function SubstitutionPanel({ state, homePlayers, awayPlayers, onSub, onClose }: Props) {
-  const [activeSide, setActiveSide] = useState<'home' | 'away'>('home');
+export function SubstitutionPanel({ state, homePlayers, awayPlayers, onSub, onClose, allowedSides }: Props) {
+  const sides: ('home' | 'away')[] = allowedSides ?? ['home', 'away'];
+  const [activeSide, setActiveSide] = useState<'home' | 'away'>(sides[0]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
@@ -153,25 +155,27 @@ export function SubstitutionPanel({ state, homePlayers, awayPlayers, onSub, onCl
           <button onClick={onClose} className="text-muted hover:text-text text-xl leading-none">✕</button>
         </div>
 
-        {/* Side tabs */}
-        <div className="flex gap-1 border-b border-border">
-          {(['home', 'away'] as const).map((s) => {
-            const subsUsed = s === 'home' ? state.homeSubs : state.awaySubs;
-            const subsLeft = state.rules.maxSubs - subsUsed;
-            return (
-              <button
-                key={s}
-                onClick={() => setActiveSide(s)}
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${activeSide === s ? 'border-b-2 border-accent text-accent' : 'text-muted hover:text-text'}`}
-              >
-                {s === 'home' ? 'Domicile' : 'Extérieur'}
-                <span className={`ml-1.5 text-xs ${subsLeft === 0 ? 'text-danger' : 'text-muted'}`}>
-                  ({subsLeft}/{state.rules.maxSubs})
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {/* Side tabs — only show if multiple sides allowed */}
+        {sides.length > 1 && (
+          <div className="flex gap-1 border-b border-border">
+            {sides.map((s) => {
+              const subsUsed = s === 'home' ? state.homeSubs : state.awaySubs;
+              const subsLeft = state.rules.maxSubs - subsUsed;
+              return (
+                <button
+                  key={s}
+                  onClick={() => setActiveSide(s)}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${activeSide === s ? 'border-b-2 border-accent text-accent' : 'text-muted hover:text-text'}`}
+                >
+                  {s === 'home' ? 'Domicile' : 'Extérieur'}
+                  <span className={`ml-1.5 text-xs ${subsLeft === 0 ? 'text-danger' : 'text-muted'}`}>
+                    ({subsLeft}/{state.rules.maxSubs})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {activeSide === 'home' ? (
           <SideSubs

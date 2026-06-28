@@ -2,12 +2,14 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { useSession } from '@/stores/session';
 
-type NavItem = { to: string; label: string; end?: boolean; adminOnly?: boolean };
+type NavItem = { to: string; label: string; end?: boolean; adminOnly?: boolean; nonAdminOnly?: boolean };
 const items: NavItem[] = [
   { to: '/my-team', label: 'Mon équipe', end: true },
   { to: '/dashboard', label: "Vue d'ensemble", end: true, adminOnly: true },
   { to: '/dashboard/teams', label: 'Équipes', adminOnly: true },
   { to: '/dashboard/competitions', label: 'Compétitions', adminOnly: true },
+  { to: '/competitions', label: 'Compétitions', nonAdminOnly: true },
+  { to: '/play', label: 'Jouer un match', nonAdminOnly: true },
   { to: '/match', label: 'Matchs', adminOnly: true },
   { to: '/my-team/classements-cmf', label: 'Classements CMF' },
   { to: '/my-team/simulation', label: 'Simulation' },
@@ -20,7 +22,7 @@ type SidebarProps = {
 
 export function Sidebar({ open, onClose }: SidebarProps) {
   const isAdmin = useSession((s) => s.isAdmin());
-  const filtered = items.filter((item) => !item.adminOnly || isAdmin);
+  const filtered = items.filter((item) => (!item.adminOnly || isAdmin) && (!item.nonAdminOnly || !isAdmin));
 
   const nav = (
     <>

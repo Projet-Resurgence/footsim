@@ -24,18 +24,8 @@ import { PlayerView } from '@/components/team/PlayerView';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
 import type { Coach } from '@/lib/gen/coach';
 
-const STATUS_LABEL: Record<string, string> = {
-  setup: 'Configuration',
-  ongoing: 'En cours',
-  completed: 'Terminée',
-};
-const STATUS_COLOR: Record<string, string> = {
-  setup: 'text-muted',
-  ongoing: 'text-accent',
-  completed: 'text-warning',
-};
 
-type Tab = 'tactique' | 'joueurs' | 'noms' | 'postes' | 'competitions' | 'palmares' | 'historique' | 'entraineur' | 'stats';
+type Tab = 'tactique' | 'joueurs' | 'noms' | 'postes' | 'palmares' | 'historique' | 'entraineur' | 'stats';
 
 export default function MyTeam() {
   const session = useSession((s) => s.session);
@@ -51,7 +41,7 @@ export default function MyTeam() {
   const [editingTacticId, setEditingTacticId] = useState<string | null>(null); // null = new
   const [tab, setTab] = useState<Tab>('tactique');
   const [summaries, setSummaries] = useState<CompetitionSummary[]>([]);
-  const [loadingComps, setLoadingComps] = useState(false);
+  const [, setLoadingComps] = useState(false);
   const [viewingPlayer, setViewingPlayer] = useState<Player | null>(null);
   const [nameWeights, setNameWeights] = useState<CultureWeight[]>([]);
   const [generatingNames, setGeneratingNames] = useState(false);
@@ -104,7 +94,7 @@ export default function MyTeam() {
   }, [session?.id, prApiToken]);
 
   useEffect(() => {
-    if (tab !== 'competitions' && tab !== 'palmares') return;
+    if (tab !== 'palmares') return;
     if (compSummaries.length > 0) { setSummaries(compSummaries); return; }
     if (!prApiToken) return;
     setLoadingComps(true);
@@ -338,7 +328,7 @@ export default function MyTeam() {
 
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-1 border-b border-border">
-        {(['tactique', 'joueurs', 'noms', 'postes', 'competitions', 'palmares', 'historique', 'stats', 'entraineur'] as Tab[]).map((t) => (
+        {(['tactique', 'joueurs', 'noms', 'postes', 'palmares', 'historique', 'stats', 'entraineur'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -348,7 +338,6 @@ export default function MyTeam() {
               : t === 'joueurs' ? 'Joueurs'
               : t === 'noms' ? 'Noms'
               : t === 'postes' ? 'Postes'
-              : t === 'competitions' ? 'Compétitions'
               : t === 'stats' ? 'Statistiques individuelles'
               : t === 'palmares' ? 'Palmarès'
               : t === 'historique' ? 'Historique matchs'
@@ -517,82 +506,6 @@ export default function MyTeam() {
         </div>
       )}
 
-      {/* Compétitions */}
-      {tab === 'competitions' && (
-        <div className="space-y-8">
-          {loadingComps ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} lines={3} />)}
-            </div>
-          ) : summaries.length === 0 ? (
-            <div className="rounded-lg border border-border bg-surface p-12 text-center text-muted">
-              Aucune compétition disponible.
-            </div>
-          ) : (
-            <>
-              {/* Officielles */}
-              {summaries.filter((s) => (s.kind ?? 'officielle') === 'officielle').length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold">Compétitions officielles</span>
-                    <div className="flex-1 border-t border-border" />
-                    <span className="text-xs text-muted">{summaries.filter((s) => (s.kind ?? 'officielle') === 'officielle').length}</span>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {summaries.filter((s) => (s.kind ?? 'officielle') === 'officielle').map((s) => {
-                      const clickable = s.status === 'ongoing' || s.status === 'completed';
-                      const inner = (
-                        <div className={`rounded-lg border border-border bg-surface p-4 space-y-2 transition-colors ${clickable ? 'hover:border-accent/50 cursor-pointer' : ''}`}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="font-medium">{s.name}</div>
-                            <span className={`text-xs ${STATUS_COLOR[s.status]}`}>{STATUS_LABEL[s.status]}</span>
-                          </div>
-                          <div className="text-xs text-muted">{FORMAT_LABEL[s.format]} · {s.teamCount} équipes</div>
-                          {s.winner && <div className="text-xs text-warning">🏆 Vainqueur enregistré</div>}
-                        </div>
-                      );
-                      return clickable
-                        ? <Link key={s.id} to={`/competition-view/${s.id}`}>{inner}</Link>
-                        : <div key={s.id}>{inner}</div>;
-                    })}
-                  </div>
-                </div>
-              )}
-              {/* Amicales */}
-              {summaries.filter((s) => s.kind === 'amicale').length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold">Compétitions amicales</span>
-                    <div className="flex-1 border-t border-border" />
-                    <span className="text-xs text-muted">{summaries.filter((s) => s.kind === 'amicale').length}</span>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {summaries.filter((s) => s.kind === 'amicale').map((s) => {
-                      const clickable = s.status === 'ongoing' || s.status === 'completed';
-                      const inner = (
-                        <div className={`rounded-lg border border-border bg-surface p-4 space-y-2 transition-colors ${clickable ? 'hover:border-accent/50 cursor-pointer' : ''}`}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="font-medium">{s.name}</div>
-                            <div className="flex flex-col items-end gap-1">
-                              <span className={`text-xs ${STATUS_COLOR[s.status]}`}>{STATUS_LABEL[s.status]}</span>
-                              <span className="text-xs text-muted border border-border rounded px-1.5 py-0.5">Amicale</span>
-                            </div>
-                          </div>
-                          <div className="text-xs text-muted">{FORMAT_LABEL[s.format]} · {s.teamCount} équipes</div>
-                          {s.winner && <div className="text-xs text-warning">🏆 Vainqueur enregistré</div>}
-                        </div>
-                      );
-                      return clickable
-                        ? <Link key={s.id} to={`/competition-view/${s.id}`}>{inner}</Link>
-                        : <div key={s.id}>{inner}</div>;
-                    })}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
       {/* Palmarès */}
       {tab === 'palmares' && (
         <MyTeamPalmaresTab
