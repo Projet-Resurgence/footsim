@@ -5,10 +5,10 @@ import { toast } from '@/components/ui/Toast';
 
 import { prapi } from '@/lib/prapi/client';
 import { POSITION_LABEL, CULTURE_LABEL, CONTINENT_LABEL } from '@/lib/types';
-import type { Continent } from '@/lib/types';
-import type { Team, Position, Player, Formation } from '@/lib/types';
-import { pickXI } from '@/lib/sim/lineup';
+import type { Continent, Formation } from '@/lib/types';
+import type { Team, Position, Player } from '@/lib/types';
 import { PlayerView } from '@/components/team/PlayerView';
+import { pickXI } from '@/lib/sim/lineup';
 import { TacticPitch } from '@/components/team/TeamTacticCard';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -92,13 +92,12 @@ function matchPoints(m: RecentMatchSummary): number {
 
 type TeamRankEntry = {
   team: Team;
-  players: Player[];
   points: number;
   wins: number;
   finals: number;
   thirds: number;
   participations: number;
-  form: MatchResult[]; // last 5, most recent last
+  form: MatchResult[];
 };
 
 type PlayerEntry = {
@@ -116,33 +115,61 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
 
   const [tab, setTab] = useState<Tab>('equipes');
   const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(false);
   const [teamEntries, setTeamEntries] = useState<TeamRankEntry[]>([]);
-  const [playerEntries, setPlayerEntries] = useState<PlayerEntry[]>([]);
   const [viewingPlayer, setViewingPlayer] = useState<Player | null>(null);
+  const [pagination, setPagination] = useState({ page: 1, per_page: 100, total: 0, pages: 1 });
 
   // team filters
   const [continentFilter, setContinentFilter] = useState<Continent | 'all'>('all');
-  // player filters
-  const [posFilter, setPosFilter] = useState<string>('all');
-  const [playerLimit, setPlayerLimit] = useState(50);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const data = await prapi.rankings();
-        setTeamEntries(data.teams as TeamRankEntry[]);
-        setPlayerEntries(data.players.map((p) => ({
-          player: p as unknown as PlayerEntry['player'],
-          team: { slug: p.teamSlug, name: p.teamName, flag: p.teamFlag } as unknown as Team,
-        })));
-      } catch (err) {
-        toast('error', String(err));
-      } finally {
-        setLoading(false);
-      }
+  // player tab state
+  const [playerPage, setPlayerPage] = useState(1);
+  const [playerPageLoading, setPlayerPageLoading] = useState(false);
+  const [playerEntries, setPlayerEntries] = useState<PlayerEntry[]>([]);
+  const [playerPagination, setPlayerPagination] = useState({ page: 1, per_page: 100, total: 0, pages: 1 });
+  const [posFilter, setPosFilter] = useState<string>('all');
+  const [playerTabLoaded, setPlayerTabLoaded] = useState(false);
+
+  async function loadTeamPage(page: number, isInitial = false) {
+    if (isInitial) setLoading(true); else setPageLoading(true);
+    try {
+      const data = await prapi.rankings(page, 100);
+      setTeamEntries(data.teams as TeamRankEntry[]);
+      setPagination(data.pagination);
+    } catch (err) {
+      toast('error', String(err));
+    } finally {
+      if (isInitial) setLoading(false); else setPageLoading(false);
     }
-    load();
-  }, []);
+  }
+
+  async function loadPlayerPage(page: number, position?: string) {
+    setPlayerPageLoading(true);
+    try {
+      const data = await prapi.rankingsPlayers(page, 100, position === 'all' ? undefined : position);
+      setPlayerEntries(data.players.map((p) => ({
+        player: p as unknown as PlayerEntry['player'],
+        team: { slug: p.teamSlug, name: p.teamName, flag: p.teamFlag, culture: p.culture } as unknown as Team,
+      })));
+      setPlayerPagination(data.pagination);
+      setPlayerPage(page);
+    } catch (err) {
+      toast('error', String(err));
+    } finally {
+      setPlayerPageLoading(false);
+      setPlayerTabLoaded(true);
+    }
+  }
+
+  useEffect(() => { loadTeamPage(1, true); }, []);
+
+  // Lazy-load players tab on first open
+  useEffect(() => {
+    if (tab === 'joueurs' && !playerTabLoaded) {
+      loadPlayerPage(1);
+    }
+  }, [tab]);
 
   if (loading) {
     return (
@@ -152,11 +179,8 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
     );
   }
 
-  const positions = ['all', ...Array.from(new Set(playerEntries.map((e) => e.player.position)))];
-  const filteredPlayers = posFilter === 'all'
-    ? playerEntries
-    : playerEntries.filter((e) => e.player.position === posFilter);
-  const shownPlayers = filteredPlayers.slice(0, playerLimit);
+  const ALL_POSITIONS = ['GK','CB','LB','RB','DM','CM','AM','LM','RM','LW','RW','ST'];
+
 
   return (
     <>
@@ -197,9 +221,11 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
       {tab === 'equipes' && (
         <TeamRanking
           entries={teamEntries}
-          onPlayerClick={setViewingPlayer}
           continentFilter={continentFilter}
           onContinentFilter={setContinentFilter}
+          pagination={pagination}
+          pageLoading={pageLoading}
+          onPageChange={(p) => loadTeamPage(p)}
         />
       )}
 
@@ -212,80 +238,103 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
           <div className="flex items-center gap-3 flex-wrap">
             <select
               value={posFilter}
-              onChange={(e) => setPosFilter(e.target.value)}
+              onChange={(e) => { setPosFilter(e.target.value); loadPlayerPage(1, e.target.value); }}
               className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
             >
               <option value="all">Tous les postes</option>
-              {positions.filter((p) => p !== 'all').map((p) => (
+              {ALL_POSITIONS.map((p) => (
                 <option key={p} value={p}>{POSITION_LABEL[p as keyof typeof POSITION_LABEL] ?? p}</option>
               ))}
             </select>
-            <span className="text-xs text-muted">{filteredPlayers.length} joueurs</span>
+            {playerPagination.total > 0 && (
+              <span className="text-xs text-muted">{playerPagination.total} joueurs</span>
+            )}
+            {playerPageLoading && <Spinner className="h-4 w-4" />}
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-            <table className="w-full text-sm min-w-[400px]">
-              <thead className="bg-bg text-left text-xs text-muted uppercase tracking-wide">
-                <tr>
-                  <th className="px-3 py-2 w-10 text-center">#</th>
-                  <th className="px-3 py-2">Joueur</th>
-                  <th className="px-3 py-2 hidden sm:table-cell">Poste</th>
-                  <th className="px-3 py-2">Équipe</th>
-                  <th className="px-3 py-2 hidden md:table-cell">Culture</th>
-                  <th className="px-3 py-2 text-right font-bold">OVR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shownPlayers.map((e, idx) => {
-                  const { player, team } = e;
-                  const rank = idx + 1;
-                  const rankColor =
-                    rank === 1 ? 'text-yellow-500 font-bold' :
-                    rank === 2 ? 'text-zinc-400 font-bold' :
-                    rank === 3 ? 'text-orange-500 font-bold' :
-                    'text-muted';
-                  return (
-                    <tr key={player.id} className="border-t border-border hover:bg-border/10 transition-colors">
-                      <td className={`px-3 py-2.5 text-center tabular-nums text-sm ${rankColor}`}>{rank}</td>
-                      <td className="px-3 py-2.5">
-                        <div className="font-medium leading-tight">{player.firstName} {player.lastName}</div>
-                        <div className="sm:hidden text-xs text-muted mt-0.5">
-                          <span className="rounded bg-border/40 px-1.5 py-0.5 font-mono">{POSITION_LABEL[player.position as Position]}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 hidden sm:table-cell">
-                        <span className="rounded bg-border/40 px-2 py-0.5 font-mono text-xs">
-                          {POSITION_LABEL[player.position as Position]}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          {team.flag && (
-                            <img src={team.flag} alt="" className="h-5 w-5 rounded-sm object-cover shrink-0" />
-                          )}
-                          <span className="truncate max-w-[100px] text-sm">{team.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 text-muted text-xs hidden md:table-cell">
-                        {CULTURE_LABEL[team.culture] ?? team.culture}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-bold text-accent">{player.overall}</td>
+          {!playerTabLoaded ? (
+            <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+          ) : (
+            <>
+              <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+                <table className="w-full text-sm min-w-[400px]">
+                  <thead className="bg-bg text-left text-xs text-muted uppercase tracking-wide">
+                    <tr>
+                      <th className="px-3 py-2 w-10 text-center">#</th>
+                      <th className="px-3 py-2">Joueur</th>
+                      <th className="px-3 py-2 hidden sm:table-cell">Poste</th>
+                      <th className="px-3 py-2">Équipe</th>
+                      <th className="px-3 py-2 hidden md:table-cell">Culture</th>
+                      <th className="px-3 py-2 text-right font-bold">OVR</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {playerEntries.map((e, idx) => {
+                      const { player, team } = e;
+                      const rank = (playerPagination.page - 1) * playerPagination.per_page + idx + 1;
+                      const rankColor =
+                        rank === 1 ? 'text-yellow-500 font-bold' :
+                        rank === 2 ? 'text-zinc-400 font-bold' :
+                        rank === 3 ? 'text-orange-500 font-bold' :
+                        'text-muted';
+                      return (
+                        <tr key={player.id} className="border-t border-border hover:bg-border/10 transition-colors cursor-pointer" onClick={() => setViewingPlayer(player as unknown as Player)}>
+                          <td className={`px-3 py-2.5 text-center tabular-nums text-sm ${rankColor}`}>{rank}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="font-medium leading-tight">{player.firstName} {player.lastName}</div>
+                            <div className="sm:hidden text-xs text-muted mt-0.5">
+                              <span className="rounded bg-border/40 px-1.5 py-0.5 font-mono">{POSITION_LABEL[player.position as Position]}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 hidden sm:table-cell">
+                            <span className="rounded bg-border/40 px-2 py-0.5 font-mono text-xs">
+                              {POSITION_LABEL[player.position as Position]}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {team.flag && (
+                                <img src={team.flag} alt="" className="h-5 w-5 rounded-sm object-cover shrink-0" />
+                              )}
+                              <span className="truncate max-w-[100px] text-sm">{team.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-muted text-xs hidden md:table-cell">
+                            {CULTURE_LABEL[team.culture] ?? team.culture}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums font-bold text-accent">{player.overall}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-          {filteredPlayers.length > playerLimit && (
-            <div className="text-center">
-              <button
-                onClick={() => setPlayerLimit((l) => l + 50)}
-                className="rounded-md border border-border px-4 py-2 text-sm text-muted hover:text-text transition-colors"
-              >
-                Afficher plus ({filteredPlayers.length - playerLimit} restants)
-              </button>
-            </div>
+              {playerPagination.pages > 1 && (
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <button
+                    onClick={() => loadPlayerPage(playerPage - 1, posFilter)}
+                    disabled={playerPage <= 1 || playerPageLoading}
+                    className="px-3 py-1.5 rounded-md border border-border text-sm text-muted hover:text-text disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >←</button>
+                  {Array.from({ length: playerPagination.pages }, (_, i) => i + 1).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => loadPlayerPage(p, posFilter)}
+                      disabled={playerPageLoading}
+                      className={`w-8 h-8 rounded-md border text-sm transition-colors disabled:opacity-40 ${
+                        p === playerPage ? 'border-accent bg-accent/10 text-accent font-bold' : 'border-border text-muted hover:text-text'
+                      }`}
+                    >{p}</button>
+                  ))}
+                  <button
+                    onClick={() => loadPlayerPage(playerPage + 1, posFilter)}
+                    disabled={playerPage >= playerPagination.pages || playerPageLoading}
+                    className="px-3 py-1.5 rounded-md border border-border text-sm text-muted hover:text-text disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >→</button>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -674,92 +723,6 @@ const SCOPE_SHORT: Record<string, string> = {
   internationale: 'Intl', continentale: 'Cont', nationale: 'Nat', regionale: 'Rég', autre: 'Autre',
 };
 
-function LineupSection({ players, formation, formationLabel, lineup, tokenPositions, onPlayerClick }: {
-  players: Player[];
-  formation: Formation;
-  formationLabel?: string;
-  lineup?: string[];
-  tokenPositions?: Record<string, { x: number; y: number }>;
-  onPlayerClick: (p: Player) => void;
-}) {
-  const byId = new Map(players.map((p) => [p.id, p]));
-  let starters: Player[];
-  if (lineup && lineup.length === 11) {
-    const resolved = lineup.map((id) => byId.get(id)).filter(Boolean) as Player[];
-    starters = resolved.length === 11 ? resolved : pickXI(players, formation).lineup;
-  } else {
-    starters = pickXI(players, formation).lineup;
-  }
-  const starterIds = new Set(starters.map((p) => p.id));
-  const bench = players
-    .filter((p) => !starterIds.has(p.id))
-    .sort((a, b) => b.overall - a.overall)
-    .slice(0, 12);
-
-  return (
-    <div className="space-y-3">
-      {/* Formation terrain */}
-      <div className="mx-auto" style={{ maxWidth: 220 }}>
-        <TacticPitch
-          formation={formation}
-          lineup={starters.map((p) => p.id)}
-          players={starters}
-          tokenPositions={tokenPositions}
-        />
-        <div className="text-center text-[10px] text-muted mt-1 uppercase tracking-widest">{formationLabel ?? formation}</div>
-      </div>
-
-      <div className="overflow-hidden rounded-lg border border-border bg-surface">
-        <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted flex items-center justify-between">
-          <span>XI titulaires · {formation}</span>
-          <span className="text-accent font-mono">{starters.length}/11</span>
-        </div>
-        <table className="w-full text-sm">
-          <tbody>
-            {starters.map((p, i) => (
-              <tr
-                key={p.id}
-                className="border-t border-border hover:bg-accent/10 cursor-pointer transition-colors"
-                onClick={() => onPlayerClick(p)}
-              >
-                <td className="w-8 px-3 py-2 text-center text-xs text-muted tabular-nums">{i + 1}</td>
-                <td className="px-3 py-2">
-                  <span className="rounded bg-border/40 px-1.5 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span>
-                </td>
-                <td className="px-3 py-2 font-medium">{p.firstName} {p.lastName}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-bold text-accent">{p.overall}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {bench.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
-          <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">
-            Banc ({bench.length})
-          </div>
-          <table className="w-full text-sm">
-            <tbody>
-              {bench.map((p) => (
-                <tr
-                  key={p.id}
-                  className="border-t border-border hover:bg-accent/10 cursor-pointer transition-colors"
-                  onClick={() => onPlayerClick(p)}
-                >
-                  <td className="px-3 py-2">
-                    <span className="rounded bg-border/40 px-1.5 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span>
-                  </td>
-                  <td className="px-3 py-2 text-text/80">{p.firstName} {p.lastName}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted">{p.overall}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function MatchList({ matches, label }: { matches: RecentMatchSummary[]; label: string }) {
   const total = matches.reduce((s, m) => s + matchPoints(m), 0);
@@ -776,12 +739,11 @@ function MatchList({ matches, label }: { matches: RecentMatchSummary[]; label: s
           {matches.map((m, i) => {
             const won = m.scoreFor > m.scoreAgainst;
             const drew = m.scoreFor === m.scoreAgainst;
-            const resultCls = won ? 'text-green-400 font-bold' : drew ? 'text-yellow-400 font-bold' : 'text-danger font-bold';
-            const resultLetter = won ? 'V' : drew ? 'N' : 'D';
+            const result: MatchResult = won ? 'W' : drew ? 'D' : 'L';
             const pts = matchPoints(m);
             return (
               <div key={i} className="flex items-center gap-2 text-xs">
-                <span className={`w-4 text-center shrink-0 ${resultCls}`}>{resultLetter}</span>
+                <FormIcon result={result} />
                 <span className="font-mono tabular-nums shrink-0 text-muted w-8">{m.scoreFor}–{m.scoreAgainst}</span>
                 <span className="truncate text-muted flex-1">vs {m.opponentName}</span>
                 <span className="text-[10px] text-muted shrink-0">{m.homeAway === 'home' ? 'D' : 'E'}</span>
@@ -797,16 +759,89 @@ function MatchList({ matches, label }: { matches: RecentMatchSummary[]; label: s
   );
 }
 
-function ExpandedTeamDetail({ entry, onPlayerClick }: { entry: TeamRankEntry; onPlayerClick: (p: Player) => void }) {
+function LineupSection({ players, formation, formationLabel, lineup, tokenPositions }: {
+  players: Player[];
+  formation: Formation;
+  formationLabel?: string;
+  lineup?: string[];
+  tokenPositions?: Record<string, { x: number; y: number }>;
+}) {
+  const byId = new Map(players.map((p) => [p.id, p]));
+  let starters: Player[];
+  if (lineup && lineup.length === 11) {
+    const resolved = lineup.map((id) => byId.get(id)).filter(Boolean) as Player[];
+    starters = resolved.length === 11 ? resolved : pickXI(players, formation).lineup;
+  } else {
+    starters = pickXI(players, formation).lineup;
+  }
+  const starterIds = new Set(starters.map((p) => p.id));
+  const bench = players.filter((p) => !starterIds.has(p.id)).sort((a, b) => b.overall - a.overall).slice(0, 12);
+
+  return (
+    <div className="space-y-3">
+      <div className="mx-auto" style={{ maxWidth: 220 }}>
+        <TacticPitch formation={formation} lineup={starters.map((p) => p.id)} players={starters} tokenPositions={tokenPositions} />
+        <div className="text-center text-[10px] text-muted mt-1 uppercase tracking-widest">{formationLabel ?? formation}</div>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted flex items-center justify-between">
+          <span>XI titulaires · {formation}</span>
+          <span className="text-accent font-mono">{starters.length}/11</span>
+        </div>
+        <table className="w-full text-sm">
+          <tbody>
+            {starters.map((p, i) => (
+              <tr key={p.id} className="border-t border-border">
+                <td className="w-8 px-3 py-2 text-center text-xs text-muted tabular-nums">{i + 1}</td>
+                <td className="px-3 py-2"><span className="rounded bg-border/40 px-1.5 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span></td>
+                <td className="px-3 py-2 font-medium">{p.firstName} {p.lastName}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-bold text-accent">{p.overall}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {bench.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+          <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">Banc ({bench.length})</div>
+          <table className="w-full text-sm">
+            <tbody>
+              {bench.map((p) => (
+                <tr key={p.id} className="border-t border-border">
+                  <td className="px-3 py-2"><span className="rounded bg-border/40 px-1.5 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span></td>
+                  <td className="px-3 py-2 text-text/80">{p.firstName} {p.lastName}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">{p.overall}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExpandedTeamDetail({ entry }: { entry: TeamRankEntry }) {
   const history = entry.team.compHistory ?? [];
   const sorted = [...(entry.team.recentMatches ?? [])].sort((a, b) => b.playedAt.localeCompare(a.playedAt));
   const recentOfficial = sorted.filter((m) => m.compKind === 'officielle').slice(0, CMF_MATCH_LIMIT);
   const recentFriendly = sorted.filter((m) => m.compKind !== 'officielle').slice(0, CMF_MATCH_LIMIT);
   const palmaresTotal = history.reduce((s, e) => s + entryPoints(e), 0);
 
-  const activeTactic = (entry.team.savedTactics ?? []).find(
-    (t) => t.id === entry.team.activeTacticId
-  ) ?? (entry.team.savedTactics ?? [])[0];
+  const [lineup, setLineup] = useState<{
+    players: Player[]; formation: Formation; formationLabel?: string;
+    lineup?: string[]; tokenPositions?: Record<string, { x: number; y: number }>;
+  } | null>(null);
+  const [lineupLoading, setLineupLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLineupLoading(true);
+    prapi.rankingsTeamLineup(entry.team.slug).then((data) => {
+      if (!cancelled) setLineup(data);
+    }).catch(() => {}).finally(() => { if (!cancelled) setLineupLoading(false); });
+    return () => { cancelled = true; };
+  }, [entry.team.slug]);
 
   return (
     <div className="space-y-5">
@@ -855,19 +890,20 @@ function ExpandedTeamDetail({ entry, onPlayerClick }: { entry: TeamRankEntry; on
         </div>
       </div>
 
-      {/* ── Séparateur ── */}
-      {entry.players.length > 0 && <div className="border-t border-border" />}
-
-      {/* ── Terrain + Compo ── */}
-      {entry.players.length > 0 && (
+      {/* ── Lineup ── */}
+      <div className="border-t border-border" />
+      {lineupLoading ? (
+        <div className="flex justify-center py-4"><Spinner className="h-5 w-5" /></div>
+      ) : lineup && lineup.players.length > 0 ? (
         <LineupSection
-          players={entry.players}
-          formation={activeTactic?.formation ?? entry.team.formation}
-          formationLabel={activeTactic?.formationLabel}
-          lineup={activeTactic?.lineup}
-          tokenPositions={activeTactic?.tokenPositions}
-          onPlayerClick={onPlayerClick}
+          players={lineup.players}
+          formation={lineup.formation}
+          formationLabel={lineup.formationLabel}
+          lineup={lineup.lineup}
+          tokenPositions={lineup.tokenPositions}
         />
+      ) : (
+        <p className="text-xs text-muted text-center py-2">Aucun joueur enregistré.</p>
       )}
     </div>
   );
@@ -875,11 +911,13 @@ function ExpandedTeamDetail({ entry, onPlayerClick }: { entry: TeamRankEntry; on
 
 // ─── Team ranking sub-component ───────────────────────────────────────────────
 
-function TeamRanking({ entries, onPlayerClick, continentFilter, onContinentFilter }: {
+function TeamRanking({ entries, continentFilter, onContinentFilter, pagination, pageLoading, onPageChange }: {
   entries: TeamRankEntry[];
-  onPlayerClick: (p: Player) => void;
   continentFilter: Continent | 'all';
   onContinentFilter: (c: Continent | 'all') => void;
+  pagination: { page: number; per_page: number; total: number; pages: number };
+  pageLoading: boolean;
+  onPageChange: (page: number) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -895,8 +933,8 @@ function TeamRanking({ entries, onPlayerClick, continentFilter, onContinentFilte
         return conts.includes(continentFilter);
       });
 
-  // Re-rank after filter
-  const ranked = filtered.map((e, idx) => ({ ...e, rank: idx + 1 }));
+  const rankOffset = (pagination.page - 1) * pagination.per_page;
+  const ranked = filtered.map((e, idx) => ({ ...e, rank: rankOffset + idx + 1 }));
 
   if (entries.length === 0) {
     return (
@@ -998,7 +1036,7 @@ function TeamRanking({ entries, onPlayerClick, continentFilter, onContinentFilte
                   <tr key={`${e.team.id}-detail`} className="border-t border-border bg-bg/30">
                     <td />
                     <td colSpan={7} className="px-3 py-4">
-                      <ExpandedTeamDetail entry={e} onPlayerClick={onPlayerClick} />
+                      <ExpandedTeamDetail entry={e} />
                     </td>
                   </tr>
                 )}
@@ -1008,6 +1046,41 @@ function TeamRanking({ entries, onPlayerClick, continentFilter, onContinentFilte
         </tbody>
       </table>
     </div>
+
+    {/* Pagination */}
+    {pagination.pages > 1 && (
+      <div className="flex items-center justify-center gap-2 pt-2">
+        <button
+          onClick={() => onPageChange(pagination.page - 1)}
+          disabled={pagination.page <= 1 || pageLoading}
+          className="px-3 py-1.5 rounded-md border border-border text-sm text-muted hover:text-text disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          ←
+        </button>
+        {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
+          <button
+            key={p}
+            onClick={() => onPageChange(p)}
+            disabled={pageLoading}
+            className={`w-8 h-8 rounded-md border text-sm transition-colors disabled:opacity-40 ${
+              p === pagination.page
+                ? 'border-accent bg-accent/10 text-accent font-bold'
+                : 'border-border text-muted hover:text-text'
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+        <button
+          onClick={() => onPageChange(pagination.page + 1)}
+          disabled={pagination.page >= pagination.pages || pageLoading}
+          className="px-3 py-1.5 rounded-md border border-border text-sm text-muted hover:text-text disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          →
+        </button>
+        {pageLoading && <span className="text-xs text-muted ml-1">Chargement…</span>}
+      </div>
+    )}
     </div>
   );
 }

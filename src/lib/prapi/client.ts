@@ -27,7 +27,7 @@ export const prapi = {
   del: <T>(path: string, token: string | null) => request<T>('DELETE', path, token),
 
   /** CMF rankings computed server-side — no auth required. */
-  rankings: () =>
+  rankings: (page = 1, perPage = 100) =>
     request<{
       teams: {
         team: import('@/lib/types').Team;
@@ -46,9 +46,33 @@ export const prapi = {
         overall: number;
         teamSlug: string;
         teamName: string;
-        teamFlag: string | null;
       }[];
-    }>('GET', '/rankings', null),
+      pagination: { page: number; per_page: number; total: number; pages: number };
+    }>('GET', `/rankings?page=${page}&per_page=${perPage}`, null),
+
+  /** Top players paginated — no auth required. */
+  rankingsPlayers: (page = 1, perPage = 100, position?: string) => {
+    const qs = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    if (position) qs.set('position', position);
+    return request<{
+      players: {
+        id: string; firstName: string; lastName: string;
+        position: string; overall: number;
+        teamSlug: string; teamName: string; teamFlag: string | null; culture: string | null;
+      }[];
+      pagination: { page: number; per_page: number; total: number; pages: number };
+    }>('GET', `/rankings/players?${qs}`, null);
+  },
+
+  /** Players + formation for one team — for expanded ranking detail. No auth required. */
+  rankingsTeamLineup: (slug: string) =>
+    request<{
+      players: import('@/lib/types').Player[];
+      formation: import('@/lib/types').Formation;
+      formationLabel?: string;
+      lineup?: string[];
+      tokenPositions?: Record<string, { x: number; y: number }>;
+    }>('GET', `/rankings/teams/${slug}/lineup`, null),
 
   /** Exchange a Discord access_token for a FootSim JWT. */
   exchangeDiscordToken: (discordToken: string) =>
