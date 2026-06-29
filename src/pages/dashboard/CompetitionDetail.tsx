@@ -64,7 +64,7 @@ export default function CompetitionDetail() {
   const [knockoutDraw, setKnockoutDraw] = useState<DrawResult | null>(null);
   const [lpmDraw, setLpmDraw] = useState<LPMPair[] | null>(null);
   const [roundDraw, setRoundDraw] = useState<{ round: number; pairs: LPMPair[]; isScheduleDraw?: boolean } | null>(null);
-  const [preMatchModal, setPreMatchModal] = useState<{ matchId: string; home: Team; away: Team } | null>(null);
+  const [preMatchModal, setPreMatchModal] = useState<{ matchId: string; home: Team; away: Team; phase?: string } | null>(null);
 
   useEffect(() => {
     if (!id) { setLoading(false); return; }
@@ -411,11 +411,27 @@ export default function CompetitionDetail() {
     if (!confirm(`Supprimer « ${current.name} » ? Cette action est irréversible.`)) return;
     setDeleting(true);
     try {
-      const matchIds = current.matches.map((m) => m.id).filter(Boolean) as string[];
+      const matchIds = new Set(current.matches.map((m) => m.id).filter(Boolean) as string[]);
       const matchBk = new PrApiMatchBackend(effectivePat);
+      const teamBk = new PrApiTeamBackend(effectivePat);
+      const teamSnap = current.teamSnapshot ?? {};
+
+      // Remove competition match entries from recentMatches of all participant teams
+      await Promise.all(
+        current.teamIds.map(async (tid) => {
+          const slug = teamSnap[tid]?.slug;
+          if (!slug) return;
+          const res = await teamBk.loadTeam(slug, '');
+          if (!res) return;
+          const filtered = (res.team.recentMatches ?? []).filter((r) => !matchIds.has(r.matchId));
+          if (filtered.length !== (res.team.recentMatches ?? []).length) {
+            await teamBk.saveTeam({ ...res.team, recentMatches: filtered }, res.players);
+          }
+        }),
+      );
 
       await Promise.all([
-        matchBk.deleteMatchesBulk(matchIds),
+        matchBk.deleteMatchesBulk([...matchIds]),
         remove(current.id, '', effectivePat),
       ]);
       navigate(backTo);
@@ -512,10 +528,10 @@ export default function CompetitionDetail() {
     const home = teamMap[m.homeTeamId];
     const away = teamMap[m.awayTeamId];
     if (!home || !away) return;
-    setPreMatchModal({ matchId, home, away });
+    setPreMatchModal({ matchId, home, away, phase: m.phase });
   }
 
-  function launchMatch(matchId: string, corruption: CorruptionDeal | null, tactics?: { homeId?: string; awayId?: string }) {
+  function launchMatch(matchId: string, corruption: CorruptionDeal | null, tactics?: { homeId?: string; awayId?: string }, countForStats?: boolean) {
     if (!current) return;
     if (corruption) {
       sessionStorage.setItem(`footsim.corruption.${matchId}`, JSON.stringify(corruption));
@@ -527,6 +543,7 @@ export default function CompetitionDetail() {
     } else {
       sessionStorage.removeItem(`footsim.tactics.${matchId}`);
     }
+    sessionStorage.setItem(`footsim.countForStats.${matchId}`, JSON.stringify(countForStats ?? true));
     setPreMatchModal(null);
     navigate(`/competition/${current.id}/match/${matchId}`);
   }
@@ -964,7 +981,8 @@ export default function CompetitionDetail() {
         <PreMatchModal
           home={preMatchModal.home}
           away={preMatchModal.away}
-          onConfirm={(corruption, tactics) => launchMatch(preMatchModal.matchId, corruption, tactics)}
+          defaultCountForStats={preMatchModal.phase !== '3rd'}
+          onConfirm={(corruption, tactics, countForStats) => launchMatch(preMatchModal.matchId, corruption, tactics, countForStats)}
           onCancel={() => setPreMatchModal(null)}
         />
       )}

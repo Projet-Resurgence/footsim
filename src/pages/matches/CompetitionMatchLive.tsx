@@ -175,6 +175,10 @@ export default function CompetitionMatchLive() {
           }
         }
 
+        const countForStatsRaw = sessionStorage.getItem(`footsim.countForStats.${mid}`);
+        const countForStats = countForStatsRaw !== null ? JSON.parse(countForStatsRaw) as boolean : true;
+        sessionStorage.removeItem(`footsim.countForStats.${mid}`);
+
         const input: MatchInput = {
           matchId: mid,
           home: {
@@ -211,6 +215,7 @@ export default function CompetitionMatchLive() {
           rules: matchRules,
           corruption,
           leg1Score,
+          countForStats,
         };
         startMatch(input);
       } catch (err) {
@@ -942,8 +947,8 @@ export default function CompetitionMatchLive() {
         const teamSnap = snap!.teamSnapshot ?? {};
         const backend = new PrApiTeamBackend(effectivePat);
 
-        // Sync recentMatches sur les 2 équipes du match
-        const thisMatch = updated.matches.find((m) => m.id === matchId);
+        // Sync recentMatches sur les 2 équipes du match (seulement si coché)
+        const thisMatch = matchInput?.countForStats ? updated.matches.find((m) => m.id === matchId) : undefined;
         if (thisMatch?.result && thisMatch.homeTeamId && thisMatch.awayTeamId) {
           const homeId = thisMatch.homeTeamId;
           const awayId = thisMatch.awayTeamId;

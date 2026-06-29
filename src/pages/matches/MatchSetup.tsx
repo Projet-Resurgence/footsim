@@ -37,6 +37,7 @@ export default function MatchSetup() {
   const [speed, setSpeed] = useState<Speed>('1');
   const [rules, setRules] = useState<MatchRules>(DEFAULT_RULES);
   const [corruption, setCorruption] = useState<CorruptionDeal | null>(null);
+  const [countForStats, setCountForStats] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -114,6 +115,7 @@ export default function MatchSetup() {
         speed,
         rules,
         corruption: corruption ?? undefined,
+        countForStats,
       });
       navigate(`/match/${matchId}`);
     } catch (err) {
@@ -232,6 +234,18 @@ export default function MatchSetup() {
         deal={corruption}
         onDeal={setCorruption}
       />
+
+      <section className="rounded-lg border border-border bg-surface p-5">
+        <label className="flex items-center gap-3 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={countForStats}
+            onChange={(e) => setCountForStats(e.target.checked)}
+            className="h-4 w-4 rounded border-border"
+          />
+          Compter ce match dans l'historique et le classement CMF
+        </label>
+      </section>
 
       <div className="flex items-center gap-3">
         <Button onClick={launch} size="lg" disabled={busy}>

@@ -102,7 +102,7 @@ export default function MatchLive() {
     if (!finished || !state || !input || savedRef.current) return;
     savedRef.current = true;
 
-    if (effectivePat) {
+    if (effectivePat && input.countForStats) {
       const playedAt = new Date().toISOString();
 
       // Save full match record

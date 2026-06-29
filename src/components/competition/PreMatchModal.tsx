@@ -9,16 +9,18 @@ import { loadLocalSavedTactics } from '@/lib/localTactics';
 type Props = {
   home: Team;
   away: Team;
-  onConfirm: (corruption: CorruptionDeal | null, tactics?: { homeId?: string; awayId?: string }) => void;
+  defaultCountForStats?: boolean;
+  onConfirm: (corruption: CorruptionDeal | null, tactics?: { homeId?: string; awayId?: string }, countForStats?: boolean) => void;
   onCancel: () => void;
 };
 
-export function PreMatchModal({ home, away, onConfirm, onCancel }: Props) {
+export function PreMatchModal({ home, away, defaultCountForStats = true, onConfirm, onCancel }: Props) {
   const [corruption, setCorruption] = useState<CorruptionDeal | null>(null);
   const [homeTactics, setHomeTactics] = useState<SavedTactic[]>([]);
   const [awayTactics, setAwayTactics] = useState<SavedTactic[]>([]);
   const [homeTacticId, setHomeTacticId] = useState<string>('');
   const [awayTacticId, setAwayTacticId] = useState<string>('');
+  const [countForStats, setCountForStats] = useState(defaultCountForStats);
 
   useEffect(() => {
     const h = loadLocalSavedTactics(home.id);
@@ -78,13 +80,23 @@ export function PreMatchModal({ home, away, onConfirm, onCancel }: Props) {
             onDeal={setCorruption}
           />
 
+          <label className="flex items-center gap-3 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={countForStats}
+              onChange={(e) => setCountForStats(e.target.checked)}
+              className="h-4 w-4 rounded border-border"
+            />
+            Compter dans l'historique et le classement CMF
+          </label>
+
           <div className="flex gap-3">
             <Button
               size="sm"
               onClick={() => onConfirm(corruption, {
                 homeId: homeTacticId || undefined,
                 awayId: awayTacticId || undefined,
-              })}
+              }, countForStats)}
             >
               Lancer le match
             </Button>

@@ -92,6 +92,8 @@ export type MatchInput = {
   /** For two-legged ties: leg 1 score so ET is only triggered on aggregate draw */
   leg1Score?: { home: number; away: number };
   /** coaches are taken from team.coach — passed explicitly here for worker use */
+  /** If true, result is saved and counts toward recentMatches / CMF rankings */
+  countForStats?: boolean;
 };
 
 export type MatchState = {
