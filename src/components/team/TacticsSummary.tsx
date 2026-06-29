@@ -216,7 +216,10 @@ function TacticCard({
             <span className="text-xs text-muted truncate">{styleDisplay}</span>
           </div>
         </div>
-        <button onClick={onDelete} className="text-muted hover:text-danger text-xs shrink-0 transition-colors mt-0.5">✕</button>
+        <button
+          onClick={() => confirm(`Supprimer la tactique « ${tactic.name} » ?`) && onDelete()}
+          className="text-muted hover:text-danger text-xs shrink-0 transition-colors mt-0.5"
+        >✕</button>
       </div>
 
       {/* Minimap + Lineup */}

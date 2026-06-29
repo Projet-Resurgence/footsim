@@ -220,6 +220,7 @@ async function applyNewStrength(strength: number) {
       toast('success', 'Tactique mise à jour.');
     } else {
       const name = `Tactique ${savedTactics.length + 1}`;
+      if (!confirm(`Sauvegarder cette tactique sous le nom « ${name} » ?`)) return;
       const newT: SavedTactic = { ...tactics, id: crypto.randomUUID(), name };
       const next = [...savedTactics, newT];
       mutateSavedTactics(next, newT.id);
