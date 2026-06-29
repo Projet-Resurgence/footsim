@@ -416,21 +416,18 @@ export default function CompetitionDetail() {
       const teamBk = new PrApiTeamBackend(effectivePat);
       const teamSnap = current.teamSnapshot ?? {};
 
-      // Remove competition match entries from recentMatches of all participant teams
-      await Promise.all(
-        current.teamIds.map(async (tid) => {
-          const slug = teamSnap[tid]?.slug;
-          if (!slug) return;
-          const res = await teamBk.loadTeam(slug, '');
-          if (!res) return;
-          const filtered = (res.team.recentMatches ?? []).filter((r) => !matchIds.has(r.matchId));
-          if (filtered.length !== (res.team.recentMatches ?? []).length) {
-            await teamBk.saveTeam({ ...res.team, recentMatches: filtered }, res.players);
-          }
-        }),
-      );
+      const slugs = current.teamIds.map((tid) => teamSnap[tid]?.slug).filter(Boolean) as string[];
+      const allTeams = slugs.length > 0 ? await teamBk.bulkTeams(slugs) : [];
+      const toUpdate = allTeams
+        .map(({ team, players }) => {
+          const filtered = (team.recentMatches ?? []).filter((r) => !matchIds.has(r.matchId));
+          if (filtered.length === (team.recentMatches ?? []).length) return null;
+          return { slug: team.slug, team: { ...team, recentMatches: filtered }, players };
+        })
+        .filter(Boolean) as { slug: string; team: typeof allTeams[0]['team']; players: typeof allTeams[0]['players'] }[];
 
       await Promise.all([
+        toUpdate.length > 0 ? teamBk.bulkUpdateTeams(toUpdate) : Promise.resolve(),
         matchBk.deleteMatchesBulk([...matchIds]),
         remove(current.id, '', effectivePat),
       ]);
