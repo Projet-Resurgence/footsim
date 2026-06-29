@@ -31,6 +31,11 @@ export class PrApiTeamBackend implements ITeamBackend {
     await prapi.put(`/teams/${team.slug}`, this.token, { team: { ...team, flag: flagUrl }, players });
   }
 
+  async bulkUpdateTeams(items: { slug: string; team: Team; players: Player[] }[]): Promise<void> {
+    if (!items.length) return;
+    await prapi.post('/teams/bulk-update', this.token, { teams: items });
+  }
+
   async deleteTeam(slug: string, _ownerId: string): Promise<void> {
     await prapi.del(`/teams/${slug}`, this.token);
   }

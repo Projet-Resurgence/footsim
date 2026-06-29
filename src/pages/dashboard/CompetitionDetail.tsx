@@ -417,23 +417,24 @@ export default function CompetitionDetail() {
       const teamBk = teamBackend();
       const matchBk = new PrApiMatchBackend(effectivePat);
 
-      // Delete all match records in a single bulk request
+      // Delete all match records in one bulk request
       await matchBk.deleteMatchesBulk(matchIds);
 
-      // Strip compHistory + recentMatches from each team
+      // Fetch all teams once, then strip compHistory + recentMatches in one bulk-update request
       const slugsDel = current.teamIds.map((tid) => snapshot[tid]?.slug).filter(Boolean) as string[];
       const bulkDel = await teamBk.bulkTeams(slugsDel);
-      const bySlugDel = new Map(bulkDel.map((r) => [r.team.slug, r]));
-      const delTasks = slugsDel.map((slug) => async () => {
-        const res = bySlugDel.get(slug);
-        if (!res) return;
-        const compHistory = (res.team.compHistory ?? []).filter((e) => e.compId !== current.id);
-        const recentMatches = (res.team.recentMatches ?? []).filter((r) => !compMatchIds.has(r.matchId));
-        await teamBk.saveTeam({ ...res.team, compHistory, recentMatches }, res.players);
-      });
-      for (let i = 0; i < delTasks.length; i += 5) {
-        await Promise.all(delTasks.slice(i, i + 5).map((fn) => fn()));
-      }
+      const updateItems = bulkDel
+        .map((r) => ({
+          slug: r.team.slug,
+          team: {
+            ...r.team,
+            compHistory: (r.team.compHistory ?? []).filter((e) => e.compId !== current.id),
+            recentMatches: (r.team.recentMatches ?? []).filter((rm) => !compMatchIds.has(rm.matchId)),
+          },
+          players: r.players,
+        }))
+        .filter((item) => !!item.slug);
+      await teamBk.bulkUpdateTeams(updateItems);
 
       // Delete competition from DB
       await remove(current.id, '', effectivePat);
