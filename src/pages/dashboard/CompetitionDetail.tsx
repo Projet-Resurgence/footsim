@@ -289,7 +289,7 @@ export default function CompetitionDetail() {
           cmfPoints: pts,
           compKind: current.kind,
         };
-        const recentMatches = [...(res.team.recentMatches ?? []), bonusEntry].slice(-20);
+        const recentMatches = [...(res.team.recentMatches ?? []), bonusEntry];
         await backend.saveTeam({ ...res.team, recentMatches }, res.players);
         distributed++;
       });
@@ -382,7 +382,7 @@ export default function CompetitionDetail() {
               cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: current.kind, compScope: current.scope, compImportance: current.importance, participantCount: current.teamIds.length }),
             });
           }
-          const mergedRecent = [...existingOther, ...newEntries].slice(-20);
+          const mergedRecent = [...existingOther, ...newEntries];
 
           // injuries/suspensions from competition state
           const teamInjuries = (current.injuries ?? []).filter((i) => i.teamId === tid);

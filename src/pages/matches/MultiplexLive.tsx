@@ -916,7 +916,7 @@ export default function MultiplexLive() {
           teamBk.loadTeam(slug, '').then((res) => {
             if (!res) return;
             const existing = (res.team.recentMatches ?? []).filter((r) => r.matchId !== slot.compMatchId);
-            const merged = [...existing, summary].slice(-20);
+            const merged = [...existing, summary];
             teamBk.saveTeam({ ...res.team, recentMatches: merged }, res.players).catch(() => {});
           }).catch(() => {});
         }
