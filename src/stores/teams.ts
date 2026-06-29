@@ -49,7 +49,8 @@ export const useTeams = create<State>((set, get) => ({
       set({ loading: true, error: null });
       try {
         if (prApiToken) {
-          const teams = await new PrApiTeamBackend(prApiToken).listTeams(ownerId);
+          const raw = await new PrApiTeamBackend(prApiToken).listTeams(ownerId);
+          const teams = raw.map((t) => t.publishedAt ? t : { ...t, publishedAt: new Date(0).toISOString() });
           set({ teams, loading: false, _lastFetchedAt: Date.now(), _inflight: null });
         } else if (pat) {
           // Merge: IDB local (unpublished) + GitHub (published source of truth)
