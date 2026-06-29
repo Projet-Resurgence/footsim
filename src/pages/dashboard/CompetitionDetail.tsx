@@ -411,33 +411,13 @@ export default function CompetitionDetail() {
     if (!confirm(`Supprimer « ${current.name} » ? Cette action est irréversible.`)) return;
     setDeleting(true);
     try {
-      const snapshot = current.teamSnapshot ?? {};
       const matchIds = current.matches.map((m) => m.id).filter(Boolean) as string[];
-      const compMatchIds = new Set(matchIds);
-      const teamBk = teamBackend();
       const matchBk = new PrApiMatchBackend(effectivePat);
 
-      // Delete all match records in one bulk request
-      await matchBk.deleteMatchesBulk(matchIds);
-
-      // Fetch all teams once, then strip compHistory + recentMatches in one bulk-update request
-      const slugsDel = current.teamIds.map((tid) => snapshot[tid]?.slug).filter(Boolean) as string[];
-      const bulkDel = await teamBk.bulkTeams(slugsDel);
-      const updateItems = bulkDel
-        .map((r) => ({
-          slug: r.team.slug,
-          team: {
-            ...r.team,
-            compHistory: (r.team.compHistory ?? []).filter((e) => e.compId !== current.id),
-            recentMatches: (r.team.recentMatches ?? []).filter((rm) => !compMatchIds.has(rm.matchId)),
-          },
-          players: r.players,
-        }))
-        .filter((item) => !!item.slug);
-      await teamBk.bulkUpdateTeams(updateItems);
-
-      // Delete competition from DB
-      await remove(current.id, '', effectivePat);
+      await Promise.all([
+        matchBk.deleteMatchesBulk(matchIds),
+        remove(current.id, '', effectivePat),
+      ]);
       navigate(backTo);
     } catch (err) {
       toast('error', String(err));
