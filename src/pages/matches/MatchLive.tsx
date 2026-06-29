@@ -151,7 +151,7 @@ export default function MatchLive() {
         backend.loadTeam(myTeam.slug, ownerId).then((res) => {
           if (!res) return;
           const existing = (res.team.recentMatches ?? []).filter((r) => r.matchId !== matchId);
-          const merged = [...existing, summary].slice(-20);
+          const merged = [...existing, summary];
           backend.saveTeam({ ...res.team, recentMatches: merged }, res.players).catch(() => {});
         }).catch(() => {});
       }

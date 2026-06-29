@@ -212,8 +212,7 @@ def migrate_teams(cur, dry_run: bool):
 
         players = gh_read_json(f"data/teams/{slug}/players.json") or []
 
-        # recentMatches saved separately in matches — strip to keep team row lean
-        team_clean = {k: v for k, v in team.items() if k != "recentMatches"}
+        team_clean = dict(team)
 
         try:
             upsert_team(cur, slug, team_clean, players, dry_run)
@@ -295,9 +294,10 @@ def migrate_leagues(cur, dry_run: bool):
 
 
 def migrate_match_history(cur, dry_run: bool):
-    """Extract recentMatches embedded in team.json and save full match files if they exist."""
-    print("\n── Match history (embedded in teams) ───────────────")
+    """Collect all recentMatches summaries from every team.json and upsert into footsim_matches."""
+    print("\n── Match history (from team recentMatches) ─────────")
     team_dirs = gh_list_dir("data/teams")
+    seen: set[str] = set()
     ok = skip = 0
 
     for entry in team_dirs:
@@ -310,20 +310,17 @@ def migrate_match_history(cur, dry_run: bool):
 
         for rm in team["recentMatches"]:
             match_id = rm.get("matchId", "")
-            if not match_id:
-                continue
-            # Check if full match file exists
-            match_data = gh_read_json(f"data/matches/{match_id}.json")
-            if match_data:
-                try:
-                    upsert_match(cur, match_id, match_data, dry_run)
-                    ok += 1
-                except Exception:
-                    pass
-            else:
+            if not match_id or match_id in seen:
                 skip += 1
+                continue
+            seen.add(match_id)
+            try:
+                upsert_match(cur, match_id, rm, dry_run)
+                ok += 1
+            except Exception as e:
+                print(f"  ERROR {match_id}: {e}")
 
-    print(f"Matches: {ok} upserted, {skip} no file (summary only in team.json)")
+    print(f"Matches: {ok} upserted, {skip} skipped (duplicates or no id)")
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
