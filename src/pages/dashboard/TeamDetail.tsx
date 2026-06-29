@@ -19,6 +19,7 @@ import { FlagUpload } from '@/components/team/FlagUpload';
 import { Input } from '@/components/ui/Input';
 import { useTeams } from '@/stores/teams';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
+import { useSession } from '@/stores/session';
 import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
 import type { CultureWeight } from '@/lib/gen/names';
 import { pickName, pickNameMixed } from '@/lib/gen/names';
@@ -29,6 +30,7 @@ const ADD_COUNTS = [100, 200, 500, 1000];
 export default function TeamDetail() {
   const { slug = '' } = useParams();
   const { ownerId, prApiToken: effectivePat } = useBackendArgs();
+  const isAdmin = useSession((s) => s.isAdmin());
   const fetchTeam = useTeams((s) => s.fetchTeam);
   const saveTeam = useTeams((s) => s.saveTeam);
   const removeTeam = useTeams((s) => s.removeTeam);
@@ -630,7 +632,11 @@ async function applyNewStrength(strength: number) {
       )}
 
       {tab === 'palmares' && (
-        <PalmaresTab compHistory={team.compHistory ?? []} />
+        <PalmaresTab
+          compHistory={team.compHistory ?? []}
+          isAdmin={isAdmin}
+          onRemoveEntry={(compId) => mutate({ team: { ...team, compHistory: (team.compHistory ?? []).filter((e) => e.compId !== compId) }, players })}
+        />
       )}
 
       {tab === 'historique' && (
@@ -1362,7 +1368,11 @@ const RESULT_COLOR: Record<CompHistoryEntry['result'], string> = {
   participant: 'text-muted border-border bg-surface',
 };
 
-function PalmaresTab({ compHistory }: { compHistory: CompHistoryEntry[] }) {
+function PalmaresTab({ compHistory, isAdmin, onRemoveEntry }: {
+  compHistory: CompHistoryEntry[];
+  isAdmin?: boolean;
+  onRemoveEntry?: (compId: string) => void;
+}) {
   if (compHistory.length === 0) {
     return (
       <div className="py-16 text-center text-muted text-sm">
@@ -1371,7 +1381,6 @@ function PalmaresTab({ compHistory }: { compHistory: CompHistoryEntry[] }) {
     );
   }
 
-  // Group by competition name to count editions
   const byName = compHistory.reduce<Record<string, CompHistoryEntry[]>>((acc, e) => {
     (acc[e.compName] ??= []).push(e);
     return acc;
@@ -1424,9 +1433,20 @@ function PalmaresTab({ compHistory }: { compHistory: CompHistoryEntry[] }) {
                 {sorted.map((e, i) => (
                   <div key={i} className="flex items-center justify-between gap-3 text-sm">
                     <span className="text-muted text-xs">{e.year ?? '—'}</span>
-                    <span className={`rounded border px-2 py-0.5 text-xs font-medium ${RESULT_COLOR[e.result]}`}>
-                      {RESULT_LABEL[e.result]}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded border px-2 py-0.5 text-xs font-medium ${RESULT_COLOR[e.result]}`}>
+                        {RESULT_LABEL[e.result]}
+                      </span>
+                      {isAdmin && onRemoveEntry && (
+                        <button
+                          onClick={() => onRemoveEntry(e.compId)}
+                          className="text-muted/40 hover:text-danger transition-colors text-xs"
+                          title="Supprimer cette entrée"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
