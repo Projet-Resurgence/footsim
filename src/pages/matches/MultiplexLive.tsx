@@ -24,7 +24,6 @@ import { PenaltyShootout } from '@/components/match/PenaltyShootout';
 import type { MatchInput, MatchState, Speed, CorruptionDeal } from '@/lib/sim/types';
 import type { SavedTactic, TacticStyle, Team, Player } from '@/lib/types';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
-import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
 import type { StoredMatch } from '@/lib/prapi/matchBackend';
 import type { RecentMatchSummary } from '@/lib/github/matches';
 import { calcCmfMatchPoints } from '@/lib/github/matches';
@@ -35,6 +34,7 @@ export default function MultiplexLive() {
 
   const load = useCompetition((s) => s.load);
   const save = useCompetition((s) => s.save);
+  const roundComplete = useCompetition((s) => s.roundComplete);
   const setCurrent = useCompetition((s) => s.setCurrent);
   const current = useCompetition((s) => s.current);
   const currentRef = useRef(current);
@@ -848,17 +848,14 @@ export default function MultiplexLive() {
     setPendingUpdate(nextState);
     if (effectivePat) {
       setSaving(true);
-      // Single sequential pipeline (not 3 independent fire-and-forget chains): the
-      // auto-simulate effect navigates to the next round/leg as soon as `saving` clears,
-      // so every network call for this round must resolve first. Otherwise barrage legs
-      // (which auto-chain leg1 → leg2 within seconds) overlap their request bursts and
-      // trip nginx's per-IP rate limit (10r/s burst 20), which the browser misreports as CORS.
+      // Single round-complete request (not 3 separate writes): the auto-simulate effect
+      // navigates to the next round/leg as soon as `saving` clears, and barrage legs
+      // auto-chain leg1 → leg2 within seconds. Firing save-competition + bulk-save-matches +
+      // bulk-update-teams as 3 requests per round overlapped their bursts and tripped nginx's
+      // per-IP rate limit (10r/s burst 20), which the browser misreports as CORS. The
+      // bulkTeams GET below stays separate — it's a read needed to compute the merge, not a write.
       (async () => {
         try {
-          await save(nextState, '', effectivePat);
-          setSaveFailed(false);
-
-          const matchBk = new PrApiMatchBackend(effectivePat);
           const teamBk = new PrApiTeamBackend(effectivePat);
           const teamSnap = current.teamSnapshot ?? {};
 
@@ -880,7 +877,6 @@ export default function MultiplexLive() {
               playedAt: compMatch.simulatedAt ?? new Date().toISOString(),
             });
           }
-          await matchBk.bulkSaveMatches(storedMatches);
 
           // Bulk-fetch all team data to update recentMatches — one request instead of N×2
           const recentMatchUpdates: Array<{ slug: string; homeId: string; awayId: string; isHome: boolean; slot: typeof slots[number]; compMatch: CompMatch }> = [];
@@ -896,6 +892,7 @@ export default function MultiplexLive() {
             if (awaySlug) recentMatchUpdates.push({ slug: awaySlug, homeId, awayId, isHome: false, slot, compMatch });
           }
 
+          let teamItems: { slug: string; team: Team; players: Player[] }[] = [];
           if (recentMatchUpdates.length > 0) {
             const uniqueSlugs2 = [...new Set(recentMatchUpdates.map((u) => u.slug))];
             const bulkResults = await teamBk.bulkTeams(uniqueSlugs2);
@@ -941,8 +938,11 @@ export default function MultiplexLive() {
               const merged = [...existing, summary];
               bulkItems.set(update.slug, { slug: update.slug, team: { ...base, recentMatches: merged }, players: res.players });
             }
-            await teamBk.bulkUpdateTeams([...bulkItems.values()]);
+            teamItems = [...bulkItems.values()];
           }
+
+          await roundComplete(nextState, storedMatches, teamItems, effectivePat);
+          setSaveFailed(false);
         } catch (err) {
           setSaveFailed(true);
           toast('error', `Échec sauvegarde en base : ${String(err)}. Relance non automatique pour éviter une boucle.`);

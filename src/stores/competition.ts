@@ -8,6 +8,8 @@ import {
   invalidateIndexCache,
 } from '@/lib/github/competitions';
 import { PrApiCompetitionBackend } from '@/lib/prapi/competitionBackend';
+import type { StoredMatch } from '@/lib/prapi/matchBackend';
+import type { Player, Team } from '@/lib/types';
 
 function makePrBackend(prApiToken: string | null) {
   return prApiToken ? new PrApiCompetitionBackend(prApiToken) : null;
@@ -45,6 +47,38 @@ function lsDelete(id: string) {
   } catch {}
 }
 
+// After a successful backend save, only mark dirty=false if the store still holds this
+// exact version. Never overwrite local state — saveLocal/setCurrent are always more recent.
+function markSavedAndIndex(
+  set: (partial: Partial<State>) => void,
+  get: () => State,
+  competition: Competition,
+) {
+  const storeCurrent = get().current;
+  const isSameVersion = storeCurrent?.id === competition.id && storeCurrent.currentRound === competition.currentRound;
+  if (isSameVersion) {
+    set({ dirty: false });
+  }
+  const summary: CompetitionSummary = {
+    id: competition.id,
+    name: competition.name,
+    format: competition.format,
+    status: competition.status,
+    teamCount: competition.teamIds.length,
+    createdAt: competition.createdAt,
+    winner: competition.winner,
+    year: competition.year,
+    kind: competition.kind,
+    scope: competition.scope,
+    teamIds: competition.teamIds,
+  };
+  const list = get().summaries;
+  const next = list.some((c) => c.id === competition.id)
+    ? list.map((c) => (c.id === competition.id ? summary : c))
+    : [summary, ...list];
+  set({ summaries: next });
+}
+
 type State = {
   summaries: CompetitionSummary[];
   current: Competition | null;
@@ -53,6 +87,12 @@ type State = {
   refresh: (token: string, prApiToken?: string | null) => Promise<void>;
   load: (id: string, token: string, prApiToken?: string | null) => Promise<Competition | null>;
   save: (competition: Competition, token: string, prApiToken?: string | null) => Promise<void>;
+  roundComplete: (
+    competition: Competition,
+    matches: StoredMatch[],
+    teams: { slug: string; team: Team; players: Player[] }[],
+    prApiToken: string,
+  ) => Promise<void>;
   remove: (id: string, token: string, prApiToken?: string | null) => Promise<void>;
   setCurrent: (c: Competition | null) => void;
   saveLocal: (competition: Competition) => void;
@@ -117,31 +157,16 @@ export const useCompetition = create<State>((set, get) => ({
     } else {
       await saveCompetition(competition, token);
     }
-    // After GitHub save, only mark dirty=false if the store still holds this exact version.
-    // Never overwrite local state — saveLocal/setCurrent are always more recent.
-    const storeCurrent = get().current;
-    const isSameVersion = storeCurrent?.id === competition.id && storeCurrent.currentRound === competition.currentRound;
-    if (isSameVersion) {
-      set({ dirty: false });
-    }
-    const summary: CompetitionSummary = {
-      id: competition.id,
-      name: competition.name,
-      format: competition.format,
-      status: competition.status,
-      teamCount: competition.teamIds.length,
-      createdAt: competition.createdAt,
-      winner: competition.winner,
-      year: competition.year,
-      kind: competition.kind,
-      scope: competition.scope,
-      teamIds: competition.teamIds,
-    };
-    const list = get().summaries;
-    const next = list.some((c) => c.id === competition.id)
-      ? list.map((c) => (c.id === competition.id ? summary : c))
-      : [summary, ...list];
-    set({ summaries: next });
+    markSavedAndIndex(set, get, competition);
+  },
+
+  // PR_API only: save competition + matches + teams in one request, used by barrage
+  // rounds where leg1 → leg2 auto-chains within seconds and used to burst nginx's
+  // per-IP rate limit when fired as 3-4 separate requests.
+  async roundComplete(competition, matches, teams, prApiToken) {
+    const pr = new PrApiCompetitionBackend(prApiToken);
+    await pr.roundComplete(competition, matches, teams);
+    markSavedAndIndex(set, get, competition);
   },
 
   async remove(id, token, prApiToken = null) {
