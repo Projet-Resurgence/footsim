@@ -18,6 +18,11 @@ export class PrApiMatchBackend {
     await prapi.post('/matches', this.token, { match });
   }
 
+  async bulkSaveMatches(matches: StoredMatch[]): Promise<void> {
+    if (!matches.length) return;
+    await prapi.post('/matches/bulk-save', this.token, { matches });
+  }
+
   async loadMatch(id: string): Promise<StoredMatch | null> {
     try {
       return prapi.get<StoredMatch>(`/matches/${id}`, this.token);

@@ -850,12 +850,12 @@ export default function MultiplexLive() {
       const teamBk = new PrApiTeamBackend(effectivePat);
       const teamSnap = current.teamSnapshot ?? {};
 
+      const storedMatches: StoredMatch[] = [];
       for (const slot of slots) {
         if (!slot.state || slot.state.status !== 'fulltime') continue;
         const compMatch = current.matches.find((m) => m.id === slot.compMatchId);
         if (!compMatch?.homeTeamId || !compMatch?.awayTeamId) continue;
-
-        const storedMatch: StoredMatch = {
+        storedMatches.push({
           id: slot.compMatchId,
           input: {
             home: { team: slot.home, players: slot.homePlayers },
@@ -866,9 +866,9 @@ export default function MultiplexLive() {
           home: { team: slot.home, players: slot.homePlayers },
           away: { team: slot.away, players: slot.awayPlayers },
           playedAt: compMatch.simulatedAt ?? new Date().toISOString(),
-        };
-        matchBk.saveMatch(storedMatch).catch(() => {});
+        });
       }
+      matchBk.bulkSaveMatches(storedMatches).catch(() => {});
 
       // Bulk-fetch all team data to update recentMatches — one request instead of N×2
       const recentMatchUpdates: Array<{ slug: string; homeId: string; awayId: string; isHome: boolean; slot: typeof slots[number]; compMatch: CompMatch }> = [];

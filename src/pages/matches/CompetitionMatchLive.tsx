@@ -924,13 +924,8 @@ export default function CompetitionMatchLive() {
       // Applique en mémoire + localStorage
       setCurrent(updated);
 
-      // Auto-save en DB après chaque match
+      // Auto-save en DB après chaque match (séquentiel pour éviter burst rate-limit)
       if (effectivePat) {
-        save(updated, '', effectivePat).catch(() => {
-          toast('error', 'Sauvegarde DB échouée — données en local seulement.');
-        });
-
-        // Save full match record
         const matchBk = new PrApiMatchBackend(effectivePat);
         const storedMatch: StoredMatch = {
           id: matchId!,
@@ -940,7 +935,11 @@ export default function CompetitionMatchLive() {
           away: { team: matchInput!.away.team, players: matchInput!.away.players },
           playedAt: new Date().toISOString(),
         };
-        matchBk.saveMatch(storedMatch).catch(() => {});
+        save(updated, '', effectivePat)
+          .then(() => matchBk.saveMatch(storedMatch))
+          .catch(() => {
+            toast('error', 'Sauvegarde DB échouée — données en local seulement.');
+          });
 
         const teamSnap = snap!.teamSnapshot ?? {};
         const backend = new PrApiTeamBackend(effectivePat);
