@@ -98,9 +98,17 @@ const [regenStrength, setRegenStrength] = useState(false);
   function mutate(next: { team: Team; players: Player[] }, opts?: { silent?: boolean }) {
     setData(next);
     if (effectivePat) {
-      saveTeam({ ...next.team, ownerId }, next.players, null, effectivePat).catch(() => {
-        if (!opts?.silent) toast('error', 'Échec de la sauvegarde en base.');
-      });
+      saveTeam({ ...next.team, ownerId }, next.players, null, effectivePat)
+        .then((persisted) => {
+          // Sync the server-resolved team (e.g. flag swapped from data URL to its R2 URL)
+          // back into local state, but only if nothing newer has been edited meanwhile.
+          setData((cur) => (cur && cur.team.slug === persisted.slug && cur.team.flag === next.team.flag)
+            ? { ...cur, team: { ...cur.team, flag: persisted.flag } }
+            : cur);
+        })
+        .catch(() => {
+          if (!opts?.silent) toast('error', 'Échec de la sauvegarde en base.');
+        });
     }
   }
 

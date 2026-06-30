@@ -22,7 +22,7 @@ type State = {
   _inflight: Promise<void> | null;
   refresh: (ownerId: string, pat: string | null, prApiToken?: string | null) => Promise<void>;
   refreshIfStale: (ownerId: string, pat: string | null, prApiToken?: string | null) => Promise<void>;
-  saveTeam: (team: Team, players: Player[], pat: string | null, prApiToken?: string | null) => Promise<void>;
+  saveTeam: (team: Team, players: Player[], pat: string | null, prApiToken?: string | null) => Promise<Team>;
   fetchTeam: (slug: string, ownerId: string, pat: string | null, prApiToken?: string | null) => Promise<{ team: Team; players: Player[] } | null>;
   removeTeam: (slug: string, ownerId: string, pat: string | null, prApiToken?: string | null) => Promise<void>;
 };
@@ -87,12 +87,13 @@ export const useTeams = create<State>((set, get) => ({
 
   async saveTeam(team, players, pat, prApiToken = null) {
     const backend = getBackend(prApiToken, pat);
-    await backend.saveTeam(team, players);
+    const persisted = await backend.saveTeam(team, players);
     const saved = (prApiToken || pat)
-      ? { ...team, publishedAt: new Date().toISOString() }
-      : { ...team, publishedAt: undefined };
+      ? { ...persisted, publishedAt: persisted.publishedAt ?? new Date().toISOString() }
+      : { ...persisted, publishedAt: undefined };
     const next = [...get().teams.filter((t) => t.slug !== team.slug), saved];
     set({ teams: next });
+    return saved;
   },
 
   async fetchTeam(slug, ownerId, pat, prApiToken = null) {

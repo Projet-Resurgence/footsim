@@ -927,7 +927,7 @@ export default function MultiplexLive() {
             };
             const existing = (res.team.recentMatches ?? []).filter((r) => r.matchId !== update.slot.compMatchId);
             const merged = [...existing, summary];
-            saves.push(teamBk.saveTeam({ ...res.team, recentMatches: merged }, res.players).catch(() => {}));
+            saves.push(teamBk.saveTeam({ ...res.team, recentMatches: merged }, res.players).then(() => {}).catch(() => {}));
           }
           return Promise.all(saves);
         }).catch(() => {});

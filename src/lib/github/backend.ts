@@ -13,9 +13,11 @@ export class GithubTeamBackend implements ITeamBackend {
     return loadTeam(slug, this.token);
   }
 
-  saveTeam(team: Team, players: Player[]): Promise<void> {
+  async saveTeam(team: Team, players: Player[]): Promise<Team> {
     if (!this.token) return Promise.reject(new Error('PAT requis pour sauvegarder.'));
-    return saveTeamWithRoster({ ...team, publishedAt: new Date().toISOString() }, players, this.token);
+    const savedTeam = { ...team, publishedAt: new Date().toISOString() };
+    await saveTeamWithRoster(savedTeam, players, this.token);
+    return savedTeam;
   }
 
   deleteTeam(slug: string, _ownerId: string): Promise<void> {

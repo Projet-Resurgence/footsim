@@ -78,15 +78,16 @@ export class IdbTeamBackend implements ITeamBackend {
     return { team, players: playersRow?.players ?? [] };
   }
 
-  async saveTeam(team: Team, players: Player[]): Promise<void> {
+  async saveTeam(team: Team, players: Player[]): Promise<Team> {
     const db = await this.dbPromise;
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const t = db.transaction(['teams', 'players'], 'readwrite');
       t.oncomplete = () => resolve();
       t.onerror = () => reject(t.error);
       t.objectStore('teams').put(team);
       t.objectStore('players').put({ teamSlug: team.slug, players });
     });
+    return team;
   }
 
   async deleteTeam(slug: string, ownerId: string): Promise<void> {

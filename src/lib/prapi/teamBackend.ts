@@ -22,13 +22,15 @@ export class PrApiTeamBackend implements ITeamBackend {
     }
   }
 
-  async saveTeam(team: Team, players: Player[]): Promise<void> {
+  async saveTeam(team: Team, players: Player[]): Promise<Team> {
     let flagUrl = team.flag;
     if (flagUrl && flagUrl.startsWith('data:image/')) {
       const { url } = await prapi.uploadFlag(team.slug, flagUrl, this.token);
       flagUrl = url;
     }
-    await prapi.put(`/teams/${team.slug}`, this.token, { team: { ...team, flag: flagUrl }, players });
+    const savedTeam = { ...team, flag: flagUrl };
+    await prapi.put(`/teams/${team.slug}`, this.token, { team: savedTeam, players });
+    return savedTeam;
   }
 
   async bulkUpdateTeams(items: { slug: string; team: Team; players: Player[] }[]): Promise<void> {
