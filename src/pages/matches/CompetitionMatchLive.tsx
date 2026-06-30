@@ -150,8 +150,12 @@ export default function CompetitionMatchLive() {
 
         const baseRules = rulesForPhase(comp.config, compMatch.phase);
         // Leg 1 of two-legged ties: no ET, no penalties — settled on aggregate via leg 2
-        const matchRules = (compMatch.phase === 'lpm_playoff' && compMatch.leg === 1)
-          ? { ...baseRules, extraTime: false, penalties: false }
+        const matchRules = compMatch.phase === 'lpm_playoff'
+          ? compMatch.leg === 1
+            ? { ...baseRules, extraTime: false, penalties: false }
+            : compMatch.leg === 3
+            ? { ...baseRules, extraTime: false, penalties: true }
+            : { ...baseRules, extraTime: true, penalties: true }
           : baseRules;
 
         // For two-legged ties (leg 2): find leg 1 score for aggregate-aware ET

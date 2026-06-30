@@ -468,7 +468,8 @@ export function advanceBracket(matches: CompMatch[], completedMatchId: string): 
       } else if (done.result.penalties) {
         winnerId = done.result.penalties.home > done.result.penalties.away ? done.homeTeamId : done.awayTeamId;
       } else {
-        winnerId = done.homeTeamId; // aggregate tie without penalties shouldn't happen
+        // Aggregate tie, no penalties yet — leg 3 (shootout) will decide
+        return matches;
       }
     } else {
       // No leg1 found, fall back to match result

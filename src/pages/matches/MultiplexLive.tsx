@@ -80,6 +80,8 @@ export default function MultiplexLive() {
     corruption: CorruptionDeal | null;
     homeSavedTactics: import('@/lib/types').SavedTactic[];
     awaySavedTactics: import('@/lib/types').SavedTactic[];
+    homeTacticId: string;
+    awayTacticId: string;
   };
   const [pendingInputs, setPendingInputs] = useState<PendingSlot[] | null>(null);
 
@@ -195,6 +197,8 @@ export default function MultiplexLive() {
               rules: m.phase === 'lpm_playoff'
                 ? m.leg === 1
                   ? { ...rulesForPhase(comp.config, m.phase), extraTime: false, penalties: false }
+                  : m.leg === 3
+                  ? { ...rulesForPhase(comp.config, m.phase), extraTime: false, penalties: true }
                   : { ...rulesForPhase(comp.config, m.phase), extraTime: true, penalties: true }
                 : rulesForPhase(comp.config, m.phase),
               leg1Score,
@@ -212,7 +216,7 @@ export default function MultiplexLive() {
           }));
           start(launchInputs);
         } else {
-          setPendingInputs(inputs.map((i) => ({ ...i, corruption: null, homeSavedTactics: i.homeSavedTactics ?? [], awaySavedTactics: i.awaySavedTactics ?? [] })));
+          setPendingInputs(inputs.map((i) => ({ ...i, corruption: null, homeSavedTactics: i.homeSavedTactics ?? [], awaySavedTactics: i.awaySavedTactics ?? [], homeTacticId: i.input.home.team.activeTacticId ?? '', awayTacticId: i.input.away.team.activeTacticId ?? '' })));
         }
       } catch (err) {
         toast('error', String(err));
@@ -364,7 +368,7 @@ export default function MultiplexLive() {
       : roundNum;
 
     const allDone = updatedMatches.every(
-      (m) => m.status === 'completed' || ((!m.homeTeamId && !m.awayTeamId) && m.phase !== 'lpm_playoff'),
+      (m) => m.status === 'completed' || ((!m.homeTeamId || !m.awayTeamId) && m.phase !== 'lpm_playoff' && m.phase !== 'group' && m.phase !== 'league'),
     );
     let winner: string | undefined;
     if (allDone) {
@@ -1005,19 +1009,18 @@ export default function MultiplexLive() {
                     const team = side === 'home' ? home : away;
                     const tactics = side === 'home' ? slot.homeSavedTactics : slot.awaySavedTactics;
                     const activeId = side === 'home' ? slot.input.home.team.activeTacticId : slot.input.away.team.activeTacticId;
-                    const currentTacticId = tactics.find((t) =>
-                      t.formation === (side === 'home' ? slot.input.home.formation : slot.input.away.formation) &&
-                      t.style === (side === 'home' ? slot.input.home.tacticStyle : slot.input.away.tacticStyle)
-                    )?.id ?? activeId ?? '';
+                    const selectedId = side === 'home' ? slot.homeTacticId : slot.awayTacticId;
+                    const tacticIdKey = side === 'home' ? 'homeTacticId' : 'awayTacticId';
                     return (
                       <div key={side} className="space-y-1">
                         <div className="text-[10px] uppercase tracking-widest text-muted">{team.name}</div>
                         <select
-                          value={currentTacticId}
+                          value={selectedId}
                           onChange={(e) => {
                             const tactic = tactics.find((t) => t.id === e.target.value);
                             setPendingInputs((prev) => prev ? prev.map((s, si) => si !== i ? s : {
                               ...s,
+                              [tacticIdKey]: e.target.value,
                               input: {
                                 ...s.input,
                                 [side]: {
@@ -1036,7 +1039,7 @@ export default function MultiplexLive() {
                           <option value="">Par défaut</option>
                           {tactics.map((t) => (
                             <option key={t.id} value={t.id}>
-                              {t.name}{t.id === activeId ? ' ✓' : ''}
+                              {t.name} · {t.formationLabel ?? t.formation}{t.id === activeId ? ' ✓' : ''}
                             </option>
                           ))}
                         </select>

@@ -106,7 +106,7 @@ export type CompMatch = {
   round: number;
   phase: string;                // 'group' | 'R32' | 'R16' | 'QF' | 'SF' | 'F' | '3rd' | 'league'
   groupId?: string;
-  leg: 1 | 2;
+  leg: 1 | 2 | 3;
   status: CompMatchStatus;
   result?: {
     home: number;
