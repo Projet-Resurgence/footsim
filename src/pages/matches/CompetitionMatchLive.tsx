@@ -988,13 +988,14 @@ export default function CompetitionMatchLive() {
           if (recentEntries.length > 0) {
             backend.bulkTeams(recentEntries.map((e) => e.slug)).then((bulkRes) => {
               const bySlug = new Map(bulkRes.map((r) => [r.team.slug, r]));
-              return Promise.all(recentEntries.map(({ slug, isHome }) => {
+              const items = recentEntries.flatMap(({ slug, isHome }) => {
                 const res = bySlug.get(slug);
-                if (!res) return Promise.resolve();
+                if (!res) return [];
                 const summary = makeSummary(isHome);
                 const existing = (res.team.recentMatches ?? []).filter((r) => r.matchId !== matchId);
-                return backend.saveTeam({ ...res.team, recentMatches: [...existing, summary] }, res.players).catch(() => {});
-              }));
+                return [{ slug, team: { ...res.team, recentMatches: [...existing, summary] }, players: res.players }];
+              });
+              return backend.bulkUpdateTeams(items);
             }).catch(() => {});
           }
         }
@@ -1008,9 +1009,9 @@ export default function CompetitionMatchLive() {
           if (entries.length > 0) {
             backend.bulkTeams(entries.map((e) => e.slug)).then((bulkRes) => {
               const bySlug = new Map(bulkRes.map((r) => [r.team.slug, r]));
-              return Promise.all(entries.map(({ tid, slug }) => {
+              const items = entries.flatMap(({ tid, slug }) => {
                 const res = bySlug.get(slug);
-                if (!res) return Promise.resolve();
+                if (!res) return [];
                 const prev = res.team.compHistory ?? [];
                 const idx = prev.findIndex((e) => e.compId === updated.id);
                 const entry: CompHistoryEntry = {
@@ -1030,11 +1031,9 @@ export default function CompetitionMatchLive() {
                   : [...prev, entry];
                 const teamInjuries = updatedInjuries.filter((i) => i.teamId === tid);
                 const teamSuspensions = updatedSuspensions.filter((s) => s.teamId === tid);
-                return backend.saveTeam(
-                  { ...res.team, compHistory: nextHistory, injuries: teamInjuries, suspensions: teamSuspensions },
-                  res.players,
-                ).catch(() => {});
-              }));
+                return [{ slug, team: { ...res.team, compHistory: nextHistory, injuries: teamInjuries, suspensions: teamSuspensions }, players: res.players }];
+              });
+              return backend.bulkUpdateTeams(items);
             }).catch(() => {});
           }
         } else {
