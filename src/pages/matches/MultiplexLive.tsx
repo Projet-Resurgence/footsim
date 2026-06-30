@@ -22,7 +22,7 @@ import { generateMatchPressItem, generateMoralePressItem, generatePresidencyRebo
 import { createMatchInjury, createSuspension, decrementInjuries, decrementSuspensions, unavailableIds } from '@/lib/competition/injuries';
 import { PenaltyShootout } from '@/components/match/PenaltyShootout';
 import type { MatchInput, MatchState, Speed, CorruptionDeal } from '@/lib/sim/types';
-import type { SavedTactic, TacticStyle, Team } from '@/lib/types';
+import type { SavedTactic, TacticStyle, Team, Player } from '@/lib/types';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
 import type { StoredMatch } from '@/lib/prapi/matchBackend';
@@ -898,7 +898,10 @@ export default function MultiplexLive() {
         const uniqueSlugs2 = [...new Set(recentMatchUpdates.map((u) => u.slug))];
         teamBk.bulkTeams(uniqueSlugs2).then((bulkResults) => {
           const bySlug = new Map(bulkResults.map((r) => [r.team.slug, r]));
-          const saves: Promise<void>[] = [];
+          // Accumulate per-slug so a team with several updates this round merges all of them
+          // into one entry — bulk-update sends a single request instead of one PUT per team,
+          // which was tripping nginx's per-IP rate limit (10r/s burst 20) under multiplex load.
+          const bulkItems = new Map<string, { slug: string; team: Team; players: Player[] }>();
           for (const update of recentMatchUpdates) {
             const res = bySlug.get(update.slug);
             if (!res) continue;
@@ -931,12 +934,13 @@ export default function MultiplexLive() {
               scorers: myGoals.length ? myGoals : undefined,
               cmfPoints: calcCmfMatchPoints({ scoreFor, scoreAgainst, opponentStrength: oppStrength, compKind: current.kind, compScope: current.scope, compImportance: current.importance, participantCount: participantCount2 }),
             };
-            const existing = (res.team.recentMatches ?? []).filter((r) => r.matchId !== update.slot.compMatchId);
+            const base = bulkItems.get(update.slug)?.team ?? res.team;
+            const existing = (base.recentMatches ?? []).filter((r) => r.matchId !== update.slot.compMatchId);
             const merged = [...existing, summary];
-            saves.push(teamBk.saveTeam({ ...res.team, recentMatches: merged }, res.players).then(() => {}).catch((err) => console.error('[MultiplexLive] saveTeam (recentMatches) failed', update.slug, err)));
+            bulkItems.set(update.slug, { slug: update.slug, team: { ...base, recentMatches: merged }, players: res.players });
           }
-          return Promise.all(saves);
-        }).catch((err) => console.error('[MultiplexLive] bulkTeams failed', err));
+          return teamBk.bulkUpdateTeams([...bulkItems.values()]);
+        }).catch((err) => console.error('[MultiplexLive] bulkTeams/bulkUpdateTeams failed', err));
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
