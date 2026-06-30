@@ -64,6 +64,7 @@ export default function MultiplexLive() {
   const [loading, setLoading] = useState(true);
   const [paused, setPaused] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<Parameters<typeof save>[0] | null>(null);
   const pendingUpdateRef = useRef(pendingUpdate);
   useEffect(() => { pendingUpdateRef.current = pendingUpdate; }, [pendingUpdate]);
@@ -847,7 +848,12 @@ export default function MultiplexLive() {
     setPendingUpdate(nextState);
     if (effectivePat) {
       setSaving(true);
-      save(nextState, '', effectivePat).catch(() => {}).finally(() => setSaving(false));
+      save(nextState, '', effectivePat).then(() => {
+        setSaveFailed(false);
+      }).catch((err) => {
+        setSaveFailed(true);
+        toast('error', `Échec sauvegarde en base : ${String(err)}. Relance non automatique pour éviter une boucle.`);
+      }).finally(() => setSaving(false));
 
       // Save StoredMatch + recentMatches for each slot
       const matchBk = new PrApiMatchBackend(effectivePat);
@@ -872,7 +878,7 @@ export default function MultiplexLive() {
           playedAt: compMatch.simulatedAt ?? new Date().toISOString(),
         });
       }
-      matchBk.bulkSaveMatches(storedMatches).catch(() => {});
+      matchBk.bulkSaveMatches(storedMatches).catch((err) => console.error('[MultiplexLive] bulkSaveMatches failed', err));
 
       // Bulk-fetch all team data to update recentMatches — one request instead of N×2
       const recentMatchUpdates: Array<{ slug: string; homeId: string; awayId: string; isHome: boolean; slot: typeof slots[number]; compMatch: CompMatch }> = [];
@@ -927,18 +933,20 @@ export default function MultiplexLive() {
             };
             const existing = (res.team.recentMatches ?? []).filter((r) => r.matchId !== update.slot.compMatchId);
             const merged = [...existing, summary];
-            saves.push(teamBk.saveTeam({ ...res.team, recentMatches: merged }, res.players).then(() => {}).catch(() => {}));
+            saves.push(teamBk.saveTeam({ ...res.team, recentMatches: merged }, res.players).then(() => {}).catch((err) => console.error('[MultiplexLive] saveTeam (recentMatches) failed', update.slug, err)));
           }
           return Promise.all(saves);
-        }).catch(() => {});
+        }).catch((err) => console.error('[MultiplexLive] bulkTeams failed', err));
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allFinished]);
 
   // Auto-simulate: jump to next round once save completes (save already triggered in allFinished effect)
+  // Never auto-advance after a failed save — that would retrigger setup() on the next round and
+  // resave the same failing state in an infinite navigate loop, while results only land in local state.
   useEffect(() => {
-    if (!autoSimulate || !pendingUpdate || saving) return;
+    if (!autoSimulate || !pendingUpdate || saving || saveFailed) return;
     const nextRound = pendingUpdate.currentRound;
     const hasMore = pendingUpdate.matches.some(
       (m) => m.round === nextRound && m.status === 'pending' && m.homeTeamId && m.awayTeamId,
@@ -949,7 +957,7 @@ export default function MultiplexLive() {
       navigate(`/dashboard/competitions/${competitionId}`, { replace: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingUpdate, saving]);
+  }, [pendingUpdate, saving, saveFailed]);
 
   function launchAll() {
     if (!pendingInputs) return;
@@ -1215,11 +1223,34 @@ export default function MultiplexLive() {
         </div>
 
         {allFinished && (
-          <div className="px-3 py-1.5 border-b border-accent/30 bg-accent/5 flex items-center justify-between gap-2 flex-shrink-0 text-xs">
-            <span className="font-medium">Tous les matchs sont terminés.</span>
-            <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setFullscreen(false); navigate(`/dashboard/competitions/${competitionId}`); }}>
-              {saving ? <Spinner className="mr-1 h-3 w-3" /> : null}Terminé
-            </Button>
+          <div className={`px-3 py-1.5 border-b flex items-center justify-between gap-2 flex-shrink-0 text-xs ${saveFailed ? 'border-danger/30 bg-danger/5' : 'border-accent/30 bg-accent/5'}`}>
+            <span className="font-medium">
+              {saveFailed ? "Échec de la sauvegarde en base — résultats conservés en local uniquement." : 'Tous les matchs sont terminés.'}
+            </span>
+            <div className="flex items-center gap-2">
+              {saveFailed && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={saving}
+                  onClick={() => {
+                    if (!pendingUpdate || !effectivePat) return;
+                    setSaving(true);
+                    save(pendingUpdate, '', effectivePat).then(() => {
+                      setSaveFailed(false);
+                    }).catch((err) => {
+                      setSaveFailed(true);
+                      toast('error', `Échec sauvegarde en base : ${String(err)}.`);
+                    }).finally(() => setSaving(false));
+                  }}
+                >
+                  {saving ? <Spinner className="mr-1 h-3 w-3" /> : null}Réessayer
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setFullscreen(false); navigate(`/dashboard/competitions/${competitionId}`); }}>
+                {saving ? <Spinner className="mr-1 h-3 w-3" /> : null}Terminé
+              </Button>
+            </div>
           </div>
         )}
 
@@ -1261,11 +1292,34 @@ export default function MultiplexLive() {
       {halftimeBar}
 
       {allFinished && (
-        <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 flex items-center justify-between gap-3 flex-wrap">
-          <span className="font-medium">Tous les matchs sont terminés.</span>
-          <Button size="sm" disabled={saving} onClick={() => navigate(`/dashboard/competitions/${competitionId}`)}>
-            {saving ? <Spinner className="mr-1 h-3 w-3" /> : null}Terminé
-          </Button>
+        <div className={`rounded-lg border p-4 flex items-center justify-between gap-3 flex-wrap ${saveFailed ? 'border-danger/30 bg-danger/5' : 'border-accent/30 bg-accent/5'}`}>
+          <span className="font-medium">
+            {saveFailed ? "Échec de la sauvegarde en base — résultats conservés en local uniquement." : 'Tous les matchs sont terminés.'}
+          </span>
+          <div className="flex items-center gap-2">
+            {saveFailed && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={saving}
+                onClick={() => {
+                  if (!pendingUpdate || !effectivePat) return;
+                  setSaving(true);
+                  save(pendingUpdate, '', effectivePat).then(() => {
+                    setSaveFailed(false);
+                  }).catch((err) => {
+                    setSaveFailed(true);
+                    toast('error', `Échec sauvegarde en base : ${String(err)}.`);
+                  }).finally(() => setSaving(false));
+                }}
+              >
+                {saving ? <Spinner className="mr-1 h-3 w-3" /> : null}Réessayer
+              </Button>
+            )}
+            <Button size="sm" disabled={saving} onClick={() => navigate(`/dashboard/competitions/${competitionId}`)}>
+              {saving ? <Spinner className="mr-1 h-3 w-3" /> : null}Terminé
+            </Button>
+          </div>
         </div>
       )}
 
