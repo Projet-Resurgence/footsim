@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import type { MatchState } from '@/lib/sim/types';
 import type { SavedTactic, Team } from '@/lib/types';
+import { TacticalReportModal } from '@/components/match/TacticalReportModal';
+import type { ReportSide } from '@/lib/report/tacticalReport';
 
 type Props = {
   state: MatchState;
@@ -12,12 +14,16 @@ type Props = {
   awaySavedTactics?: SavedTactic[];
   onTacticChange?: (side: 'home' | 'away', tactic: SavedTactic) => void;
   onResume: () => void;
+  homeReportSide?: ReportSide;
+  awayReportSide?: ReportSide;
 };
 
-export function HalftimeOverlay({ state, home, away, homeSavedTactics = [], awaySavedTactics = [], onTacticChange, onResume }: Props) {
+export function HalftimeOverlay({ state, home, away, homeSavedTactics = [], awaySavedTactics = [], onTacticChange, onResume, homeReportSide, awayReportSide }: Props) {
   const isET = state.status === 'extraTimeHalfTime';
   const [homeTacticId, setHomeTacticId] = useState<string>('');
   const [awayTacticId, setAwayTacticId] = useState<string>('');
+  const [showReport, setShowReport] = useState(false);
+  const canShowReport = Boolean(homeReportSide && awayReportSide);
 
   function handleTacticChange(side: 'home' | 'away', id: string) {
     const tactics = side === 'home' ? homeSavedTactics : awaySavedTactics;
@@ -99,10 +105,25 @@ export function HalftimeOverlay({ state, home, away, homeSavedTactics = [], away
           </div>
         )}
 
+        {canShowReport && (
+          <Button variant="ghost" onClick={() => setShowReport(true)} size="lg" className="w-full">
+            Compte-rendu tactique
+          </Button>
+        )}
+
         <Button onClick={onResume} size="lg" className="w-full">
           {isET ? 'Reprendre la 2ᵉ prolongation' : 'Reprendre la 2ᵉ mi-temps'}
         </Button>
       </motion.div>
+
+      {showReport && homeReportSide && awayReportSide && (
+        <TacticalReportModal
+          state={state}
+          home={homeReportSide}
+          away={awayReportSide}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </motion.div>
   );
 }

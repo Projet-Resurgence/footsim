@@ -10,11 +10,12 @@ import { useCompetition } from '@/stores/competition';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import {
   generateLeagueMatches,
-  generateCupBracket,
+  buildBracketFromPairs,
   generateGroupsKnockoutFromGroups,
   generateLPMMatches,
   buildInitialStandings,
 } from '@/lib/competition/scheduler';
+import { prapi } from '@/lib/prapi/client';
 import { FORMAT_LABEL, FORMAT_DESCRIPTION, COMPETITION_KIND_LABEL, COMPETITION_SCOPE_LABEL } from '@/lib/competition/types';
 import { CULTURE_CONTINENT, CONTINENT_LABEL, type Continent } from '@/lib/types';
 import type { CompetitionFormat, CompetitionConfig, Competition, CompetitionKind, CompetitionScope } from '@/lib/competition/types';
@@ -22,7 +23,9 @@ import { COMPETITION_IMPORTANCE_LABEL } from '@/lib/competition/types';
 import type { CompetitionImportance } from '@/lib/competition/types';
 import type { MatchRules } from '@/lib/sim/types';
 import { DEFAULT_RULES } from '@/lib/sim/types';
-import { buildPots, conductDraw, isEvenTeamCount } from '@/lib/competition/draw';
+import { CLIMATE_ZONES, CLIMATE_ZONE_LABEL, CLIMATE_ZONE_DESC, type ClimateZone } from '@/lib/sim/weather';
+import { buildPots, conductDraw, conductCupDraw, isEvenTeamCount, teamContinentsOf } from '@/lib/competition/draw';
+import type { Pot, PotMethod } from '@/lib/competition/draw';
 import { DrawCeremony } from '@/components/competition/DrawCeremony';
 import type { Injury, Suspension } from '@/lib/competition/injuries';
 
@@ -73,8 +76,13 @@ export default function CompetitionNew() {
   const [qualifyPerGroup, setQualifyPerGroup] = useState(2);
   const [bestThirds, setBestThirds] = useState(0);
   const [rules, setRules] = useState<MatchRules>(DEFAULT_RULES);
+  const [climateZone, setClimateZone] = useState<ClimateZone | ''>('');
   const [knockoutRules, setKnockoutRules] = useState<MatchRules>({ ...DEFAULT_RULES, extraTime: true, penalties: true });
-  const [drawResult, setDrawResult] = useState<ReturnType<typeof conductDraw> | null>(null);
+  const [drawPots, setDrawPots] = useState<Pot[] | null>(null);
+  const [potMethod, setPotMethod] = useState<PotMethod>('overall');
+  const [avoidContinent, setAvoidContinent] = useState(false);
+  const [cmfPoints, setCmfPoints] = useState<Record<string, number> | null>(null);
+  const [cmfLoading, setCmfLoading] = useState(false);
   const [hostTeamId, setHostTeamId] = useState<string>('');
   const [year, setYear] = useState<number | undefined>(undefined);
   const [kind, setKind] = useState<CompetitionKind>('officielle');
@@ -156,14 +164,58 @@ export default function CompetitionNew() {
   const lpmOk = format !== 'lpm' || selectedTeams.length === 48;
   const valid = name.trim().length > 0 && selectedTeams.length >= minTeams && evenOk && lpmOk;
 
+  function drawHost(): string | undefined {
+    return (format === 'groups_knockout' && hostTeamId && selectedTeams.includes(hostTeamId)) ? hostTeamId : undefined;
+  }
+
+  /** Continents par équipe — champ multi + fallback culture legacy. */
+  function drawContinents(): Record<string, Continent[]> {
+    const map: Record<string, Continent[]> = {};
+    for (const t of teams.filter((x) => selectedTeams.includes(x.id))) {
+      const conts = teamContinentsOf(t);
+      map[t.id] = conts.length > 0 ? conts : [CULTURE_CONTINENT[t.culture]].filter(Boolean);
+    }
+    return map;
+  }
+
+  async function loadCmfPoints(): Promise<Record<string, number> | null> {
+    if (cmfPoints) return cmfPoints;
+    setCmfLoading(true);
+    try {
+      const map: Record<string, number> = {};
+      let page = 1;
+      let pages = 1;
+      do {
+        const data = await prapi.rankings(page, 100);
+        for (const e of data.teams) map[e.team.id] = e.points;
+        pages = data.pagination.pages;
+        page++;
+      } while (page <= pages);
+      setCmfPoints(map);
+      return map;
+    } catch {
+      toast('error', 'Classement CMF indisponible — tri par force globale conservé.');
+      return null;
+    } finally {
+      setCmfLoading(false);
+    }
+  }
+
+  async function changePotMethod(m: PotMethod) {
+    setPotMethod(m);
+    let cmf = cmfPoints;
+    if (m === 'cmf') {
+      cmf = await loadCmfPoints();
+      if (!cmf) return; // fetch failed — keep current pots
+    }
+    const selectedTeamObjs = teams.filter((t) => selectedTeams.includes(t.id));
+    setDrawPots(buildPots(selectedTeamObjs, drawHost(), m, cmf ?? undefined));
+  }
+
   function startDraw() {
     if (!valid) return;
     const selectedTeamObjs = teams.filter((t) => selectedTeams.includes(t.id));
-    const host = (format === 'groups_knockout' && hostTeamId && selectedTeams.includes(hostTeamId)) ? hostTeamId : undefined;
-    const pots = buildPots(selectedTeamObjs, host);
-    const gc = format === 'cup' ? Math.ceil(selectedTeams.length / 2) : groupsCount;
-    const result = conductDraw(pots, gc, host);
-    setDrawResult(result);
+    setDrawPots(buildPots(selectedTeamObjs, drawHost(), potMethod, cmfPoints ?? undefined));
   }
 
   async function createWithGroups(drawnGroups: Record<string, string[]>) {
@@ -178,6 +230,7 @@ export default function CompetitionNew() {
         bestThirds: format === 'groups_knockout' && bestThirds > 0 ? bestThirds : undefined,
         matchRules: rules,
         knockoutRules: (format === 'groups_knockout' || format === 'lpm') ? knockoutRules : undefined,
+        climateZone: climateZone || undefined,
       };
 
       let teamIds: string[];
@@ -192,11 +245,16 @@ export default function CompetitionNew() {
         matches = generateLeagueMatches(teamIds, legs);
         groups = undefined;
       } else if (format === 'cup') {
-        // drawnGroups from cup draw = ordered pairs; flatten gives seeded order
-        teamIds = Object.keys(drawnGroups).length > 0
-          ? Object.values(drawnGroups).flat()
-          : [...selectedTeams];
-        matches = generateCupBracket(teamIds, legs, thirdPlace);
+        // drawnGroups from cup draw = ordered pairs (1-team pair = exempt) — the
+        // ceremony result IS the bracket, order preserved, byes handled.
+        const pairs = Object.keys(drawnGroups).length > 0
+          ? Object.keys(drawnGroups).sort().map((k) => drawnGroups[k])
+          : selectedTeams.reduce<string[][]>((acc, id, i) => {
+              if (i % 2 === 0) acc.push([id]); else acc[acc.length - 1].push(id);
+              return acc;
+            }, []); // fallback, ne devrait pas arriver
+        teamIds = pairs.flat();
+        matches = buildBracketFromPairs(pairs, legs, thirdPlace);
         groups = undefined;
       } else {
         // groups_knockout: drawnGroups comes from DrawCeremony
@@ -292,12 +350,14 @@ export default function CompetitionNew() {
     setSelectedTeams(ids);
   }
 
-  if (drawResult) {
+  if (drawPots) {
     const isCupDraw = format === 'cup';
+    const selectedTeamObjs = teams.filter((t) => selectedTeams.includes(t.id));
     return (
       <div className="max-w-4xl space-y-6">
         <div>
-          <h1 className="mb-1 font-display text-4xl">Tirage au sort</h1>
+          <button onClick={() => setDrawPots(null)} className="text-sm text-muted hover:text-text transition-colors">← Configuration</button>
+          <h1 className="mb-1 mt-2 font-display text-3xl sm:text-4xl">Tirage au sort</h1>
           <p className="text-muted text-sm">{name}</p>
         </div>
         <div className="flex flex-wrap gap-3 items-end rounded-lg border border-border bg-surface p-4">
@@ -322,11 +382,24 @@ export default function CompetitionNew() {
           </label>
         </div>
         <DrawCeremony
-          result={drawResult}
-          teams={teams.filter((t) => selectedTeams.includes(t.id))}
+          teams={selectedTeamObjs}
           groupCount={isCupDraw ? Math.ceil(selectedTeams.length / 2) : groupsCount}
+          pots={drawPots}
+          conduct={(pots) => isCupDraw
+            ? conductCupDraw(pots)
+            : conductDraw(pots, groupsCount, {
+                hostTeamId: drawHost(),
+                avoidSameContinent: avoidContinent,
+                continents: drawContinents(),
+              })}
           onConfirm={createWithGroups}
           knockoutMode={isCupDraw}
+          onPotsChange={setDrawPots}
+          potMethod={potMethod}
+          onPotMethodChange={changePotMethod}
+          cmfLoading={cmfLoading}
+          avoidSameContinent={isCupDraw ? undefined : avoidContinent}
+          onAvoidSameContinentChange={isCupDraw ? undefined : setAvoidContinent}
         />
         {busy && <div className="flex items-center gap-2 text-muted text-sm"><span className="animate-spin">⏳</span> Création…</div>}
       </div>
@@ -605,6 +678,23 @@ export default function CompetitionNew() {
           {format === 'groups_knockout' ? 'Règles — Phase de groupes' : 'Règles des matchs'}
         </div>
         <RulesEditor rules={rules} onChange={setRules} showKnockoutOptions={format !== 'groups_knockout'} />
+
+        <div className="space-y-1">
+          <label className="text-sm text-muted">Zone climatique du pays hôte</label>
+          <select
+            value={climateZone}
+            onChange={(e) => setClimateZone(e.target.value as ClimateZone | '')}
+            className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm text-text"
+          >
+            <option value="">Aucune (pas de météo)</option>
+            {CLIMATE_ZONES.map((z) => (
+              <option key={z} value={z}>{CLIMATE_ZONE_LABEL[z]} — {CLIMATE_ZONE_DESC[z]}</option>
+            ))}
+          </select>
+          <p className="text-[11px] text-muted">
+            La météo et la température de chaque match sont tirées aléatoirement selon le climat de la zone, avec effets en jeu (pluie, neige, vent, canicule…).
+          </p>
+        </div>
       </section>
 
       {format === 'groups_knockout' && (

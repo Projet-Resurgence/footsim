@@ -1,5 +1,8 @@
-import type { Player, Division, LeagueClub, SeasonState, DivisionSeason, MatchSlot, StandingsRow, MatchResult } from '@/lib/types';
+import type { Player, Division, LeagueClub, SeasonState, DivisionSeason, MatchSlot, StandingsRow, MatchResult, CustomTacticStyle } from '@/lib/types';
 import { precomputeSide } from './precompute';
+import { computeMatchupAdjustment } from './matchup';
+import { pickReferee } from './referees';
+import { hashSeed } from './weather';
 import { initialState, tick, type EngineCtx } from './engine';
 import { DEFAULT_RULES } from './types';
 
@@ -76,8 +79,42 @@ function simulateMatch(
   const homePlayers = clubPlayers(homeClub);
   const awayPlayers = clubPlayers(awayClub);
 
-  const homeRatings = precomputeSide(homePlayers, homeClub.formation, undefined, homeClub.tactics?.style);
-  const awayRatings = precomputeSide(awayPlayers, awayClub.formation, undefined, awayClub.tactics?.style);
+  // Full tactics resolution — same inputs as live matches (custom style, lineup, bench, positions)
+  function activeCustomStyle(club: LeagueClub): CustomTacticStyle | undefined {
+    const t = club.tactics;
+    if (!t?.activeCustomStyleId) return undefined;
+    return t.customStyles?.find((s) => s.id === t.activeCustomStyleId);
+  }
+  const homeTactics = homeClub.tactics;
+  const awayTactics = awayClub.tactics;
+  const homeCustom = activeCustomStyle(homeClub);
+  const awayCustom = activeCustomStyle(awayClub);
+  const homeFormation = homeTactics?.formation ?? homeClub.formation;
+  const awayFormation = awayTactics?.formation ?? awayClub.formation;
+
+  const homeRatings = precomputeSide(
+    homePlayers, homeFormation, homeTactics?.lineup, homeTactics?.style,
+    undefined, undefined, undefined, homeCustom, undefined, undefined,
+    homeTactics?.bench, homeTactics?.plannedSubs, homeTactics?.positionMap,
+    { planB: homeTactics?.planB, setPieceTakers: homeTactics?.setPieceTakers, captainId: homeTactics?.captainId },
+  );
+  const awayRatings = precomputeSide(
+    awayPlayers, awayFormation, awayTactics?.lineup, awayTactics?.style,
+    undefined, undefined, undefined, awayCustom, undefined, undefined,
+    awayTactics?.bench, awayTactics?.plannedSubs, awayTactics?.positionMap,
+    { planB: awayTactics?.planB, setPieceTakers: awayTactics?.setPieceTakers, captainId: awayTactics?.captainId },
+  );
+
+  // Cross-side matchup layer — mirrors worker.ts buildCtx so league results
+  // obey the same formation/style rock-paper-scissors as live matches
+  const homeAdj = computeMatchupAdjustment(homeFormation, awayFormation, homeTactics?.style, homeCustom, awayTactics?.style, awayCustom);
+  const awayAdj = computeMatchupAdjustment(awayFormation, homeFormation, awayTactics?.style, awayCustom, homeTactics?.style, homeCustom);
+  homeRatings.attack *= homeAdj.attackMult;
+  homeRatings.defense *= homeAdj.defenseMult;
+  homeRatings.midfield *= homeAdj.midfieldMult;
+  awayRatings.attack *= awayAdj.attackMult;
+  awayRatings.defense *= awayAdj.defenseMult;
+  awayRatings.midfield *= awayAdj.midfieldMult;
 
   // Build minimal Team objects required by engine
   const homeTeam = { id: homeClub.id, name: homeClub.name, slug: homeClub.slug } as any;
@@ -91,6 +128,7 @@ function simulateMatch(
 
   const matchId = crypto.randomUUID();
   const state = initialState(matchId, 'instant', DEFAULT_RULES);
+  state.referee = pickReferee(hashSeed(matchId));
   state.homeOnPitch = [...homeRatings.lineup];
   state.awayOnPitch = [...awayRatings.lineup];
 

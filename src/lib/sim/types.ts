@@ -6,7 +6,7 @@ export type EventKind =
   | 'kickoff' | 'goal' | 'shot' | 'shotOnTarget' | 'save' | 'foul'
   | 'yellow' | 'red' | 'corner' | 'offside' | 'halftime' | 'fulltime' | 'keyPass'
   | 'penalty' | 'penalty_miss' | 'penalty_saved' | 'freeKick' | 'header' | 'dribble' | 'clearance' | 'crossbar'
-  | 'substitution' | 'extraTime' | 'coachRed' | 'injury';
+  | 'substitution' | 'extraTime' | 'coachRed' | 'injury' | 'tacticChange';
 
 export type TacticMods = {
   shotFreqMult: number;
@@ -22,6 +22,8 @@ export type MatchRules = {
   goldenGoal: boolean;
   extraTime: boolean;
   penalties: boolean;
+  /** Avantage du terrain pour l'équipe à domicile — opt-in avant le match, désactivé par défaut */
+  homeAdvantage?: boolean;
 };
 
 export const DEFAULT_RULES: MatchRules = {
@@ -30,6 +32,7 @@ export const DEFAULT_RULES: MatchRules = {
   goldenGoal: false,
   extraTime: false,
   penalties: false,
+  homeAdvantage: false,
 };
 
 export type PlannedSubEntry = {
@@ -37,6 +40,14 @@ export type PlannedSubEntry = {
   inId: string;
   minute?: number;
   done: boolean;
+};
+
+/** PlanBRule enrichie côté sim : mods résolus depuis la tactique sauvegardée ciblée */
+export type ResolvedPlanBRule = import('@/lib/types').PlanBRule & {
+  /** mods appliqués au déclenchement (style de la tactique ciblée, perso inclus) */
+  modsOverride?: TacticMods;
+  /** libellé affiché dans l'événement 📋 (nom de la tactique) */
+  label?: string;
 };
 
 export type SideRatings = {
@@ -51,6 +62,12 @@ export type SideRatings = {
   red: Set<string>;
   tacticMods: TacticMods;
   plannedSubs: PlannedSubEntry[];
+  /** Plans B conditionnels restant à déclencher (done = déjà appliqué) */
+  planB: (ResolvedPlanBRule & { done: boolean })[];
+  /** Tireurs désignés (penalty / coup franc / corner) */
+  takers?: import('@/lib/types').SetPieceTakers;
+  /** Capitaine — effets actifs tant qu'il est sur le terrain */
+  captainId?: string;
 };
 
 export type MatchEvent = {
@@ -84,13 +101,17 @@ export type CorruptionDeal = {
 
 export type MatchInput = {
   matchId: string;
-  home: { team: Team; players: Player[]; formation: Formation; formationLabel?: string; lineup?: string[]; bench?: string[]; plannedSubs?: import('@/lib/types').PlannedSub[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number; unavailablePlayerIds?: string[]; positionMap?: Record<string, import('@/lib/types').Position>; tokenPositions?: Record<string, { x: number; y: number }>; hasTactic?: boolean };
-  away: { team: Team; players: Player[]; formation: Formation; formationLabel?: string; lineup?: string[]; bench?: string[]; plannedSubs?: import('@/lib/types').PlannedSub[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number; unavailablePlayerIds?: string[]; positionMap?: Record<string, import('@/lib/types').Position>; tokenPositions?: Record<string, { x: number; y: number }>; hasTactic?: boolean };
+  home: { team: Team; players: Player[]; formation: Formation; formationLabel?: string; lineup?: string[]; bench?: string[]; plannedSubs?: import('@/lib/types').PlannedSub[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number; unavailablePlayerIds?: string[]; positionMap?: Record<string, import('@/lib/types').Position>; tokenPositions?: Record<string, { x: number; y: number }>; hasTactic?: boolean; planB?: import('@/lib/types').PlanBRule[]; setPieceTakers?: import('@/lib/types').SetPieceTakers; captainId?: string };
+  away: { team: Team; players: Player[]; formation: Formation; formationLabel?: string; lineup?: string[]; bench?: string[]; plannedSubs?: import('@/lib/types').PlannedSub[]; tacticStyle?: TacticStyle; customTacticStyle?: import('@/lib/types').CustomTacticStyle; morale?: number; unavailablePlayerIds?: string[]; positionMap?: Record<string, import('@/lib/types').Position>; tokenPositions?: Record<string, { x: number; y: number }>; hasTactic?: boolean; planB?: import('@/lib/types').PlanBRule[]; setPieceTakers?: import('@/lib/types').SetPieceTakers; captainId?: string };
   speed: Speed;
   rules: MatchRules;
   corruption?: CorruptionDeal;
   /** For two-legged ties: leg 1 score so ET is only triggered on aggregate draw */
   leg1Score?: { home: number; away: number };
+  /** Météo du match — tirée avant le coup d'envoi (zone climatique ou choix manuel) */
+  weather?: import('./weather').Weather;
+  /** Arbitre du match — profil de sévérité (fautes, cartons, penalties, temps additionnel) */
+  referee?: import('./referees').Referee;
   /** coaches are taken from team.coach — passed explicitly here for worker use */
   /** If true, result is saved and counts toward recentMatches / CMF rankings */
   countForStats?: boolean;
@@ -146,6 +167,12 @@ export type MatchState = {
   homeSubs: number;
   awaySubs: number;
   penaltyScore?: { home: number; away: number };
+  /** Momentum après un but : le buteur surfe sur la vague quelques minutes */
+  momentum?: { side: 'home' | 'away'; untilMinute: number };
+  /** Météo active pendant le match (affichage + effets moteur) */
+  weather?: import('./weather').Weather;
+  /** Arbitre du match (affichage + effets moteur) */
+  referee?: import('./referees').Referee;
   /** coach ejected this match — suspended for next match */
   coachEjected?: { home: boolean; away: boolean };
   /** Players injured during this match: side → playerId[] */

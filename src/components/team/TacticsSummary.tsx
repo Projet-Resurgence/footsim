@@ -96,6 +96,34 @@ const MINIMAP_LAYOUT: Record<Formation, { x: number; y: number }[]> = {
     { x: 6, y: 50 }, { x: 24, y: 52 }, { x: 38, y: 47 }, { x: 62, y: 47 }, { x: 76, y: 52 }, { x: 94, y: 50 },
     { x: 50, y: 18 },
   ],
+  '4-1-2-1-2': [
+    { x: 50, y: 88 },
+    { x: 12, y: 70 }, { x: 34, y: 72 }, { x: 66, y: 72 }, { x: 88, y: 70 },
+    { x: 50, y: 60 },
+    { x: 28, y: 47 }, { x: 72, y: 47 },
+    { x: 50, y: 33 },
+    { x: 34, y: 18 }, { x: 66, y: 18 },
+  ],
+  '3-4-2-1': [
+    { x: 50, y: 88 },
+    { x: 24, y: 72 }, { x: 50, y: 73 }, { x: 76, y: 72 },
+    { x: 8, y: 52 }, { x: 34, y: 54 }, { x: 66, y: 54 }, { x: 92, y: 52 },
+    { x: 34, y: 32 }, { x: 66, y: 32 },
+    { x: 50, y: 16 },
+  ],
+  '4-2-2-2': [
+    { x: 50, y: 88 },
+    { x: 12, y: 70 }, { x: 34, y: 72 }, { x: 66, y: 72 }, { x: 88, y: 70 },
+    { x: 34, y: 58 }, { x: 66, y: 58 },
+    { x: 28, y: 36 }, { x: 72, y: 36 },
+    { x: 34, y: 18 }, { x: 66, y: 18 },
+  ],
+  '4-2-4': [
+    { x: 50, y: 88 },
+    { x: 12, y: 70 }, { x: 34, y: 72 }, { x: 66, y: 72 }, { x: 88, y: 70 },
+    { x: 34, y: 50 }, { x: 66, y: 50 },
+    { x: 10, y: 22 }, { x: 36, y: 16 }, { x: 64, y: 16 }, { x: 90, y: 22 },
+  ],
 };
 
 function TacticMinimap({ formation, lineup, players, tokenPositions }: { formation: Formation; lineup: string[]; players: Player[]; tokenPositions?: Record<string, { x: number; y: number }> }) {
@@ -258,6 +286,7 @@ function TacticCard({
       >
         {isActive ? '✓ Active' : 'Activer'}
       </button>
+
     </div>
   );
 }

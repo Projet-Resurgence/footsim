@@ -45,9 +45,11 @@ function EventRow({ ev }: { ev: MatchEvent }) {
   );
 }
 
-export function EventFeed({ events }: { events: MatchEvent[] }) {
+export function EventFeed({ events, full = false }: { events: MatchEvent[]; full?: boolean }) {
   const pinned = [...events].filter((ev) => IMPORTANT_TYPES.has(ev.type)).reverse();
-  const recent = [...events].filter((ev) => !IMPORTANT_TYPES.has(ev.type)).slice(-25).reverse();
+  const others = [...events].filter((ev) => !IMPORTANT_TYPES.has(ev.type));
+  // Mode complet (replay) : tout l'historique sans coupe ni limite de hauteur
+  const recent = (full ? others : others.slice(-25)).reverse();
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-subtle-sm">
@@ -68,8 +70,8 @@ export function EventFeed({ events }: { events: MatchEvent[] }) {
         <div className="border-t border-border/40" />
       )}
 
-      {/* Flux normal, scrollable */}
-      <div className="max-h-64 overflow-y-auto flex flex-col gap-1.5">
+      {/* Flux normal — limité en live, intégral en replay */}
+      <div className={`${full ? '' : 'max-h-64 overflow-y-auto'} flex flex-col gap-1.5`}>
         <AnimatePresence initial={false}>
           {recent.map((ev) => <EventRow key={ev.id} ev={ev} />)}
         </AnimatePresence>

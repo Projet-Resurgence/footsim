@@ -15,14 +15,24 @@ import type { MatchSummary, CompMatch } from '@/lib/competition/types';
 import { accumulateMatchStats, computeAwards, computeMotm } from '@/lib/competition/statsAccumulator';
 import { extractGoalsAndCards } from '@/lib/github/matches';
 import { CorruptionPanel } from '@/components/match/CorruptionPanel';
+import { TacticalReportModal } from '@/components/match/TacticalReportModal';
 import { isRevealed } from '@/lib/sim/corruption';
-import { resolveActiveTactic, loadLocalSavedTactics } from '@/lib/localTactics';
+import { resolveMatchTactics, resolveActiveCustomStyle, loadLocalSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
+import { rollWeather, hashSeed } from '@/lib/sim/weather';
+import { pickDistinctReferees } from '@/lib/sim/referees';
 import { updateMorale, initMorale, MORALE_DEFAULT } from '@/lib/competition/morale';
-import { generateMatchPressItem, generateMoralePressItem, generatePresidencyReboundItem, generateDrameItem, generateDrameHommageItem, generateCmfItems, generateCmfCommunique, generateCmfEnqueteItem, generateCmfJugementItem, generateFormePressItem, generateCoachScandalItem } from '@/lib/competition/press';
+import { generateMatchPressItem, generateMoralePressItem, generatePresidencyReboundItem, generateDrameItem, generateDrameHommageItem, generateCmfItems, generateCmfCommunique, generateCmfEnqueteItem, generateCmfJugementItem, generateFormePressItem, generateCoachScandalItem, buildMatchFacts, computeMatchCotes, generateRefereePressItem, generateCmfDisciplineItem, generateFixingScandalItem, generateLockerRoomBrawlItem, generateDiscriminationItem } from '@/lib/competition/press';
 import { createMatchInjury, createSuspension, decrementInjuries, decrementSuspensions, unavailableIds } from '@/lib/competition/injuries';
+
+/** RNG déterministe seedé (même famille que les rng internes de press.ts). */
+function rngFromSeed(seed: string): () => number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) { h = Math.imul(31, h) + seed.charCodeAt(i) | 0; }
+  return () => { h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b); h ^= h >>> 16; return (h >>> 0) / 0xffffffff; };
+}
 import { PenaltyShootout } from '@/components/match/PenaltyShootout';
 import type { MatchInput, MatchState, Speed, CorruptionDeal } from '@/lib/sim/types';
-import type { SavedTactic, TacticStyle, Team, Player } from '@/lib/types';
+import type { SavedTactic, Team, Player } from '@/lib/types';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import type { StoredMatch } from '@/lib/prapi/matchBackend';
 import type { RecentMatchSummary } from '@/lib/github/matches';
@@ -121,7 +131,7 @@ export default function MultiplexLive() {
         );
         if (needStore && teamsStore.length === 0) await refreshTeams(ownerId, null, effectivePat);
 
-        const inputs: Array<{ compMatchId: string; input: MatchInput; homeSavedTactics: import('@/lib/types').SavedTactic[]; awaySavedTactics: import('@/lib/types').SavedTactic[] }> = [];
+        const inputs: Array<{ compMatchId: string; input: MatchInput; homeSavedTactics: import('@/lib/types').SavedTactic[]; awaySavedTactics: import('@/lib/types').SavedTactic[]; homeTacticId?: string; awayTacticId?: string }> = [];
 
         const moraleMap = comp.morale ?? initMorale(comp.teamIds);
         const compInjuries = comp.injuries ?? [];
@@ -147,8 +157,7 @@ export default function MultiplexLive() {
           const awayData = teamDataMap.get(awaySlug);
           if (!homeData || !awayData) continue;
 
-          const homeTactics = resolveActiveTactic(homeData.team);
-          const awayTactics = resolveActiveTactic(awayData.team);
+          const { home: homeTactics, away: awayTactics } = resolveMatchTactics(homeData.team, awayData.team);
           const mid = `comp-${competitionId}-${m.id}`;
           const homeUnavail = unavailableIds(m.homeTeamId!, compInjuries, compSuspensions);
           const awayUnavail = unavailableIds(m.awayTeamId!, compInjuries, compSuspensions);
@@ -172,6 +181,9 @@ export default function MultiplexLive() {
             compMatchId: m.id,
             homeSavedTactics: homeData.team.savedTactics ?? [],
             awaySavedTactics: awayData.team.savedTactics ?? [],
+            // id de la tactique réellement résolue (contre-tactique incluse) — présélection du pending
+            homeTacticId: (homeTactics as import('@/lib/types').SavedTactic | undefined)?.id,
+            awayTacticId: (awayTactics as import('@/lib/types').SavedTactic | undefined)?.id,
             input: {
               matchId: mid,
               home: {
@@ -181,7 +193,11 @@ export default function MultiplexLive() {
                 lineup: homeTactics?.lineup,
                 bench: homeTactics?.bench,
                 plannedSubs: homeTactics?.plannedSubs,
+                planB: homeTactics?.planB,
+                setPieceTakers: homeTactics?.setPieceTakers,
+                captainId: homeTactics?.captainId,
                 tacticStyle: homeTactics?.style,
+                customTacticStyle: resolveActiveCustomStyle(homeTactics, homeData.team),
                 morale: moraleMap[m.homeTeamId!] ?? MORALE_DEFAULT,
                 unavailablePlayerIds: [...homeUnavail].filter((id) => id !== 'coach'),
                 hasTactic: !!homeTactics,
@@ -193,7 +209,11 @@ export default function MultiplexLive() {
                 lineup: awayTactics?.lineup,
                 bench: awayTactics?.bench,
                 plannedSubs: awayTactics?.plannedSubs,
+                planB: awayTactics?.planB,
+                setPieceTakers: awayTactics?.setPieceTakers,
+                captainId: awayTactics?.captainId,
                 tacticStyle: awayTactics?.style,
+                customTacticStyle: resolveActiveCustomStyle(awayTactics, awayData.team),
                 morale: moraleMap[m.awayTeamId!] ?? MORALE_DEFAULT,
                 unavailablePlayerIds: [...awayUnavail].filter((id) => id !== 'coach'),
                 hasTactic: !!awayTactics,
@@ -206,12 +226,17 @@ export default function MultiplexLive() {
                   ? { ...rulesForPhase(comp.config, m.phase), extraTime: false, penalties: false }
                   : { ...rulesForPhase(comp.config, m.phase), extraTime: true, penalties: true }
                 : rulesForPhase(comp.config, m.phase),
+              weather: comp.config.climateZone ? rollWeather(comp.config.climateZone, hashSeed(mid)) : undefined,
               leg1Score,
             },
           });
         }
 
         if (inputs.length === 0) { toast('error', 'Données équipes introuvables.'); return; }
+
+        // Un arbitre différent pour chaque match de la journée (tirage déterministe)
+        const dayReferees = pickDistinctReferees(inputs.length, hashSeed(`${competitionId}-r${round}`));
+        inputs.forEach((slot, i) => { slot.input.referee = dayReferees[i]; });
 
         if (autoSimulate) {
           // Skip corruption page — force instant speed, launch immediately
@@ -221,7 +246,7 @@ export default function MultiplexLive() {
           }));
           start(launchInputs);
         } else {
-          setPendingInputs(inputs.map((i) => ({ ...i, corruption: null, homeSavedTactics: i.homeSavedTactics ?? [], awaySavedTactics: i.awaySavedTactics ?? [], homeTacticId: i.input.home.team.activeTacticId ?? '', awayTacticId: i.input.away.team.activeTacticId ?? '' })));
+          setPendingInputs(inputs.map((i) => ({ ...i, corruption: null, homeSavedTactics: i.homeSavedTactics ?? [], awaySavedTactics: i.awaySavedTactics ?? [], homeTacticId: i.homeTacticId ?? i.input.home.team.activeTacticId ?? '', awayTacticId: i.awayTacticId ?? i.input.away.team.activeTacticId ?? '' })));
         }
       } catch (err) {
         toast('error', String(err));
@@ -462,6 +487,39 @@ export default function MultiplexLive() {
       const baseSeed = `${current.id}-r${roundNum}-${slot.compMatchId}`;
       let matchDopingOccurred = false;
 
+      // Faits réels du match + cotes pré-match + snapshot complet partagé
+      const slotFacts = buildMatchFacts(
+        slot.state,
+        { teamId: homeId, players: slot.homePlayers },
+        { teamId: awayId, players: slot.awayPlayers },
+        baseSeed,
+      );
+      const gsOfSlot = (tid: string) => current.teamSnapshot?.[tid]?.globalStrength ?? 50;
+      const slotCotes = computeMatchCotes(gsOfSlot(homeId), gsOfSlot(awayId));
+      const slotPressSnap = {
+        homeTeamId: homeId,
+        awayTeamId: awayId,
+        homeTeamName: nameFor(homeId),
+        awayTeamName: nameFor(awayId),
+        homeScore: slot.state.score.home,
+        awayScore: slot.state.score.away,
+        stats: {
+          shots: slot.state.shots,
+          possession: slot.state.possession,
+          shotsOnTarget: slot.state.shotsOnTarget,
+          corners: slot.state.corners ?? { home: 0, away: 0 },
+          fouls: slot.state.fouls,
+          yellowCards: { home: slot.state.cards.home.yellow.length, away: slot.state.cards.away.yellow.length },
+          redCards: { home: slot.state.cards.home.red.length, away: slot.state.cards.away.red.length },
+        },
+        motm: computeMotm(slot.state, { team: slot.home, players: slot.homePlayers }, { team: slot.away, players: slot.awayPlayers }) ?? undefined,
+        referee: slotFacts.referee,
+        weather: slotFacts.weatherLabel,
+        attendance: slotFacts.attendance,
+        scorers: slotFacts.scorers.map(({ name, teamId, minute, penalty }) => ({ name, teamId, minute, penalty })),
+        penalties: slotFacts.penaltyScore,
+      };
+
       // Standings rank for press context
       const sortedStandings = Object.values(updatedStandings).sort(
         (a, b) => b.points - a.points || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst),
@@ -469,7 +527,7 @@ export default function MultiplexLive() {
       const rankOf = (tid: string) => sortedStandings.findIndex((s) => s.teamId === tid) + 1;
       const totalTeams = current.teamIds.length;
       // LPM: top 24 direct + 25-40 barrages → only rank 41+ truly eliminated
-      const isLPMLeague = compMatch.phase === 'league' && totalTeams >= 40;
+      const isLPMLeague = compMatch.phase === 'league' && current.format === 'lpm';
       const qualifyCount = isLPMLeague ? 40 : (current.config.qualifyPerGroup ?? Math.ceil(totalTeams / 4));
       const totalRoundsInPhase = current.matches.filter((m) => m.phase === compMatch.phase).reduce((mx, m) => Math.max(mx, m.round), 0);
 
@@ -514,6 +572,7 @@ export default function MultiplexLive() {
           moraleBefore: moraleBefore[tid] ?? MORALE_DEFAULT,
           moraleAfter: updatedMorale[tid] ?? MORALE_DEFAULT,
           phase: compMatch.phase,
+          format: current.format,
           standing: tidStanding,
           totalTeams,
           rank: tidRank,
@@ -527,24 +586,9 @@ export default function MultiplexLive() {
           corruptionEnabled: cheatingTeamId === tid,
           corruptionRevealed: slotCorruptionRevealed,
           matchId: slot.compMatchId,
-          matchSnapshot: {
-            homeTeamId: homeId,
-            awayTeamId: awayId,
-            homeTeamName: nameFor(homeId),
-            awayTeamName: nameFor(awayId),
-            homeScore: slot.state.score.home,
-            awayScore: slot.state.score.away,
-            stats: {
-              shots: slot.state.shots,
-              possession: slot.state.possession,
-              shotsOnTarget: slot.state.shotsOnTarget,
-              corners: slot.state.corners ?? { home: 0, away: 0 },
-              fouls: slot.state.fouls,
-              yellowCards: { home: slot.state.cards.home.yellow.length, away: slot.state.cards.away.yellow.length },
-              redCards: { home: slot.state.cards.home.red.length, away: slot.state.cards.away.red.length },
-            },
-            motm: computeMotm(slot.state, { team: slot.home, players: slot.homePlayers }, { team: slot.away, players: slot.awayPlayers }) ?? undefined,
-          },
+          matchSnapshot: slotPressSnap,
+          facts: slotFacts,
+          cote: tid === homeId ? slotCotes.home : slotCotes.away,
         });
         updatedPressItems = [...updatedPressItems, matchPress];
         if (matchPress.moraleShock && matchPress.moraleShock < 0) {
@@ -553,24 +597,7 @@ export default function MultiplexLive() {
         if (matchPress.moraleBoost && matchPress.moraleBoost > 0) {
           updatedMorale[tid] = Math.min(100, (updatedMorale[tid] ?? MORALE_DEFAULT) + matchPress.moraleBoost);
         }
-        const slotMatchSnap = {
-          homeTeamId: homeId,
-          awayTeamId: awayId,
-          homeTeamName: nameFor(homeId),
-          awayTeamName: nameFor(awayId),
-          homeScore: slot.state.score.home,
-          awayScore: slot.state.score.away,
-          stats: {
-            shots: slot.state.shots,
-            possession: slot.state.possession,
-            shotsOnTarget: slot.state.shotsOnTarget,
-            corners: slot.state.corners ?? { home: 0, away: 0 },
-            fouls: slot.state.fouls,
-            yellowCards: { home: slot.state.cards.home.yellow.length, away: slot.state.cards.away.yellow.length },
-            redCards: { home: slot.state.cards.home.red.length, away: slot.state.cards.away.red.length },
-          },
-          motm: computeMotm(slot.state, { team: slot.home, players: slot.homePlayers }, { team: slot.away, players: slot.awayPlayers }) ?? undefined,
-        };
+        const slotMatchSnap = slotPressSnap;
         if (dopingSuspension) {
           updatedDopingSuspensions = [...updatedDopingSuspensions, dopingSuspension];
           dopingBannedTeamIds.push(tid);
@@ -630,42 +657,60 @@ export default function MultiplexLive() {
           }
         }
 
-        // Win streak + forme press — basé sur pressItems AVANT ce round
+        // Séries — victoires (forme) et défaites (méforme), basées sur pressItems AVANT ce round
         const isWin = goalsFor > goalsAgainst;
-        if (isWin) {
+        const isLoss = goalsFor < goalsAgainst;
+        if (isWin || isLoss) {
           const prevItems = current.pressItems ?? [];
           const teamPrevMatchItems = prevItems
-            .filter((p) => p.teamId === tid && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite'].includes(p.category))
+            .filter((p) => p.teamId === tid && p.matchId && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite', 'critique'].includes(p.category))
             .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt));
           let streak = 1;
           for (const p of teamPrevMatchItems) {
-            if (p.category === 'victoire' || p.category === 'exploit') streak++;
+            const wasWin = p.category === 'victoire' || p.category === 'exploit';
+            const wasLoss = p.category === 'defaite' || p.category === 'crise' || p.category === 'critique';
+            if ((isWin && wasWin) || (isLoss && wasLoss)) streak++;
             else break;
           }
-          const currentSnap: NonNullable<import('@/lib/competition/press').PressItem['matchSnapshot']> = {
-            homeTeamId: homeId,
-            awayTeamId: awayId,
-            homeTeamName: nameFor(homeId),
-            awayTeamName: nameFor(awayId),
-            homeScore: slot.state.score.home,
-            awayScore: slot.state.score.away,
-          };
-          const prevWinSnaps = prevItems
-            .filter((p) => p.teamId === tid && p.matchSnapshot && (p.category === 'victoire' || p.category === 'exploit'))
-            .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt))
-            .slice(0, 2)
-            .map((p) => p.matchSnapshot!);
+          const prevWinSnaps = isWin
+            ? prevItems
+                .filter((p) => p.teamId === tid && p.matchSnapshot && (p.category === 'victoire' || p.category === 'exploit'))
+                .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt))
+                .slice(0, 2)
+                .map((p) => p.matchSnapshot!)
+            : [];
+          // Phase à élimination directe : une défaite = fin de parcours pour le perdant.
+          const isKnockoutPhase = compMatch.phase !== 'group'
+            && compMatch.phase !== 'league'
+            && compMatch.phase !== 'lpm_playoff';
+          const competitionOver = isLoss && isKnockoutPhase;
           const formeItem = generateFormePressItem({
             round: current.currentRound,
             teamId: tid,
             teamName: nameFor(tid),
-            winStreak: streak,
+            winStreak: isWin ? streak : 0,
+            lossStreak: isLoss ? streak : undefined,
+            competitionOver,
             seed: `${baseSeed}-${tid}-forme`,
-            matchSnapshots: [currentSnap, ...prevWinSnaps],
+            matchSnapshots: [slotPressSnap, ...prevWinSnaps],
             players: teamPlayers,
             coach: teamCoach ?? undefined,
           });
           if (formeItem) updatedPressItems = [...updatedPressItems, formeItem];
+        }
+
+        // Communiqué palmarès CMF — record (manita) ou sacre (finale gagnée)
+        {
+          const scoreStr = `${goalsFor}-${goalsAgainst}`;
+          const isSacre = compMatch.phase === 'F' && goalsFor > goalsAgainst;
+          const isManita = goalsFor - goalsAgainst >= 5;
+          const palmRng = rngFromSeed(`${baseSeed}-palm-${tid}`);
+          if (isSacre || (isManita && palmRng() < 0.6)) {
+            updatedPressItems = [...updatedPressItems, generateCmfCommunique({
+              round: current.currentRound, seed: `${baseSeed}-cmf-palm-${tid}`, type: 'palmares',
+              teamName: nameFor(tid), score: scoreStr, matchId: compMatch.id, matchSnapshot: slotPressSnap,
+            })];
+          }
         }
 
         // Scandale coach (alcoolique / drogué)
@@ -680,6 +725,12 @@ export default function MultiplexLive() {
           if (coachScandal) updatedPressItems = [...updatedPressItems, coachScandal];
         }
       }
+
+      // Polémique arbitrale + communiqué discipline CMF — une fois par match
+      const slotRefereeItem = generateRefereePressItem({ round: current.currentRound, seed: `${baseSeed}-arb`, facts: slotFacts, matchId: slot.compMatchId, matchSnapshot: slotPressSnap });
+      if (slotRefereeItem) updatedPressItems = [...updatedPressItems, slotRefereeItem];
+      const slotDisciplineItem = generateCmfDisciplineItem({ round: current.currentRound, seed: `${baseSeed}-disc`, facts: slotFacts, matchId: slot.compMatchId, matchSnapshot: slotPressSnap });
+      if (slotDisciplineItem) updatedPressItems = [...updatedPressItems, slotDisciplineItem];
 
       // CMF enquête — ref dénonce avant le match (refusedByRef)
       // Generate enquête article now + schedule judgment for next round
@@ -797,7 +848,52 @@ export default function MultiplexLive() {
           motm: computeMotm(slot.state, { team: slot.home, players: slot.homePlayers }, { team: slot.away, players: slot.awayPlayers }) ?? undefined,
         };
         updatedPressItems = [...updatedPressItems, generateDrameItem({ round: roundNum, seed: `${current.id}-r${roundNum}-${slot.compMatchId}-drame-evt`, matchId: slot.compMatchId, matchSnapshot: sn })];
+        updatedPressItems = [...updatedPressItems, generateCmfCommunique({ round: roundNum, seed: `${current.id}-r${roundNum}-${slot.compMatchId}-cmf-drame`, type: 'drame', matchId: slot.compMatchId, matchSnapshot: sn })];
         updatedPendingDrameHommage = { ...updatedPendingDrameHommage, [slot.compMatchId]: roundNum + 1 };
+      } else {
+        // ── Événements rares (déterministes, drame prioritaire) ──────────────
+        const sn = {
+          homeTeamId: cm.homeTeamId, awayTeamId: cm.awayTeamId,
+          homeTeamName: current.teamSnapshot?.[cm.homeTeamId]?.name ?? cm.homeTeamId,
+          awayTeamName: current.teamSnapshot?.[cm.awayTeamId]?.name ?? cm.awayTeamId,
+          homeScore: slot.state.score.home, awayScore: slot.state.score.away,
+        };
+        const nameOf = (tid: string) => current.teamSnapshot?.[tid]?.name ?? tid;
+        const rareRng = rngFromSeed(`${current.id}-r${roundNum}-${slot.compMatchId}-rare`);
+        const pickSide = () => rareRng() < 0.5
+          ? { tid: cm.homeTeamId!, players: slot.homePlayers }
+          : { tid: cm.awayTeamId!, players: slot.awayPlayers };
+        const rarePlayer = (players: typeof slot.homePlayers) => {
+          const out = players.filter((p) => p.position !== 'GK');
+          const pool = out.length > 0 ? out : players;
+          return pool[Math.floor(rareRng() * Math.max(1, pool.length))] ?? players[0];
+        };
+        // C1 — paris truqués (~0.3 %)
+        if (rareRng() < 0.003) {
+          const t = pickSide();
+          if (t.players.length > 0) {
+            const p = rarePlayer(t.players);
+            updatedPressItems = [...updatedPressItems,
+              generateFixingScandalItem({ round: roundNum, seed: `${current.id}-r${roundNum}-${slot.compMatchId}-fixing`, teamId: t.tid, teamName: nameOf(t.tid), player: p, matchId: slot.compMatchId, matchSnapshot: sn }),
+              generateCmfEnqueteItem({ round: roundNum, seed: `${current.id}-r${roundNum}-${slot.compMatchId}-fixing-enq`, teamId: t.tid, teamName: nameOf(t.tid), matchId: slot.compMatchId, matchSnapshot: sn }),
+            ];
+          }
+        }
+        // C2 — bagarre vestiaire (~0.5 %)
+        else if (rareRng() < 0.005) {
+          const t = pickSide();
+          if (t.players.length > 0) {
+            const p = rarePlayer(t.players);
+            updatedPressItems = [...updatedPressItems, generateLockerRoomBrawlItem({ round: roundNum, seed: `${current.id}-r${roundNum}-${slot.compMatchId}-brawl`, teamId: t.tid, teamName: nameOf(t.tid), player: p, matchId: slot.compMatchId, matchSnapshot: sn })];
+          }
+        }
+        // C3 — incident discriminatoire (~0.3 %) → communiqué CMF huis clos
+        else if (rareRng() < 0.003) {
+          updatedPressItems = [...updatedPressItems,
+            generateDiscriminationItem({ round: roundNum, seed: `${current.id}-r${roundNum}-${slot.compMatchId}-discrim`, matchId: slot.compMatchId, matchSnapshot: sn }),
+            generateCmfCommunique({ round: roundNum, seed: `${current.id}-r${roundNum}-${slot.compMatchId}-cmf-huis`, type: 'huis_clos', matchId: slot.compMatchId, matchSnapshot: sn }),
+          ];
+        }
       }
     }
 
@@ -871,11 +967,9 @@ export default function MultiplexLive() {
             if (!compMatch?.homeTeamId || !compMatch?.awayTeamId) continue;
             storedMatches.push({
               id: slot.compMatchId,
-              input: {
-                home: { team: slot.home, players: slot.homePlayers },
-                away: { team: slot.away, players: slot.awayPlayers },
-                rules: rulesForPhase(current.config, compMatch.phase),
-              } as any,
+              // input complet du slot (formations, lineups, tactiques, plans B, positionMap…)
+              // — indispensable pour un replay fidèle ; il suit aussi les changements mi-match
+              input: slot.input,
               state: slot.state,
               home: { team: slot.home, players: slot.homePlayers },
               away: { team: slot.away, players: slot.awayPlayers },
@@ -932,6 +1026,8 @@ export default function MultiplexLive() {
                 scoreAgainst,
                 opponentStrength: oppStrength,
                 compKind: current.kind,
+                competitionId: current.id,
+                competitionName: current.name,
                 compScope: current.scope,
                 compImportance: current.importance,
                 participantCount: participantCount2,
@@ -1067,6 +1163,9 @@ export default function MultiplexLive() {
                                   bench: tactic?.bench ?? s.input[side].bench,
                                   plannedSubs: tactic?.plannedSubs ?? s.input[side].plannedSubs,
                                   tacticStyle: tactic?.style ?? s.input[side].tacticStyle,
+                                  customTacticStyle: tactic
+                                    ? resolveActiveCustomStyle(tactic, s.input[side].team)
+                                    : s.input[side].customTacticStyle,
                                 },
                               },
                             }) : prev);
@@ -1084,6 +1183,19 @@ export default function MultiplexLive() {
                     );
                   })}
                 </div>
+
+                <label className="flex items-center gap-2 text-xs cursor-pointer text-muted">
+                  <input
+                    type="checkbox"
+                    checked={slot.input.rules.homeAdvantage ?? false}
+                    onChange={(e) => setPendingInputs((prev) => prev ? prev.map((s, si) => si === i ? {
+                      ...s,
+                      input: { ...s.input, rules: { ...s.input.rules, homeAdvantage: e.target.checked } },
+                    } : s) : prev)}
+                    className="h-3.5 w-3.5 rounded border-border"
+                  />
+                  Avantage du terrain pour {home.name}
+                </label>
 
                 <CorruptionPanel
                   homeTeamName={home.name}
@@ -1177,15 +1289,17 @@ export default function MultiplexLive() {
             <HalftimeTacticRow
               key={slot.compMatchId}
               slot={slot}
-              onTacticChange={(side, tactic) => updateSlotTactic(slot.compMatchId, side, {
-                formation: tactic.formation,
-                lineup: tactic.lineup,
-                bench: tactic.bench,
-                plannedSubs: tactic.plannedSubs,
-                tacticStyle: tactic.style as TacticStyle,
-                positionMap: tactic.positionMap,
-                tokenPositions: tactic.tokenPositions,
-              })}
+              onTacticChange={(side, tactic) => {
+                const team = slot.input[side].team;
+                updateSlotTactic(slot.compMatchId, side, tacticToSidePatch(tactic, team));
+                // Riposte : contre-tactique adverse déclenchée en plein match
+                const opp = side === 'home' ? 'away' as const : 'home' as const;
+                const counter = findCounterTactic(slot.input[opp].team, team.id, tactic.id);
+                if (counter) {
+                  updateSlotTactic(slot.compMatchId, opp, tacticToSidePatch(counter, slot.input[opp].team));
+                  toast('success', `⚔ ${slot.input[opp].team.name} riposte : « ${counter.name} »`);
+                }
+              }}
             />
           ))}
         </div>
@@ -1218,15 +1332,17 @@ export default function MultiplexLive() {
             <HalftimeTacticRow
               key={slot.compMatchId}
               slot={slot}
-              onTacticChange={(side, tactic) => updateSlotTactic(slot.compMatchId, side, {
-                formation: tactic.formation,
-                lineup: tactic.lineup,
-                bench: tactic.bench,
-                plannedSubs: tactic.plannedSubs,
-                tacticStyle: tactic.style as TacticStyle,
-                positionMap: tactic.positionMap,
-                tokenPositions: tactic.tokenPositions,
-              })}
+              onTacticChange={(side, tactic) => {
+                const team = slot.input[side].team;
+                updateSlotTactic(slot.compMatchId, side, tacticToSidePatch(tactic, team));
+                // Riposte : contre-tactique adverse déclenchée en plein match
+                const opp = side === 'home' ? 'away' as const : 'home' as const;
+                const counter = findCounterTactic(slot.input[opp].team, team.id, tactic.id);
+                if (counter) {
+                  updateSlotTactic(slot.compMatchId, opp, tacticToSidePatch(counter, slot.input[opp].team));
+                  toast('success', `⚔ ${slot.input[opp].team.name} riposte : « ${counter.name} »`);
+                }
+              }}
             />
           ))}
         </div>
@@ -1423,6 +1539,11 @@ function HalftimeTacticRow({ slot, onTacticChange }: {
   );
 }
 
+function resolveSavedTactics(team: Team): SavedTactic[] {
+  const local = loadLocalSavedTactics(team.id);
+  return local.savedTactics.length > 0 ? local.savedTactics : (team.savedTactics ?? []);
+}
+
 function MatchCard({ slot, density = 'normal' }: { slot: import('@/stores/multiplex').MultiplexSlot; density?: 'normal' | 'small' | 'tiny' }) {
   const state = slot.state;
   const home = slot.home;
@@ -1431,6 +1552,7 @@ function MatchCard({ slot, density = 'normal' }: { slot: import('@/stores/multip
   const prevScoreRef = useRef({ home: 0, away: 0 });
   const [flash, setFlash] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scoreSize = density === 'normal' ? 'text-3xl' : density === 'small' ? 'text-2xl' : 'text-xl';
   const flagSize = density === 'normal' ? 'h-8 w-8' : density === 'small' ? 'h-6 w-6' : 'h-5 w-5';
@@ -1545,6 +1667,24 @@ function MatchCard({ slot, density = 'normal' }: { slot: import('@/stores/multip
 
       {!state && (
         <div className="flex justify-center py-2 flex-shrink-0"><Spinner className="h-4 w-4" /></div>
+      )}
+
+      {state?.status === 'fulltime' && density === 'normal' && (
+        <button
+          onClick={() => setShowReport(true)}
+          className="w-full text-center text-[10px] text-muted/60 hover:text-muted pt-1 border-t border-border/50 flex-shrink-0 transition-colors"
+        >
+          Compte-rendu tactique
+        </button>
+      )}
+
+      {showReport && state && (
+        <TacticalReportModal
+          state={state}
+          home={{ ...slot.input.home, savedTactics: resolveSavedTactics(slot.home) }}
+          away={{ ...slot.input.away, savedTactics: resolveSavedTactics(slot.away) }}
+          onClose={() => setShowReport(false)}
+        />
       )}
     </motion.div>
   );

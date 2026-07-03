@@ -86,25 +86,53 @@ function bracketPhaseName(matchesInRound: number): string {
   return `KO${matchesInRound}`;
 }
 
-export function generateCupBracket(
-  teamIds: string[],
+/**
+ * Distribute teams into bracket slots with byes spread evenly across the
+ * bracket (a bye pairs a team with `null`; the team advances directly).
+ * Byes are awarded to the FIRST teams of the list (top seeds / draw order).
+ */
+export function padWithByes(teamIds: (string | null)[]): (string | null)[] {
+  const teams = teamIds.filter((t): t is string => t !== null);
+  const bracketSize = Math.pow(2, Math.ceil(Math.log2(Math.max(teams.length, 2))));
+  const byes = bracketSize - teams.length;
+  if (byes === 0) return [...teams];
+  const pairCount = bracketSize / 2;
+  // pair indices that receive a bye, spread evenly
+  const byePairs = new Set(Array.from({ length: byes }, (_, i) => Math.floor((i * pairCount) / byes)));
+  const byeTeams = teams.slice(0, byes);
+  const rest = teams.slice(byes);
+  const slots: (string | null)[] = [];
+  let bi = 0;
+  let ri = 0;
+  for (let p = 0; p < pairCount; p++) {
+    if (byePairs.has(p)) {
+      slots.push(byeTeams[bi++], null);
+    } else {
+      slots.push(rest[ri++] ?? null, rest[ri++] ?? null);
+    }
+  }
+  return slots;
+}
+
+/**
+ * Build a knockout bracket from explicit ordered slots (pairs = slots[2i] vs
+ * slots[2i+1]; a null slot = bye). Slot count must be a power of 2 —
+ * use padWithByes() to prepare it.
+ */
+export function buildBracketFromSlots(
+  slots: (string | null)[],
   legs: 1 | 2,
   thirdPlace: boolean,
   roundOffset = 1,
 ): CompMatch[] {
-  const shuffled = shuffle(teamIds);
-  const bracketSize = Math.pow(2, Math.ceil(Math.log2(Math.max(shuffled.length, 2))));
-  const padded: (string | null)[] = [...shuffled];
-  while (padded.length < bracketSize) padded.push(null); // byes
-
   const matches: CompMatch[] = [];
   // slot[i] holds the id of the match whose winner fills bracket position i
-  let roundTeams: (string | null)[] = [...padded];
+  let roundTeams: (string | null)[] = [...slots];
   let round = roundOffset;
 
   while (roundTeams.filter((t) => t !== null).length > 1) {
     const nextSlots: (string | null)[] = [];
-    const phase = bracketPhaseName(roundTeams.filter((t) => t !== null).length / 2);
+    const phase = bracketPhaseName(roundTeams.length / 2);
 
     for (let i = 0; i < roundTeams.length; i += 2) {
       const a = roundTeams[i];
@@ -171,6 +199,35 @@ export function generateCupBracket(
   }
 
   return matches;
+}
+
+export function generateCupBracket(
+  teamIds: string[],
+  legs: 1 | 2,
+  thirdPlace: boolean,
+  roundOffset = 1,
+  opts: { shuffle?: boolean } = {},
+): CompMatch[] {
+  const ordered = opts.shuffle === false ? [...teamIds] : shuffle(teamIds);
+  return buildBracketFromSlots(padWithByes(ordered), legs, thirdPlace, roundOffset);
+}
+
+/**
+ * Build a knockout bracket from explicit drawn pairs (draw ceremony output).
+ * A 1-team pair = bye. Pair order is preserved — the ceremony result IS the bracket.
+ */
+export function buildBracketFromPairs(
+  pairs: string[][],
+  legs: 1 | 2,
+  thirdPlace: boolean,
+  roundOffset = 1,
+): CompMatch[] {
+  const slots: (string | null)[] = pairs.flatMap((p) => [p[0] ?? null, p[1] ?? null]);
+  // Safety: if the draw didn't produce a power-of-2 layout, rebuild byes evenly
+  const size = slots.length;
+  const isPow2 = size >= 2 && (size & (size - 1)) === 0;
+  const finalSlots = isPow2 ? slots : padWithByes(slots);
+  return buildBracketFromSlots(finalSlots, legs, thirdPlace, roundOffset);
 }
 
 export function generateGroupsKnockout(

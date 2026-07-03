@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, Fragment } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SkeletonCard, SkeletonRow } from '@/components/ui/Skeleton';
 import { toast } from '@/components/ui/Toast';
@@ -6,22 +6,23 @@ import { Button } from '@/components/ui/Button';
 import { TacticsPanel } from '@/components/team/TacticsPanel';
 import { StartingXI } from '@/components/team/StartingXI';
 import { TacticsSummary } from '@/components/team/TacticsSummary';
+import { CounterTacticsPanel } from '@/components/team/CounterTacticsPanel';
+import { MatchHistoryTable } from '@/components/team/MatchHistoryTable';
 import { useSession } from '@/stores/session';
 import { usePrApiToken } from '@/stores/prApiToken';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import { prapi } from '@/lib/prapi/client';
 import { useCompetition } from '@/stores/competition';
-import { POSITION_LABEL } from '@/lib/types';
 import { FORMAT_LABEL } from '@/lib/competition/types';
 import type { Player, SavedTactic, Team, TeamTactics } from '@/lib/types';
 import type { CompetitionSummary, CompHistoryEntry } from '@/lib/competition/types';
-import { COMPETITION_IMPORTANCE_LABEL } from '@/lib/competition/types';
-import { calcCmfMatchPoints } from '@/lib/github/matches';
 import type { RecentMatchSummary } from '@/lib/github/matches';
 import { loadLocalTactics } from '@/lib/localTactics';
 import { PlayerView } from '@/components/team/PlayerView';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
 import type { Coach } from '@/lib/gen/coach';
+import { pickNameMixed } from '@/lib/gen/names';
+import { Input } from '@/components/ui/Input';
 
 
 type Tab = 'tactique' | 'joueurs' | 'palmares' | 'historique' | 'entraineur' | 'stats';
@@ -42,7 +43,37 @@ export default function MyTeam() {
   const [summaries, setSummaries] = useState<CompetitionSummary[]>([]);
   const [, setLoadingComps] = useState(false);
   const [viewingPlayer, setViewingPlayer] = useState<Player | null>(null);
+  const [renaming, setRenaming] = useState<
+    | { kind: 'player'; id: string; first: string; last: string }
+    | { kind: 'coach'; first: string; last: string }
+    | null
+  >(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+
+  function saveTeamData(nextTeam: Team, nextPlayers: Player[]) {
+    if (!prApiToken) return;
+    setData({ team: nextTeam, players: nextPlayers });
+    new PrApiTeamBackend(prApiToken).saveTeam(nextTeam, nextPlayers).catch(() => {
+      toast('error', 'Échec de la sauvegarde.');
+    });
+  }
+
+  function applyRename(first: string, last: string) {
+    if (!data || !renaming) return;
+    const firstName = first.trim();
+    const lastName = last.trim();
+    if (!firstName && !lastName) return;
+    if (renaming.kind === 'player') {
+      const players = data.players.map((p) => p.id === renaming.id ? { ...p, firstName, lastName } : p);
+      saveTeamData(data.team, players);
+      toast('success', 'Joueur renommé.');
+    } else if (data.team.coach) {
+      saveTeamData({ ...data.team, coach: { ...data.team.coach, firstName, lastName } }, data.players);
+      toast('success', 'Entraîneur renommé.');
+    }
+    setRenaming(null);
+  }
 
   useEffect(() => {
     if (!session || !prApiToken) return;
@@ -254,7 +285,7 @@ export default function MyTeam() {
           <h1 className="font-display text-3xl">{team.name}</h1>
           <p className="text-sm text-muted mt-1">Force {team.globalStrength} · {players.length} joueurs</p>
         </div>
-        <div />
+        <Button size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}>⚙ Paramètres</Button>
       </div>
 
       {/* Tabs */}
@@ -294,6 +325,12 @@ export default function MyTeam() {
             onActivate={activateTactic}
             onDelete={deleteTactic}
             onRename={renameTactic}
+          />
+
+          <CounterTacticsPanel
+            savedTactics={savedTactics}
+            selfTeamId={team.id}
+            onChange={(next) => persistSavedTactics(next, activeTacticId)}
           />
 
           {/* Editor for selected or new tactic */}
@@ -355,39 +392,8 @@ export default function MyTeam() {
           lineup={(savedTactics.find((t) => t.id === activeTacticId) ?? savedTactics[0])?.lineup}
           positionMap={(savedTactics.find((t) => t.id === activeTacticId) ?? savedTactics[0])?.positionMap}
           onPlayerClick={setViewingPlayer}
+          onRenamePlayer={(p) => setRenaming({ kind: 'player', id: p.id, first: p.firstName, last: p.lastName })}
         />
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="bg-bg text-left text-muted">
-              <tr>
-                <th className="px-4 py-2 font-medium">Nom</th>
-                <th className="px-4 py-2 font-medium">Poste</th>
-                <th className="px-4 py-2 font-medium text-right">Âge</th>
-                <th className="px-4 py-2 font-medium text-right">Pied</th>
-                <th className="px-4 py-2 font-medium text-right">Overall</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...players]
-                .sort((a, b) => b.overall - a.overall)
-                .map((p) => (
-                  <tr
-                    key={p.id}
-                    className="border-t border-border cursor-pointer hover:bg-accent/10 hover:text-accent transition-colors"
-                    onClick={() => setViewingPlayer(p)}
-                  >
-                    <td className="px-4 py-2">{p.firstName} {p.lastName}</td>
-                    <td className="px-4 py-2">
-                      <span className="rounded bg-border/40 px-2 py-0.5 font-mono text-xs">{POSITION_LABEL[p.position]}</span>
-                    </td>
-                    <td className="px-4 py-2 text-right">{p.age}</td>
-                    <td className="px-4 py-2 text-right">{p.preferredFoot === 'right' ? 'D' : p.preferredFoot === 'left' ? 'G' : 'D/G'}</td>
-                    <td className="px-4 py-2 text-right font-medium">{p.overall}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
         </div>
       )}
 
@@ -407,10 +413,19 @@ export default function MyTeam() {
       )}
       {/* Historique des matchs */}
       {tab === 'historique' && (
-        <MyTeamHistoriqueTab recentMatches={data.team.recentMatches ?? []} />
+        <MatchHistoryTable
+          recentMatches={data.team.recentMatches ?? []}
+          teamId={data.team.id}
+          onEnrich={(next) => saveTeamData({ ...data.team, recentMatches: next }, data.players)}
+        />
       )}
       {tab === 'entraineur' && (
-        <CoachReadPanel coach={data.team.coach ?? null} teamSlug={data.team.slug} isAdmin={isAdmin} />
+        <CoachReadPanel
+          coach={data.team.coach ?? null}
+          teamSlug={data.team.slug}
+          isAdmin={isAdmin}
+          onRename={data.team.coach ? () => setRenaming({ kind: 'coach', first: data.team.coach!.firstName, last: data.team.coach!.lastName }) : undefined}
+        />
       )}
 
     </div>
@@ -418,11 +433,141 @@ export default function MyTeam() {
     {viewingPlayer && (
       <PlayerView player={viewingPlayer} onClose={() => setViewingPlayer(null)} />
     )}
+    {settingsOpen && (
+      <TeamSettingsModal
+        team={team}
+        onClose={() => setSettingsOpen(false)}
+        onSave={(patch, regenNames) => {
+          const nextTeam: Team = { ...data.team, ...patch };
+          const cultures = nextTeam.cultures?.length
+            ? nextTeam.cultures
+            : [{ culture: nextTeam.culture, weight: 100 }];
+          const nextPlayers = regenNames
+            ? data.players.map((p) => ({ ...p, ...pickNameMixed(cultures) }))
+            : data.players;
+          saveTeamData(nextTeam, nextPlayers);
+          toast('success', regenNames ? 'Paramètres sauvegardés, noms régénérés.' : 'Paramètres sauvegardés.');
+          setSettingsOpen(false);
+        }}
+      />
+    )}
+    {renaming && (
+      <RenameModal
+        title={renaming.kind === 'player' ? 'Renommer le joueur' : 'Renommer l\'entraîneur'}
+        initialFirst={renaming.first}
+        initialLast={renaming.last}
+        onSave={applyRename}
+        onClose={() => setRenaming(null)}
+      />
+    )}
     </>
   );
 }
 
-function CoachReadPanel({ coach, teamSlug, isAdmin }: { coach: Coach | null; teamSlug?: string; isAdmin: boolean }) {
+function TeamSettingsModal({ team, onSave, onClose }: {
+  team: Team;
+  onSave: (patch: Pick<Team, 'name' | 'jerseyColor' | 'jerseyAwayColor'>, regenNames: boolean) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(team.name);
+  const [jerseyColor, setJerseyColor] = useState(team.jerseyColor ?? '#e63c3c');
+  const [jerseyAwayColor, setJerseyAwayColor] = useState(team.jerseyAwayColor ?? '#f4f0e6');
+  const [regenNames, setRegenNames] = useState(false);
+  const cultures = team.cultures?.length ? team.cultures : [{ culture: team.culture, weight: 100 }];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <form
+        className="w-full max-w-md space-y-5 rounded-xl border border-border bg-surface p-5"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => { e.preventDefault(); if (name.trim()) onSave({ name: name.trim(), jerseyColor, jerseyAwayColor }, regenNames); }}
+      >
+        <h2 className="font-display text-xl">Paramètres de l'équipe</h2>
+
+        <label className="block text-sm">
+          <span className="mb-1 block text-muted">Nom de l'équipe</span>
+          <Input value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+
+        <div className="grid grid-cols-2 gap-4">
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Maillot domicile</span>
+            <span className="flex items-center gap-2">
+              <input type="color" value={jerseyColor} onChange={(e) => setJerseyColor(e.target.value)} className="h-8 w-12 cursor-pointer rounded border border-border bg-bg" />
+              <span className="font-mono text-xs text-muted">{jerseyColor}</span>
+            </span>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Maillot extérieur</span>
+            <span className="flex items-center gap-2">
+              <input type="color" value={jerseyAwayColor} onChange={(e) => setJerseyAwayColor(e.target.value)} className="h-8 w-12 cursor-pointer rounded border border-border bg-bg" />
+              <span className="font-mono text-xs text-muted">{jerseyAwayColor}</span>
+            </span>
+          </label>
+        </div>
+
+        <label className="flex items-start gap-3 text-sm cursor-pointer rounded-lg border border-border bg-bg p-3">
+          <input
+            type="checkbox"
+            checked={regenNames}
+            onChange={(e) => setRegenNames(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-border"
+          />
+          <span>
+            <span className="block font-medium">Régénérer les noms des joueurs</span>
+            <span className="block text-xs text-muted mt-0.5">
+              Nouveaux prénoms/noms tirés selon les cultures de l'équipe
+              ({cultures.map((c) => c.culture).join(', ')}). Stats, postes et âges inchangés. Irréversible.
+            </span>
+          </span>
+        </label>
+
+        <div className="flex gap-2">
+          <Button type="submit" size="sm" disabled={!name.trim()}>Sauvegarder</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={onClose}>Annuler</Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function RenameModal({ title, initialFirst, initialLast, onSave, onClose }: {
+  title: string;
+  initialFirst: string;
+  initialLast: string;
+  onSave: (first: string, last: string) => void;
+  onClose: () => void;
+}) {
+  const [first, setFirst] = useState(initialFirst);
+  const [last, setLast] = useState(initialLast);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <form
+        className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-surface p-5"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => { e.preventDefault(); onSave(first, last); }}
+      >
+        <h2 className="font-display text-xl">{title}</h2>
+        <div className="space-y-3">
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Prénom</span>
+            <Input autoFocus value={first} onChange={(e) => setFirst(e.target.value)} />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Nom</span>
+            <Input value={last} onChange={(e) => setLast(e.target.value)} />
+          </label>
+        </div>
+        <div className="flex gap-2">
+          <Button type="submit" size="sm" disabled={!first.trim() && !last.trim()}>Renommer</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={onClose}>Annuler</Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CoachReadPanel({ coach, teamSlug, isAdmin, onRename }: { coach: Coach | null; teamSlug?: string; isAdmin: boolean; onRename?: () => void }) {
   const statKeys = ['motivation', 'tactique', 'offensive', 'defensif', 'mentalite', 'gestion'] as const;
   const statLabel: Record<typeof statKeys[number], string> = {
     motivation: 'Motivation', tactique: 'Tactique', offensive: 'Offensive',
@@ -459,7 +604,12 @@ function CoachReadPanel({ coach, teamSlug, isAdmin }: { coach: Coach | null; tea
 
       <div className="rounded-lg border border-border bg-surface p-5 space-y-5">
         <div>
-          <div className="font-display text-2xl">{coach.firstName} {coach.lastName}</div>
+          <div className="flex items-center gap-2 font-display text-2xl">
+            {coach.firstName} {coach.lastName}
+            {onRename && (
+              <button onClick={onRename} className="text-base text-muted/50 hover:text-accent transition-colors" title="Renommer l'entraîneur">✏️</button>
+            )}
+          </div>
           <div className="text-sm text-muted mt-1">Overall {coach.overall} / 100</div>
         </div>
 
@@ -503,102 +653,6 @@ function CoachReadPanel({ coach, teamSlug, isAdmin }: { coach: Coach | null; tea
             </div>
           ))}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function MyTeamHistoriqueTab({ recentMatches }: { recentMatches: RecentMatchSummary[] }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  if (recentMatches.length === 0) {
-    return (
-      <div className="py-16 text-center text-muted text-sm">
-        Aucun match enregistré. L'historique apparaît ici après chaque compétition.
-      </div>
-    );
-  }
-
-  const sorted = [...recentMatches].sort((a, b) => b.playedAt.localeCompare(a.playedAt));
-
-  return (
-    <div className="space-y-3">
-      <div className="text-xs text-muted">
-        Historique complet · {recentMatches.length} match{recentMatches.length > 1 ? 's' : ''} enregistré{recentMatches.length > 1 ? 's' : ''}
-      </div>
-      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-        <table className="w-full text-sm">
-          <thead className="bg-bg text-left text-xs text-muted uppercase tracking-wide">
-            <tr>
-              <th className="px-3 py-2">Date</th>
-              <th className="px-3 py-2">Adversaire</th>
-              <th className="px-3 py-2 text-center">D/E</th>
-              <th className="px-3 py-2 text-center">Score</th>
-              <th className="px-3 py-2 text-center">Résultat</th>
-              <th className="px-3 py-2 text-right">Pts CMF</th>
-              <th className="px-3 py-2">Importance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((m) => {
-              const won = m.scoreFor > m.scoreAgainst;
-              const drew = m.scoreFor === m.scoreAgainst;
-              const resultLabel = won ? 'V' : drew ? 'N' : 'D';
-              const resultColor = won ? 'text-green-400' : drew ? 'text-warning' : 'text-danger';
-              const pts = m.opponentStrength != null
-                ? calcCmfMatchPoints({ scoreFor: m.scoreFor, scoreAgainst: m.scoreAgainst, opponentStrength: m.opponentStrength, compKind: m.compKind, compScope: m.compScope, compImportance: m.compImportance, participantCount: m.participantCount })
-                : (m.cmfPoints ?? 0);
-              const key = `${m.matchId}-${m.homeAway}`;
-              const hasDetails = !!(m.scorers?.length || m.cards?.length);
-              const isExpanded = expanded === key;
-              return (
-                <Fragment key={key}>
-                  <tr
-                    className={`border-t border-border transition-colors ${hasDetails ? 'cursor-pointer hover:bg-accent/5' : ''}`}
-                    onClick={() => hasDetails && setExpanded(isExpanded ? null : key)}
-                  >
-                    <td className="px-3 py-2 text-xs text-muted tabular-nums whitespace-nowrap">
-                      {new Date(m.playedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                    </td>
-                    <td className="px-3 py-2 font-medium">{m.opponentName}</td>
-                    <td className="px-3 py-2 text-center text-xs text-muted">{m.homeAway === 'home' ? 'D' : 'E'}</td>
-                    <td className="px-3 py-2 text-center font-mono tabular-nums">{m.scoreFor}–{m.scoreAgainst}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className={`font-bold text-xs ${resultColor}`}>{resultLabel}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium text-accent">{pts > 0 ? `+${pts}` : pts}</td>
-                    <td className="px-3 py-2 text-xs text-muted">
-                      {m.compImportance ? COMPETITION_IMPORTANCE_LABEL[m.compImportance] : '—'}
-                    </td>
-                  </tr>
-                  {isExpanded && hasDetails && (
-                    <tr className="border-t border-border/30">
-                      <td colSpan={7} className="px-4 py-2 bg-surface/60">
-                        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
-                          {(m.scorers ?? []).map((g, i) => (
-                            <span key={i} className="flex items-center gap-1">
-                              <span>⚽</span>
-                              <span className="font-medium text-text">{g.playerName}</span>
-                              <span className="text-muted/60">{g.minute}'</span>
-                              {g.assistName && <span className="text-muted/60">(p. {g.assistName})</span>}
-                            </span>
-                          ))}
-                          {(m.cards ?? []).map((c, i) => (
-                            <span key={i} className="flex items-center gap-1">
-                              <span>{c.type === 'red' ? '🟥' : '🟨'}</span>
-                              <span className="font-medium text-text">{c.playerName}</span>
-                              <span className="text-muted/60">{c.minute}'</span>
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
       </div>
     </div>
   );

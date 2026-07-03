@@ -1,6 +1,9 @@
 import type { Player, Position, Team } from '@/lib/types';
+import { TACTIC_STYLE_LABEL } from '@/lib/types';
 import type { MatchEvent, MatchState, SideRatings } from './types';
 import { ZONE, eventText } from './events';
+import { weatherFx } from './weather';
+import { getTacticMods } from './precompute';
 
 export type EngineCtx = {
   home: { team: Team; players: Map<string, Player>; ratings: SideRatings };
@@ -158,6 +161,158 @@ function teamRatingMultiplier(side: 'home' | 'away', state: MatchState): number 
   return Math.pow(0.93, reds);
 }
 
+// ── Multiplicateurs situationnels ────────────────────────────────────────────
+
+/** Avantage du terrain : public + repères. Opt-in via rules.homeAdvantage (défaut : off). */
+const HOME_ADV = { attack: 1.04, midfield: 1.05, defense: 1.02 } as const;
+
+function homeAdvantageMult(state: MatchState, side: 'home' | 'away', kind: keyof typeof HOME_ADV): number {
+  return side === 'home' && state.rules.homeAdvantage ? HOME_ADV[kind] : 1;
+}
+
+/**
+ * Fatigue : à partir de la 60e, les jambes lâchent. Les styles à haute intensité
+ * (pressing, gegenpressing, chaos) paient leur débauche d'énergie ; l'endurance
+ * des joueurs sur le terrain et les remplacements (jambes fraîches) compensent.
+ * Retourne un multiplicateur ≤ 1 pour attaque/milieu (défense : moitié de l'effet).
+ */
+export function fatigueMult(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): number {
+  const m = state.minute;
+  if (m <= 60) return 1;
+  const ratings = side === 'home' ? ctx.home.ratings : ctx.away.ratings;
+  const mods = ratings.tacticMods;
+  // Débauche d'énergie du style : pressing/fautes pèsent le plus lourd
+  const intensity =
+    Math.max(0, mods.midfieldMult - 1) * 0.6 +
+    Math.max(0, mods.foulRateMult - 1) * 0.8 +
+    Math.max(0, mods.shotFreqMult - 1) * 0.3;
+  // Endurance moyenne des joueurs de champ sur le terrain (1–20, 10 = moyen)
+  const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+  const players = side === 'home' ? ctx.home.players : ctx.away.players;
+  let staminaSum = 0, n = 0;
+  for (const id of onPitch) {
+    const p = players.get(id);
+    if (p && p.position !== 'GK') { staminaSum += p.stats.physical.stamina; n++; }
+  }
+  const avgStamina = n ? staminaSum / n : 10;
+  const subsUsed = side === 'home' ? state.homeSubs : state.awaySubs;
+  // 1.0 à la 90e, jusqu'à 2.0 à la 120e — les prolongations pèsent double
+  const progress = Math.min(2, (m - 60) / 30);
+  const base = 0.05 + intensity * 0.35;
+  const relief = Math.min(0.6, subsUsed * 0.12 + Math.max(0, (avgStamina - 10) / 10) * 0.3);
+  // Canicule/froid extrême : la fatigue frappe plus fort
+  const wMult = weatherFx(state.weather).fatigueMult;
+  return clamp(1 - base * progress * (1 - relief) * wMult, 0.70, 1);
+}
+
+/**
+ * Fin de match : dès la 75e, l'équipe menée jette ses forces devant
+ * (attaque +, défense − : les espaces s'ouvrent), celle qui mène gère.
+ */
+export function latePushMults(state: MatchState, side: 'home' | 'away'): { att: number; mid: number; def: number } {
+  if (state.minute < 75) return { att: 1, mid: 1, def: 1 };
+  const opp: 'home' | 'away' = side === 'home' ? 'away' : 'home';
+  const diff = state.score[side] - state.score[opp];
+  if (diff < 0) return { att: 1.12, mid: 1.04, def: 0.88 }; // tout pour l'attaque
+  if (diff > 0) return { att: 0.94, mid: 0.98, def: 1.06 }; // gestion du résultat
+  return { att: 1, mid: 1, def: 1 };
+}
+
+/** Le capitaine est-il sur le terrain ? Ses effets (discipline, résilience) ne valent que s'il joue. */
+function captainOnPitch(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): boolean {
+  const capId = (side === 'home' ? ctx.home.ratings : ctx.away.ratings).captainId;
+  if (!capId) return false;
+  return (side === 'home' ? state.homeOnPitch : state.awayOnPitch).includes(capId);
+}
+
+/**
+ * Momentum : dans les minutes qui suivent un but, le buteur domine psychologiquement.
+ * Un capitaine adverse sur le terrain calme le vague (résilience) : effet réduit de moitié.
+ */
+function momentumMult(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): number {
+  if (!state.momentum) return 1;
+  if (state.momentum.side !== side || state.minute > state.momentum.untilMinute) return 1;
+  const opp: 'home' | 'away' = side === 'home' ? 'away' : 'home';
+  return captainOnPitch(state, ctx, opp) ? 1.025 : 1.05;
+}
+
+function setMomentum(state: MatchState, side: 'home' | 'away'): void {
+  state.momentum = { side, untilMinute: state.minute + 6 };
+}
+
+/** Note effective d'un secteur : base × rouges × terrain × fatigue × fin de match × momentum */
+function effRating(state: MatchState, ctx: EngineCtx, side: 'home' | 'away', kind: 'attack' | 'midfield' | 'defense'): number {
+  const ratings = side === 'home' ? ctx.home.ratings : ctx.away.ratings;
+  const base = ratings[kind];
+  const fat = fatigueMult(state, ctx, side);
+  const push = latePushMults(state, side);
+  const pushK = kind === 'attack' ? push.att : kind === 'midfield' ? push.mid : push.def;
+  // La défense fatigue moitié moins (bloc reculé = moins de courses)
+  const fatK = kind === 'defense' ? 1 - (1 - fat) * 0.5 : fat;
+  return base
+    * teamRatingMultiplier(side, state)
+    * homeAdvantageMult(state, side, kind)
+    * fatK
+    * pushK
+    * momentumMult(state, ctx, side);
+}
+
+// ── Plans B conditionnels ─────────────────────────────────────────────────────
+
+/**
+ * Bascule automatique de style configurée dans la tactique : « si mené à la 70e,
+ * passer en chaos ». Applique les nouveaux tacticMods et corrige les ratings
+ * pré-calculés par le ratio nouveau/ancien (le matchup de coup d'envoi reste figé).
+ * Chaque règle ne se déclenche qu'une fois.
+ */
+export function applyPlanBRules(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): void {
+  const ratings = side === 'home' ? ctx.home.ratings : ctx.away.ratings;
+  if (!ratings.planB.length) return;
+  const opp: 'home' | 'away' = side === 'home' ? 'away' : 'home';
+  const diff = state.score[side] - state.score[opp];
+  const reds = state.cards[side].red.length;
+  const teamName = side === 'home' ? ctx.home.team.name : ctx.away.team.name;
+  const oppTeamId = (side === 'home' ? ctx.away : ctx.home).team?.id;
+
+  for (const rule of ratings.planB) {
+    if (rule.done || state.minute < rule.fromMinute) continue;
+    // Condition adversaire : « seulement contre » restreint, « sauf contre » annule
+    if (rule.vsMode && rule.vsTeamId) {
+      const facing = oppTeamId != null && oppTeamId === rule.vsTeamId;
+      if (rule.vsMode === 'only' ? !facing : facing) continue;
+    }
+    const hit =
+      rule.trigger === 'losing' ? diff < 0
+      : rule.trigger === 'winning' ? diff > 0
+      : rule.trigger === 'drawing' ? diff === 0
+      : reds > 0; // redCard
+    if (!hit) continue;
+    rule.done = true;
+    // Cible = tactique sauvegardée (mods résolus par enrichPlanBRules) sinon style legacy
+    const next = rule.modsOverride ?? (rule.style ? getTacticMods(rule.style) : null);
+    if (!next) continue; // tactique supprimée, aucun fallback — règle consommée sans effet
+    const old = ratings.tacticMods;
+    ratings.attack   *= next.attackMult / old.attackMult;
+    ratings.midfield *= next.midfieldMult / old.midfieldMult;
+    ratings.defense  *= next.defenseMult / old.defenseMult;
+    ratings.tacticMods = next;
+    pushEvent(state, ctx, { type: 'tacticChange', side, ballPos: ZONE.centre },
+      teamName, rule.label ?? rule.tacticName ?? (rule.style ? TACTIC_STYLE_LABEL[rule.style] : 'Plan B'));
+  }
+}
+
+// ── Tireurs désignés ──────────────────────────────────────────────────────────
+
+/** Tireur désigné pour un coup de pied arrêté — seulement s'il est sur le terrain */
+function designatedTaker(state: MatchState, ctx: EngineCtx, side: 'home' | 'away', kind: 'penalty' | 'freeKick' | 'corner'): Player | null {
+  const ratings = side === 'home' ? ctx.home.ratings : ctx.away.ratings;
+  const id = ratings.takers?.[kind];
+  if (!id) return null;
+  const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+  if (!onPitch.includes(id)) return null;
+  return (side === 'home' ? ctx.home.players : ctx.away.players).get(id) ?? null;
+}
+
 function posFamily(pos: Position): Position[] {
   if (['CB', 'LB', 'RB'].includes(pos)) return ['CB', 'LB', 'RB'];
   if (['DM', 'CM'].includes(pos)) return ['DM', 'CM'];
@@ -180,7 +335,7 @@ function injectGoal(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): v
   state.shotsOnTarget[side]++;
   const fin = scorer?.stats.technical.finishing ?? 10;
   const com = scorer?.stats.mental.composure ?? 10;
-  const gkVal = oppGk?.overall ?? 50;
+  const gkVal = oppGk?.overall ?? 35; // pas de gardien = joueur de champ improvisé dans les buts
   const xg = clamp(sigmoid((fin + com - gkVal * 0.5) / 8), 0.04, 0.75);
   state.xg[side] = Math.round((state.xg[side] + xg) * 100) / 100;
 
@@ -190,6 +345,7 @@ function injectGoal(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): v
   }
 
   state.score[side]++;
+  setMomentum(state, side);
   pushEvent(state, ctx,
     { type: 'goal', side, playerId: scorer?.id, assistId: effectiveAssist?.id, ballPos: ballZone },
     teamName, scorer ? `${scorer.firstName} ${scorer.lastName}` : undefined,
@@ -318,11 +474,11 @@ function resolveShot(
   const oppGk = gkOf(opp, ctx, state);
   const fin = shooter?.stats.technical.finishing ?? 10;
   const com = shooter?.stats.mental.composure ?? 10;
-  const gkVal = oppGk?.overall ?? 50;
+  const gkVal = oppGk?.overall ?? 35; // pas de gardien = joueur de champ improvisé dans les buts
   const pGoal = clamp(sigmoid((fin + com - gkVal * 0.5) / 8) * pGoalMult, 0.04, 0.75);
   state.xg[possessing] = Math.round((state.xg[possessing] + pGoal) * 100) / 100;
   const ballZone = zone ?? (possessing === 'home' ? ZONE.awayBox : ZONE.homeBox);
-  const onTarget = chance(0.55);
+  const onTarget = chance(0.55 + weatherFx(state.weather).onTargetDelta);
   if (onTarget) {
     state.shotsOnTarget[possessing]++;
     if (chance(pGoal)) {
@@ -336,6 +492,7 @@ function resolveShot(
         return false;
       }
       state.score[possessing]++;
+      setMomentum(state, possessing);
       const effectiveAssist = assisterId !== shooter?.id ? assisterId : undefined;
       pushEvent(state, ctx, { type: 'goal', side: possessing, playerId: shooter?.id, assistId: effectiveAssist, ballPos: ballZone },
         teamName, shooter ? `${shooter.firstName} ${shooter.lastName}` : undefined);
@@ -385,7 +542,7 @@ function tryPenaltyShot(
   const oppGk = gkOf(opp, ctx, state);
   const fin = shooter?.stats.technical.finishing ?? 10;
   const com = shooter?.stats.mental.composure ?? 10;
-  const gkVal = oppGk?.overall ?? 50;
+  const gkVal = oppGk?.overall ?? 35; // pas de gardien = joueur de champ improvisé dans les buts
   const pGoal = clamp(sigmoid((fin + com - gkVal * 0.5) / 8) * 1.8, 0.04, 0.75);
   state.xg[possessing] = Math.round((state.xg[possessing] + pGoal) * 100) / 100;
   const ballZone = possessing === 'home' ? ZONE.awayBox : ZONE.homeBox;
@@ -395,6 +552,7 @@ function tryPenaltyShot(
     state.shotsOnTarget[possessing]++;
     if (chance(pGoal)) {
       state.score[possessing]++;
+      setMomentum(state, possessing);
       pushEvent(state, ctx, { type: 'goal', side: possessing, playerId: shooter?.id, ballPos: ballZone },
         teamName, shooter ? `${shooter.firstName} ${shooter.lastName}` : undefined);
       state.ball = ZONE.centre;
@@ -559,7 +717,7 @@ function simulatePenalties(state: MatchState, ctx: EngineCtx): void {
     const teamName = side === 'home' ? ctx.home.team.name : ctx.away.team.name;
     const shooter = pickAttacker(side, ctx, state);
     const gk = gkOf(opp, ctx, state);
-    const pGoal = clamp(sigmoid(((shooter?.stats.technical.finishing ?? 10) + (shooter?.stats.mental.composure ?? 10) - (gk?.overall ?? 50) * 0.5) / 8) * 1.5, 0.50, 0.86);
+    const pGoal = clamp(sigmoid(((shooter?.stats.technical.finishing ?? 10) + (shooter?.stats.mental.composure ?? 10) - (gk?.overall ?? 35) * 0.5) / 8) * 1.5, 0.50, 0.86);
     const scored = chance(pGoal);
     if (scored) penScore[side]++;
     state.events.push({
@@ -658,6 +816,10 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   applyPlannedSubsByMinute(state, ctx, 'home');
   applyPlannedSubsByMinute(state, ctx, 'away');
 
+  // Plans B conditionnels : bascule de style automatique selon le score/les rouges
+  applyPlanBRules(state, ctx, 'home');
+  applyPlanBRules(state, ctx, 'away');
+
   if (state.half === 1 && state.minute > 45 + state.homeAddedTime) {
     state.status = 'halftime';
     pushEvent(state, ctx, { type: 'halftime', side: null, ballPos: ZONE.centre }, ctx.home.team.name);
@@ -699,9 +861,9 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
     return state;
   }
 
-  // Possession roll
-  const homeMid = ctx.home.ratings.midfield * teamRatingMultiplier('home', state);
-  const awayMid = ctx.away.ratings.midfield * teamRatingMultiplier('away', state);
+  // Possession roll — notes effectives (rouges, terrain, fatigue, fin de match, momentum)
+  const homeMid = effRating(state, ctx, 'home', 'midfield');
+  const awayMid = effRating(state, ctx, 'away', 'midfield');
   const pHome = homeMid / (homeMid + awayMid);
   const possessing: 'home' | 'away' = chance(pHome) ? 'home' : 'away';
   if (possessing === 'home') { state.possessionTicks.home++; state.passes.home += 6; }
@@ -714,22 +876,26 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   const opp: 'home' | 'away' = possessing === 'home' ? 'away' : 'home';
   const oppName = possessing === 'home' ? ctx.away.team.name : ctx.home.team.name;
   const teamName = possessing === 'home' ? ctx.home.team.name : ctx.away.team.name;
-  const myAttack = (possessing === 'home' ? ctx.home.ratings.attack : ctx.away.ratings.attack) * teamRatingMultiplier(possessing, state);
-  const oppDefense = (possessing === 'home' ? ctx.away.ratings.defense : ctx.home.ratings.defense) * teamRatingMultiplier(opp, state);
+  const myAttack = effRating(state, ctx, possessing, 'attack');
+  const oppDefense = effRating(state, ctx, opp, 'defense');
   const pAttack = myAttack / (myAttack + oppDefense);
   const myMods = possessing === 'home' ? ctx.home.ratings.tacticMods : ctx.away.ratings.tacticMods;
   const oppMods = possessing === 'home' ? ctx.away.ratings.tacticMods : ctx.home.ratings.tacticMods;
 
-  const wShot     = 0.08 * (0.6 + pAttack) * myMods.shotFreqMult;
-  const wFoul     = 0.08 * oppMods.foulRateMult;
+  const wfx = weatherFx(state.weather);
+  const ref = state.referee;
+  const wShot     = 0.08 * (0.6 + pAttack) * myMods.shotFreqMult * wfx.shotFreqMult;
+  // Capitaine du côté défenseur sur le terrain = discipline (fautes réduites)
+  const wFoul     = 0.08 * oppMods.foulRateMult * wfx.foulMult * (ref?.foulStrictness ?? 1)
+    * (captainOnPitch(state, ctx, opp) ? 0.93 : 1);
   // direct/long-ball styles generate more set-piece situations → more corners
   const wCorner   = 0.04 * (myMods.shotFreqMult > 1 ? 1 + (myMods.shotFreqMult - 1) * 0.8 : 1.0);
   const wOffside  = state.rules.noOffside ? 0 : 0.03;
   // possession/tiki-taka/pressing styles create more key passes
-  const wKeyPass  = 0.18 * myMods.midfieldMult;
+  const wKeyPass  = 0.18 * myMods.midfieldMult * wfx.keyPassMult;
   const wFreeKick = 0.03;
   // contre-attaque/direct/long-ball styles favour direct runs over build-up
-  const wDribble  = 0.28 * pAttack * Math.max(1, myMods.attackMult);
+  const wDribble  = 0.28 * pAttack * Math.max(1, myMods.attackMult) * wfx.dribbleMult;
   const wClear    = 0.03 * (1 - pAttack);
   const total = wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick + wDribble + wClear;
 
@@ -751,11 +917,11 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
       : opp;
     state.fouls[victimSide]++;
     const fouler = pickFouler(victimSide, ctx, state);
-    // single-side corruption increases penalty chance for briber
-    const penChance = (corrActive && !corrBoth && corr!.side === possessing) ? 0.18 : 0.08;
+    // single-side corruption increases penalty chance for briber; referee tendency applies on top
+    const penChance = ((corrActive && !corrBoth && corr!.side === possessing) ? 0.18 : 0.08) * (ref?.penaltyTendency ?? 1);
     if (chance(penChance) && fouler) {
       const pz = possessing === 'home' ? ZONE.awayBox : ZONE.homeBox;
-      const penTaker = pickAttacker(possessing, ctx, state);
+      const penTaker = designatedTaker(state, ctx, possessing, 'penalty') ?? pickAttacker(possessing, ctx, state);
       pushEvent(state, ctx, { type: 'penalty', side: possessing, playerId: penTaker?.id, ballPos: pz },
         teamName, penTaker ? `${penTaker.firstName} ${penTaker.lastName}` : undefined);
       tryPenaltyShot(state, ctx, possessing, opp, teamName, oppName, penTaker ?? undefined);
@@ -772,9 +938,9 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
         const ag = fouler.stats.mental.aggression / 20;
         // 'both' deal: ref inflates cards on both sides (chaotic match). Single: biases against victim.
         const cardMult = corrBoth ? 1.8 : (corrActive && victimSide !== corr!.side) ? 2.0 : 1.0;
-        if (chance((0.005 + 0.005 * ag) * cardMult)) {
+        if (chance((0.005 + 0.005 * ag) * cardMult * (ref?.redTendency ?? 1))) {
           applyRed(state, ctx, victimSide, fouler);
-        } else if (chance((0.13 + 0.06 * ag) * cardMult)) {
+        } else if (chance((0.13 + 0.06 * ag) * cardMult * (ref?.cardStrictness ?? 1) * (captainOnPitch(state, ctx, victimSide) ? 0.90 : 1))) {
           if (state.cards[victimSide].yellow.includes(fouler.id)) {
             applyRed(state, ctx, victimSide, fouler);
           } else {
@@ -791,7 +957,10 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   } else if (r < wShot + wFoul + wCorner) {
     state.corners[possessing]++;
     const cz = possessing === 'home' ? ZONE.homeRightCorner : ZONE.awayLeftCorner;
-    pushEvent(state, ctx, { type: 'corner', side: possessing, ballPos: cz }, teamName);
+    // Tireur de corner : désigné dans la tactique, sinon meilleur centreur sur le terrain
+    const cornerTaker = designatedTaker(state, ctx, possessing, 'corner') ?? pickFreeKickTaker(possessing, ctx, state);
+    pushEvent(state, ctx, { type: 'corner', side: possessing, playerId: cornerTaker?.id, ballPos: cz },
+      teamName, cornerTaker ? `${cornerTaker.firstName} ${cornerTaker.lastName}` : undefined);
     if (chance(0.45)) {
       const header = pickHeader(possessing, ctx, state);
       if (header) {
@@ -799,8 +968,10 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
         pushEvent(state, ctx, { type: 'header', side: possessing, playerId: header.id, ballPos: hz },
           teamName, `${header.firstName} ${header.lastName}`);
         // heading quality influences shot chance on corners (base 0.35, +/- based on heading stat)
+        // + qualité du centre du tireur de corner (crossing)
         const headerBonus = (header.stats.technical.heading - 10) / 100;
-        if (chance(0.35 + headerBonus)) tryShot(state, ctx, possessing, opp, teamName, oppName, 0.85, hz, header.id);
+        const crossBonus = cornerTaker ? (cornerTaker.stats.technical.crossing - 10) / 150 : 0;
+        if (chance(0.35 + headerBonus + crossBonus + wfx.setPieceDelta)) tryShot(state, ctx, possessing, opp, teamName, oppName, 0.85, hz, header.id);
       }
     }
 
@@ -824,14 +995,14 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
     if (chance(0.35 + visionBonus)) tryShot(state, ctx, possessing, opp, teamName, oppName, 1.0, undefined, passer?.id);
 
   } else if (r < wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick) {
-    const fkShooter = pickFreeKickTaker(possessing, ctx, state);
+    const fkShooter = designatedTaker(state, ctx, possessing, 'freeKick') ?? pickFreeKickTaker(possessing, ctx, state);
     state.freekicks[possessing]++;
     const fkZone = possessing === 'home' ? ZONE.awayAttack : ZONE.homeAttack;
     pushEvent(state, ctx, { type: 'freeKick', side: possessing, playerId: fkShooter?.id, ballPos: fkZone },
       teamName, fkShooter ? `${fkShooter.firstName} ${fkShooter.lastName}` : undefined);
     // longShots quality influences shot chance on free kicks
     const fkBonus = fkShooter ? (fkShooter.stats.technical.longShots - 10) / 100 : 0;
-    if (chance(0.30 + fkBonus)) tryShot(state, ctx, possessing, opp, teamName, oppName, 0.75, fkZone, fkShooter?.id);
+    if (chance(0.30 + fkBonus + wfx.setPieceDelta)) tryShot(state, ctx, possessing, opp, teamName, oppName, 0.75, fkZone, fkShooter?.id);
 
   } else if (r < wShot + wFoul + wCorner + wOffside + wKeyPass + wFreeKick + wDribble) {
     const dribbler = pickDribbler(possessing, ctx, state);
@@ -868,11 +1039,12 @@ function applyInjury(state: MatchState, ctx: EngineCtx, side: 'home' | 'away', p
   const teamName = side === 'home' ? ctx.home.team.name : ctx.away.team.name;
   pushEvent(state, ctx, { type: 'injury', side, playerId: player.id, ballPos: ZONE.centre },
     teamName, `${player.firstName} ${player.lastName}`);
-  // Force substitution if possible
+  // Force substitution if possible — un gardien blessé est remplacé par le gardien du banc
   const benchIds = side === 'home' ? ctx.home.ratings.bench : ctx.away.ratings.bench;
   const players = side === 'home' ? ctx.home.players : ctx.away.players;
   const subsUsed = side === 'home' ? state.homeSubs : state.awaySubs;
-  const sub = benchIds.map((id) => players.get(id)).find((p): p is Player => !!p && !state.matchInjuries![side].includes(p.id));
+  const benchPlayers = benchIds.map((id) => players.get(id)).filter((p): p is Player => !!p && !state.matchInjuries![side].includes(p.id));
+  const sub = (player.position === 'GK' ? benchPlayers.find((p) => p.position === 'GK') : undefined) ?? benchPlayers[0];
   if (sub && subsUsed < state.rules.maxSubs) {
     if (side === 'home') {
       state.homeOnPitch = state.homeOnPitch.map((id) => id === player.id ? sub.id : id);
@@ -899,8 +1071,36 @@ function applyRed(state: MatchState, ctx: EngineCtx, side: 'home' | 'away', play
   const teamName = side === 'home' ? ctx.home.team.name : ctx.away.team.name;
   pushEvent(state, ctx, { type: 'red', side, playerId: player.id, ballPos: ZONE.centre },
     teamName, `${player.firstName} ${player.lastName}`);
+  // Gardien expulsé : le remplaçant gardien DOIT entrer — un joueur de champ est sacrifié
+  if (player.position === 'GK') forceGkReplacement(state, ctx, side);
   // 8% chance coach gets ejected too after a player red
   if (chance(0.08)) applyCoachRed(state, ctx, side);
+}
+
+/**
+ * Rouge (ou blessure sans GK restant) du gardien : si un gardien est sur le banc
+ * et qu'il reste un changement, on sacrifie le joueur de champ le plus faible
+ * pour faire entrer le gardien remplaçant. Sinon un joueur de champ prend les
+ * gants (gkOf → null, la défense en paie le prix via le fallback de resolveShot).
+ */
+export function forceGkReplacement(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): void {
+  const subsUsed = side === 'home' ? state.homeSubs : state.awaySubs;
+  if (subsUsed >= state.rules.maxSubs) return;
+  if (gkOf(side, ctx, state)) return; // un gardien est déjà sur le terrain
+  const players = side === 'home' ? ctx.home.players : ctx.away.players;
+  const benchIds = side === 'home' ? ctx.home.ratings.bench : ctx.away.ratings.bench;
+  const backupGk = benchIds.map((id) => players.get(id)).find((p): p is Player => !!p && p.position === 'GK');
+  if (!backupGk) return;
+  const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+  const sacrifice = onPitch
+    .map((id) => players.get(id))
+    .filter((p): p is Player => !!p && p.position !== 'GK')
+    .sort((a, b) => a.overall - b.overall)[0];
+  if (!sacrifice) return;
+  if (executeSub(state, ctx, side, sacrifice.id, backupGk.id)) {
+    if (side === 'home') state.homeSubs++;
+    else state.awaySubs++;
+  }
 }
 
 function applyCoachRed(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): void {

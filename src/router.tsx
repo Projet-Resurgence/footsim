@@ -46,6 +46,7 @@ const PlaySetup = lazyWithReload(() => import('@/pages/matches/PlaySetup'));
 const MatchLive = lazyWithReload(() => import('@/pages/matches/MatchLive'));
 const CompetitionMatchLive = lazyWithReload(() => import('@/pages/matches/CompetitionMatchLive'));
 const MultiplexLive = lazyWithReload(() => import('@/pages/matches/MultiplexLive'));
+const MatchReplay = lazyWithReload(() => import('@/pages/matches/MatchReplay'));
 
 function PageFallback() {
   return (
@@ -144,6 +145,14 @@ export const router = createBrowserRouter(
       element: (
         <RequireAuth>
           <S><MatchLive /></S>
+        </RequireAuth>
+      ),
+    },
+    {
+      path: '/match/:id/replay',
+      element: (
+        <RequireAuth>
+          <S><MatchReplay /></S>
         </RequireAuth>
       ),
     },

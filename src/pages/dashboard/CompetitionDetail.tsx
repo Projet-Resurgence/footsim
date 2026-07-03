@@ -15,10 +15,10 @@ import { useTeams } from '@/stores/teams';
 
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { useSession } from '@/stores/session';
-import { needsKnockoutDraw, getQualifiersByRank, seedKnockoutWithOrder, sortStandings, seedLPMPlayoffs } from '@/lib/competition/scheduler';
+import { needsKnockoutDraw, getQualifiersByRank, buildBracketFromPairs, sortStandings, seedLPMPlayoffs } from '@/lib/competition/scheduler';
 import { LPMDrawCeremony, type LPMPair } from '@/components/competition/LPMDrawCeremony';
 import { buildKnockoutPots, conductKnockoutDraw } from '@/lib/competition/draw';
-import type { DrawResult } from '@/lib/competition/draw';
+import type { Pot, KnockoutDrawMethod } from '@/lib/competition/draw';
 import type { Competition, CompMatch, PlayerCompStats, CompetitionKind, CompetitionScope, CompetitionImportance } from '@/lib/competition/types';
 import { COMPETITION_KIND_LABEL, COMPETITION_SCOPE_LABEL, COMPETITION_IMPORTANCE_LABEL } from '@/lib/competition/types';
 import type { CorruptionDeal } from '@/lib/sim/types';
@@ -29,6 +29,9 @@ import { PRESS_CATEGORY_COLOR, PRESS_CATEGORY_LABEL, generateCmfItems } from '@/
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
+import type { StoredMatch } from '@/lib/prapi/matchBackend';
+import { TacticalReportModal } from '@/components/match/TacticalReportModal';
+import { loadLocalSavedTactics } from '@/lib/localTactics';
 import type { Injury, Suspension } from '@/lib/competition/injuries';
 import { SEVERITY_COLOR, CAUSE_LABEL } from '@/lib/competition/injuries';
 import type { CompHistoryEntry } from '@/lib/competition/types';
@@ -61,7 +64,8 @@ export default function CompetitionDetail() {
   const [saving, setSaving] = useState(false);
   const [syncingMedical, setSyncingMedical] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'bracket' | 'rounds' | 'stats' | 'presse' | 'morale' | 'medical' | 'suspensions'>('overview');
-  const [knockoutDraw, setKnockoutDraw] = useState<DrawResult | null>(null);
+  const [knockoutDraw, setKnockoutDraw] = useState<{ pots: Pot[]; byRank: string[][] } | null>(null);
+  const [koMethod, setKoMethod] = useState<KnockoutDrawMethod>('protected');
   const [lpmDraw, setLpmDraw] = useState<LPMPair[] | null>(null);
   const [roundDraw, setRoundDraw] = useState<{ round: number; pairs: LPMPair[]; isScheduleDraw?: boolean } | null>(null);
   const [preMatchModal, setPreMatchModal] = useState<{ matchId: string; home: Team; away: Team; phase?: string } | null>(null);
@@ -348,6 +352,8 @@ export default function CompetitionDetail() {
               scoreAgainst,
               opponentStrength: oppStrength,
               compKind: current.kind,
+              competitionId: current.id,
+              competitionName: current.name,
               compScope: current.scope,
               compImportance: current.importance,
               participantCount: current.teamIds.length,
@@ -493,18 +499,29 @@ export default function CompetitionDetail() {
       byRank.push(bestThirdTeams);
     }
     const pots = buildKnockoutPots(byRank);
-    const result = conductKnockoutDraw(pots, byRank);
-    setKnockoutDraw(result);
+    setKnockoutDraw({ pots, byRank });
   }
 
   function confirmKnockoutDraw(groups: Record<string, string[]>) {
     if (!current) return;
-    const orderedQualifiers = Object.values(groups).flat();
-    const updatedMatches = seedKnockoutWithOrder(current.matches, orderedQualifiers);
-    const firstKoRound = updatedMatches
-      .filter((m) => m.status === 'pending' && m.homeTeamId && m.awayTeamId)
-      .reduce((min, m) => Math.min(min, m.round), Infinity);
-    const nextRound = isFinite(firstKoRound) ? Math.max(current.currentRound, firstKoRound) : current.currentRound;
+    // Le tirage EST le tableau : on regénère la phase finale depuis les paires
+    // (gère les exempts et les nombres de qualifiés non-puissance de 2).
+    const pairs = Object.keys(groups).sort().map((k) => groups[k]);
+    const oldKo = current.matches.filter((m) => m.phase !== 'group');
+    const roundOffset = oldKo.length > 0
+      ? Math.min(...oldKo.map((m) => m.round))
+      : current.currentRound;
+    const rebuilt = buildBracketFromPairs(
+      pairs,
+      current.config.legsPerMatch,
+      current.config.thirdPlaceMatch,
+      roundOffset,
+    );
+    const updatedMatches = [
+      ...current.matches.filter((m) => m.phase === 'group'),
+      ...rebuilt,
+    ];
+    const nextRound = Math.max(current.currentRound, roundOffset);
     const updated: Competition = { ...current, matches: updatedMatches, currentRound: nextRound };
     setCurrent(updated);
     setKnockoutDraw(null);
@@ -529,7 +546,7 @@ export default function CompetitionDetail() {
     setPreMatchModal({ matchId, home: enrich(home, m.homeTeamId), away: enrich(away, m.awayTeamId), phase: m.phase });
   }
 
-  function launchMatch(matchId: string, corruption: CorruptionDeal | null, tactics?: { homeId?: string; awayId?: string }, countForStats?: boolean) {
+  function launchMatch(matchId: string, corruption: CorruptionDeal | null, tactics?: { homeId?: string; awayId?: string }, countForStats?: boolean, homeAdvantage?: boolean) {
     if (!current) return;
     if (corruption) {
       sessionStorage.setItem(`footsim.corruption.${matchId}`, JSON.stringify(corruption));
@@ -542,6 +559,7 @@ export default function CompetitionDetail() {
       sessionStorage.removeItem(`footsim.tactics.${matchId}`);
     }
     sessionStorage.setItem(`footsim.countForStats.${matchId}`, JSON.stringify(countForStats ?? true));
+    sessionStorage.setItem(`footsim.homeAdvantage.${matchId}`, JSON.stringify(homeAdvantage ?? false));
     setPreMatchModal(null);
     navigate(`/competition/${current.id}/match/${matchId}`);
   }
@@ -627,21 +645,31 @@ export default function CompetitionDetail() {
   }
 
   if (knockoutDraw) {
-    const qualifiedIds = new Set(Object.values(knockoutDraw.groups).flat());
+    const qualifiedIds = new Set(knockoutDraw.pots.flatMap((p) => p.teamIds));
     const allQualifiedTeams = Object.values(teamMap).filter((t) => qualifiedIds.has(t.id));
+    const qualifyPerGroup = current.config.qualifyPerGroup ?? 2;
+    const rankLabel = (n: number) => {
+      if ((current.config.bestThirds ?? 0) > 0 && n === qualifyPerGroup + 1) return 'Meilleurs 3es';
+      if (n === 1) return '1ers de groupe';
+      return `${n}es de groupe`;
+    };
     return (
       <div className="space-y-6">
         <div>
-          <Link to={backTo} className="text-sm text-muted hover:text-text">{backLabel}</Link>
-          <h1 className="mt-2 font-display text-4xl">Tirage — Phase finale</h1>
+          <button onClick={() => setKnockoutDraw(null)} className="text-sm text-muted hover:text-text transition-colors">← Retour</button>
+          <h1 className="mt-2 font-display text-3xl sm:text-4xl">Tirage — Phase finale</h1>
           <p className="text-muted text-sm mt-1">{current.name}</p>
         </div>
         <DrawCeremony
-          result={knockoutDraw}
           teams={allQualifiedTeams}
-          groupCount={Object.keys(knockoutDraw.groups).length}
+          groupCount={knockoutDraw.byRank[0]?.length ?? 0}
+          pots={knockoutDraw.pots}
+          conduct={(pots) => conductKnockoutDraw(pots, knockoutDraw.byRank, koMethod)}
           onConfirm={confirmKnockoutDraw}
           knockoutMode
+          koMethod={koMethod}
+          onKoMethodChange={setKoMethod}
+          potLabel={rankLabel}
         />
       </div>
     );
@@ -903,6 +931,7 @@ export default function CompetitionDetail() {
                         teams={teamMap}
                         title={group.name}
                         highlightCount={current.config.qualifyPerGroup}
+                        softHighlightCount={(current.config.bestThirds ?? 0) > 0 ? 1 : 0}
                       />
                     );
                   })}
@@ -945,6 +974,7 @@ export default function CompetitionDetail() {
               canSimulate={isAdmin}
               onSimulateRound={simulateRound}
               onSimulateMatch={openMatchModal}
+              effectivePat={effectivePat ?? null}
             />
           )}
 
@@ -1011,7 +1041,7 @@ export default function CompetitionDetail() {
           away={preMatchModal.away}
           defaultCountForStats={preMatchModal.phase !== '3rd'}
           fetchBothTeams={(slugs) => new PrApiTeamBackend(effectivePat!).bulkTeams(slugs)}
-          onConfirm={(corruption, tactics, countForStats) => launchMatch(preMatchModal.matchId, corruption, tactics, countForStats)}
+          onConfirm={(corruption, tactics, countForStats, homeAdvantage) => launchMatch(preMatchModal.matchId, corruption, tactics, countForStats, homeAdvantage)}
           onCancel={() => setPreMatchModal(null)}
         />
       )}
@@ -1026,12 +1056,14 @@ function RoundsView({
   canSimulate,
   onSimulateRound,
   onSimulateMatch,
+  effectivePat,
 }: {
   competition: Competition;
   teamMap: Record<string, Team>;
   canSimulate: boolean;
   onSimulateRound: (round: number) => void;
   onSimulateMatch: (matchId: string) => void;
+  effectivePat: string | null;
 }) {
   const rounds = Array.from(new Set(competition.matches.map((m) => m.round))).sort((a, b) => a - b);
   const currentRound = competition.currentRound;
@@ -1128,6 +1160,7 @@ function RoundsView({
                       canSimulate={canSimulate}
                       onSimulate={() => onSimulateMatch(m.id)}
                       disqualifiedTeamIds={competition.disqualifiedTeamIds ?? []}
+                      effectivePat={effectivePat}
                     />
                   </div>
                 ))}
@@ -1140,20 +1173,42 @@ function RoundsView({
   );
 }
 
+function resolveSavedTactics(team: Team) {
+  const local = loadLocalSavedTactics(team.id);
+  return local.savedTactics.length > 0 ? local.savedTactics : (team.savedTactics ?? []);
+}
+
 function RoundMatchRow({
   match,
   teamMap,
   canSimulate,
   onSimulate,
   disqualifiedTeamIds = [],
+  effectivePat,
 }: {
   match: CompMatch;
   teamMap: Record<string, Team>;
   canSimulate: boolean;
   onSimulate: () => void;
   disqualifiedTeamIds?: string[];
+  effectivePat: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [storedMatch, setStoredMatch] = useState<StoredMatch | null>(null);
+  const [loadingReport, setLoadingReport] = useState(false);
+
+  function handleOpenReport() {
+    if (storedMatch) { setShowReport(true); return; }
+    if (!effectivePat) return;
+    setLoadingReport(true);
+    const backend = new PrApiMatchBackend(effectivePat);
+    // matchFileId legacy « comp-… » : le match est stocké sous l'id brut → fallback
+    backend.loadMatch(match.matchFileId ?? match.id)
+      .then((sm) => sm ?? (match.matchFileId && match.matchFileId !== match.id ? backend.loadMatch(match.id) : null))
+      .then((sm) => { if (sm) { setStoredMatch(sm); setShowReport(true); } })
+      .finally(() => setLoadingReport(false));
+  }
   const home = match.homeTeamId ? teamMap[match.homeTeamId] : null;
   const away = match.awayTeamId ? teamMap[match.awayTeamId] : null;
   const done = match.status === 'completed';
@@ -1245,7 +1300,34 @@ function RoundMatchRow({
             homeName={home?.name ?? 'Domicile'}
             awayName={away?.name ?? 'Extérieur'}
           />
+          {effectivePat && (
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={(e) => { e.stopPropagation(); handleOpenReport(); }}
+                disabled={loadingReport}
+                className="text-xs font-medium text-accent hover:text-accent/70 border border-accent/30 rounded px-2 py-1 transition-colors disabled:opacity-50"
+              >
+                {loadingReport ? 'Chargement…' : 'Compte-rendu tactique'}
+              </button>
+              <Link
+                to={`/match/${match.matchFileId ?? match.id}/replay`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-xs font-medium text-accent hover:text-accent/70 border border-accent/30 rounded px-2 py-1 transition-colors"
+              >
+                ▶ Revoir le match
+              </Link>
+            </div>
+          )}
         </div>
+      )}
+
+      {showReport && storedMatch && (
+        <TacticalReportModal
+          state={storedMatch.state}
+          home={{ ...storedMatch.input.home, savedTactics: home ? resolveSavedTactics(home) : undefined }}
+          away={{ ...storedMatch.input.away, savedTactics: away ? resolveSavedTactics(away) : undefined }}
+          onClose={() => setShowReport(false)}
+        />
       )}
     </div>
   );
@@ -1437,8 +1519,10 @@ function MentionPopup({
 }) {
   const isPlayer = mention.type === 'player';
   const isCoach = mention.type === 'coach';
+  const isReferee = mention.type === 'referee';
   const p = isPlayer ? (mention as PressMentionPlayer) : null;
   const c = isCoach ? (mention as PressMentionCoach) : null;
+  const ref = isReferee ? (mention as import('@/lib/competition/press').PressMentionReferee) : null;
 
   // Lookup comp stats by name
   const compStat = playerStats
@@ -1471,7 +1555,9 @@ function MentionPopup({
             <div className="text-xs text-muted mt-0.5 flex items-center gap-2">
               {isPlayer && <span>{(mention as PressMentionPlayer).position}</span>}
               {isCoach && <span>Entraîneur</span>}
-              <span className="font-medium text-accent">Overall {mention.overall}</span>
+              {isReferee && <span>Arbitre</span>}
+              {!isReferee && <span className="font-medium text-accent">Overall {(mention as PressMentionPlayer | PressMentionCoach).overall}</span>}
+              {ref && <span className="font-medium text-amber-300 capitalize">{ref.temperament}</span>}
             </div>
           </div>
           <button onClick={onClose} className="text-muted hover:text-text transition-colors text-lg leading-none">×</button>
@@ -1636,6 +1722,39 @@ function MentionPopup({
               )}
             </>
           )}
+
+          {/* Profil arbitre — tendances par rapport à la moyenne du corps arbitral */}
+          {ref && (
+            <div className="space-y-1.5">
+              <div className="text-[10px] uppercase tracking-widest text-muted mb-1">Tendances</div>
+              {([
+                ['Fautes sifflées', ref.foulStrictness, 0.85, 1.25],
+                ['Cartons jaunes', ref.cardStrictness, 0.70, 1.50],
+                ['Rouges directs', ref.redTendency, 0.60, 1.80],
+                ['Penaltys', ref.penaltyTendency, 0.70, 1.40],
+              ] as [string, number, number, number][]).map(([label, v, lo, hi]) => {
+                const pct = Math.round(Math.min(100, Math.max(0, ((v - lo) / (hi - lo)) * 100)));
+                return (
+                  <div key={label}>
+                    <div className="flex justify-between text-[10px] text-muted mb-0.5">
+                      <span>{label}</span>
+                      <span className={`font-medium tabular-nums ${v >= 1.2 ? 'text-danger' : v <= 0.9 ? 'text-green-400' : 'text-text'}`}>×{v.toFixed(2)}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-border overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${pct}%`, background: pct >= 70 ? '#ef4444' : pct >= 40 ? '#facc15' : '#4ade80' }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex justify-between text-[10px] text-muted pt-1 border-t border-border/50">
+                <span>Temps additionnel</span>
+                <span className="font-medium tabular-nums text-text">{ref.addedTimeBias >= 0 ? '+' : ''}{ref.addedTimeBias} min</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1788,13 +1907,14 @@ function renderBodyWithMentions(body: string, mentions: PressMention[] | undefin
       {parts.map((part, i) => {
         const mention = mentions.find((m) => m.name === part);
         if (mention) {
+          const suffix = mention.type === 'referee' ? '🟨' : `(${mention.overall})`;
           return (
             <button
               key={i}
               onClick={() => onMention(mention)}
-              className="font-medium text-accent underline decoration-dotted hover:text-accent/70 transition-colors cursor-pointer"
+              className={`font-medium underline decoration-dotted transition-colors cursor-pointer ${mention.type === 'referee' ? 'text-amber-300 hover:text-amber-300/70' : 'text-accent hover:text-accent/70'}`}
             >
-              {part} ({mention.overall})
+              {part} {suffix}
             </button>
           );
         }
@@ -1895,14 +2015,47 @@ function PressTab({
                 {teamMap[matchPopup.homeTeamId]?.flag && <img src={teamMap[matchPopup.homeTeamId].flag} alt="" className="h-6 w-6 object-cover rounded-sm shrink-0" />}
                 <span className="text-sm font-semibold truncate">{matchPopup.homeTeamName}</span>
               </div>
-              <div className="shrink-0 px-3 py-1 rounded-lg bg-bg border border-border text-base font-bold tabular-nums">
-                {matchPopup.homeScore} – {matchPopup.awayScore}
+              <div className="shrink-0 px-3 py-1 rounded-lg bg-bg border border-border text-center">
+                <div className="text-base font-bold tabular-nums">{matchPopup.homeScore} – {matchPopup.awayScore}</div>
+                {matchPopup.penalties && (
+                  <div className="text-[10px] text-muted tabular-nums">{matchPopup.penalties.home}-{matchPopup.penalties.away} t.a.b.</div>
+                )}
               </div>
               <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
                 <span className="text-sm font-semibold truncate">{matchPopup.awayTeamName}</span>
                 {teamMap[matchPopup.awayTeamId]?.flag && <img src={teamMap[matchPopup.awayTeamId].flag} alt="" className="h-6 w-6 object-cover rounded-sm shrink-0" />}
               </div>
             </div>
+            {/* Buteurs */}
+            {matchPopup.scorers && matchPopup.scorers.length > 0 && (
+              <div className="flex text-[10px] text-muted gap-3">
+                <div className="flex-1 space-y-0.5">
+                  {matchPopup.scorers.filter((s) => s.teamId === matchPopup.homeTeamId).map((s, i) => (
+                    <div key={i}>⚽ {s.name} {s.minute}′{s.penalty ? ' (pen)' : ''}</div>
+                  ))}
+                </div>
+                <div className="flex-1 space-y-0.5 text-right">
+                  {matchPopup.scorers.filter((s) => s.teamId === matchPopup.awayTeamId).map((s, i) => (
+                    <div key={i}>{s.name} {s.minute}′{s.penalty ? ' (pen)' : ''} ⚽</div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Contexte : arbitre / météo / affluence */}
+            {(matchPopup.referee || matchPopup.weather || matchPopup.attendance) && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-bg px-3 py-2 text-[10px] text-muted">
+                {matchPopup.referee && (
+                  <button
+                    onClick={() => { const ref = matchPopup.referee!; setMatchPopup(null); setActiveMention(ref); }}
+                    className="flex items-center gap-1 text-amber-300 underline decoration-dotted hover:text-amber-300/70 transition-colors"
+                  >
+                    🟨 {matchPopup.referee.name} <span className="text-muted no-underline">({matchPopup.referee.temperament})</span>
+                  </button>
+                )}
+                {matchPopup.weather && <span>🌦 {matchPopup.weather}</span>}
+                {matchPopup.attendance !== undefined && <span>🏟 {matchPopup.attendance.toLocaleString('fr-FR')} spectateurs</span>}
+              </div>
+            )}
             {/* Stats */}
             {matchPopup.stats && (() => {
               const s = matchPopup.stats!;
@@ -1956,6 +2109,13 @@ function PressTab({
       )}
       {/* Press articles */}
       <div className="space-y-3">
+        {/* Manchette du journal */}
+        <div className="rounded-lg border-2 border-border bg-surface px-4 py-3 text-center">
+          <div className="font-display text-2xl tracking-wide">📰 LA TRIBUNE DU BALLON</div>
+          <div className="text-[10px] uppercase tracking-[0.3em] text-muted mt-1 border-t border-border/60 pt-1.5 inline-block px-6">
+            Le quotidien de la compétition · {pressItems.length} article{pressItems.length > 1 ? 's' : ''}
+          </div>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <h3 className="text-xs uppercase tracking-widest text-muted">Articles</h3>
           <select
@@ -1964,7 +2124,7 @@ function PressTab({
             className="ml-auto h-7 rounded border border-border bg-surface px-2 text-xs"
           >
             <option value="all">Tous les types</option>
-            {(['victoire', 'exploit', 'defaite', 'crise', 'scandale', 'neutralite', 'forme', 'critique', 'revolte', 'drame', 'cmf'] as const).map((c) => (
+            {(['victoire', 'exploit', 'defaite', 'crise', 'scandale', 'neutralite', 'forme', 'critique', 'revolte', 'drame', 'cmf', 'arbitrage'] as const).map((c) => (
               <option key={c} value={c}>{PRESS_CATEGORY_LABEL[c]}</option>
             ))}
           </select>
@@ -1991,27 +2151,27 @@ function PressTab({
         </div>
         {filtered.length === 0 ? (
           <p className="text-muted text-sm">Aucun article pour l'instant — jouez des matchs !</p>
-        ) : (
-          <div className="space-y-3">
-            {filtered.map((item, idx) => {
-              const prevItem = filtered[idx - 1];
-              const showRoundSep = idx > 0 && prevItem.round !== item.round;
+        ) : (() => {
+          const rounds = [...new Set(filtered.map((p) => p.round))];
+          const renderCard = (item: PressItem, hero: boolean) => {
               const team = item.teamId ? teamMap[item.teamId] : null;
               const colorCls = PRESS_CATEGORY_COLOR[item.category];
               return (
-                <div key={item.id}>
-                  {showRoundSep && (
-                    <div className="flex items-center gap-3 py-1">
-                      <div className="flex-1 h-px bg-border" />
-                      <span className="text-[10px] uppercase tracking-widest text-muted shrink-0">Journée {item.round}</span>
-                      <div className="flex-1 h-px bg-border" />
-                    </div>
-                  )}
-                <article className="rounded-lg border border-border bg-surface p-4 space-y-2">
+                <article
+                  key={item.id}
+                  className={hero
+                    ? 'fade-in rounded-lg border-2 border-accent/25 bg-gradient-to-b from-surface to-bg p-5 space-y-2'
+                    : 'fade-in rounded-lg border border-border bg-surface p-4 space-y-2'}
+                >
                   <div className="flex items-start gap-3">
                     {team?.flag && <img src={team.flag} alt="" className="h-7 w-7 object-cover rounded-sm shrink-0 mt-0.5" />}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        {hero && (
+                          <span className="rounded bg-accent/20 border border-accent/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-accent">
+                            À la une
+                          </span>
+                        )}
                         <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${colorCls}`}>
                           {PRESS_CATEGORY_LABEL[item.category]}
                         </span>
@@ -2022,7 +2182,7 @@ function PressTab({
                           </span>
                         )}
                       </div>
-                      <h4 className="font-medium text-sm leading-snug">{item.headline}</h4>
+                      <h4 className={hero ? 'font-display text-xl leading-snug' : 'font-medium text-sm leading-snug'}>{item.headline}</h4>
                       <p className="text-xs text-muted mt-1 leading-relaxed">
                         {renderBodyWithMentions(item.body, item.mentions, setActiveMention)}
                       </p>
@@ -2143,10 +2303,11 @@ function PressTab({
                                   <div key={i} className="flex items-center gap-1.5 rounded border border-border bg-bg px-2 py-1 text-[10px]">
                                     {teamMap[pair.homeTeamId]?.flag && <img src={teamMap[pair.homeTeamId].flag} alt="" className="h-3 w-3 object-cover rounded-sm shrink-0" />}
                                     <span className={pair.favoriteTeamId === pair.homeTeamId ? 'font-bold text-accent' : 'text-muted'}>{pair.homeTeamName}</span>
+                                    <span className="font-bold text-green-500 shrink-0">{pair.homeQualifyPct}%</span>
                                     <span className="text-muted mx-0.5">vs</span>
                                     {teamMap[pair.awayTeamId]?.flag && <img src={teamMap[pair.awayTeamId].flag} alt="" className="h-3 w-3 object-cover rounded-sm shrink-0" />}
                                     <span className={pair.favoriteTeamId === pair.awayTeamId ? 'font-bold text-accent' : 'text-muted'}>{pair.awayTeamName}</span>
-                                    <span className="ml-auto text-yellow-400 font-bold shrink-0">{pair.cote.toFixed(2)}</span>
+                                    <span className="ml-auto font-bold text-green-500 shrink-0">{pair.awayQualifyPct}%</span>
                                   </div>
                                 ))}
                               </div>
@@ -2163,11 +2324,30 @@ function PressTab({
                     </div>
                   </div>
                 </article>
-                </div>
               );
-            })}
-          </div>
-        )}
+          };
+          return (
+            <div className="space-y-6">
+              {rounds.map((rd, gi) => {
+                const items = filtered.filter((p) => p.round === rd);
+                const withHero = gi === 0 && items.length > 1;
+                return (
+                  <div key={rd} className="space-y-3">
+                    <div className="flex items-center gap-3 py-1">
+                      <div className="flex-1 border-t-2 border-border" />
+                      <span className="text-[10px] uppercase tracking-[0.25em] text-muted shrink-0 font-medium">Édition · Journée {rd}</span>
+                      <div className="flex-1 border-t-2 border-border" />
+                    </div>
+                    {withHero && renderCard(items[0], true)}
+                    <div className="grid gap-3 md:grid-cols-2 items-start">
+                      {(withHero ? items.slice(1) : items).map((it) => renderCard(it, false))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

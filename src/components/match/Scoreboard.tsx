@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import type { MatchState } from '@/lib/sim/types';
 import type { Team } from '@/lib/types';
+import { WEATHER_LABEL } from '@/lib/sim/weather';
+import { refereeTemperament } from '@/lib/sim/referees';
 
 type Props = { state: MatchState; home: Team; away: Team; homeFormation?: string; awayFormation?: string; leg1Score?: { home: number; away: number } };
 
@@ -46,6 +48,19 @@ export function Scoreboard({ state, home, away, homeFormation, awayFormation, le
         <div className="mt-1 text-xs uppercase tracking-widest text-muted">
           {minuteLabel(state)}{periodLabel(state)}
         </div>
+        {state.weather && (
+          <div className="mt-1 text-[11px] text-muted">
+            {WEATHER_LABEL[state.weather.kind]} · {state.weather.tempC}°C
+          </div>
+        )}
+        {state.referee && (
+          <div
+            className="mt-0.5 text-[10px] text-muted/80"
+            title={`Fautes ×${state.referee.foulStrictness} · Jaunes ×${state.referee.cardStrictness} · Rouges ×${state.referee.redTendency} · Penalties ×${state.referee.penaltyTendency}`}
+          >
+            Arbitre : {state.referee.name} ({refereeTemperament(state.referee)})
+          </div>
+        )}
         {leg1Score && (
           <div className="mt-2 flex flex-col items-center gap-0.5">
             <div className="text-xs text-muted">

@@ -5,22 +5,48 @@ import type { SideRatings, TacticMods } from './types';
 import { pickXI } from './lineup';
 import { moraleMult } from '@/lib/competition/morale';
 
-function getTacticMods(style?: TacticStyle): TacticMods {
+export function getTacticMods(style?: TacticStyle): TacticMods {
   switch (style) {
     case 'possession':      return { shotFreqMult: 0.88, foulRateMult: 1.00, midfieldMult: 1.12, attackMult: 1.00, defenseMult: 1.00 };
     case 'contre-attaque':  return { shotFreqMult: 1.08, foulRateMult: 1.00, midfieldMult: 0.92, attackMult: 1.10, defenseMult: 1.00 };
     case 'direct':          return { shotFreqMult: 1.18, foulRateMult: 1.00, midfieldMult: 1.00, attackMult: 1.00, defenseMult: 1.00 };
     case 'pressing':        return { shotFreqMult: 1.00, foulRateMult: 1.12, midfieldMult: 1.15, attackMult: 1.00, defenseMult: 1.00 };
-    case 'ultra-defensif':  return { shotFreqMult: 0.65, foulRateMult: 1.05, midfieldMult: 0.85, attackMult: 0.75, defenseMult: 1.20 };
+    case 'ultra-defensif':  return { shotFreqMult: 0.65, foulRateMult: 1.05, midfieldMult: 0.85, attackMult: 0.80, defenseMult: 1.20 };
     case 'gegenpressing':   return { shotFreqMult: 1.10, foulRateMult: 1.20, midfieldMult: 1.18, attackMult: 1.05, defenseMult: 1.00 };
     case 'tiki-taka':       return { shotFreqMult: 0.82, foulRateMult: 0.90, midfieldMult: 1.20, attackMult: 0.95, defenseMult: 1.05 };
     case 'long-ball':       return { shotFreqMult: 1.15, foulRateMult: 1.05, midfieldMult: 0.80, attackMult: 1.15, defenseMult: 0.95 };
     case 'chaos':           return { shotFreqMult: 1.30, foulRateMult: 1.35, midfieldMult: 0.95, attackMult: 1.10, defenseMult: 0.90 };
+    // Jeu sur les ailes — centres et débordements : plus de tirs (têtes) et d'attaque, milieu axial délaissé
+    case 'ailes':           return { shotFreqMult: 1.10, foulRateMult: 0.95, midfieldMult: 0.90, attackMult: 1.12, defenseMult: 1.00 };
+    // Bloc médian (à la Simeone) — compact entre les lignes, pièges au milieu, transitions sobres
+    case 'bloc-median':     return { shotFreqMult: 0.90, foulRateMult: 1.12, midfieldMult: 1.05, attackMult: 0.92, defenseMult: 1.12 };
+    // Football total — permutations permanentes : fort partout devant, arrière exposé
+    case 'football-total':  return { shotFreqMult: 1.05, foulRateMult: 0.95, midfieldMult: 1.10, attackMult: 1.08, defenseMult: 0.92 };
     default:                return { shotFreqMult: 1.00, foulRateMult: 1.00, midfieldMult: 1.00, attackMult: 1.00, defenseMult: 1.00 };
   }
 }
 
 const MOD_CAP = 1.5;
+
+/**
+ * Résout les plans B ciblant une tactique sauvegardée : attache les mods du style
+ * de la tactique (perso inclus) + son nom pour l'événement 📋. Les règles legacy
+ * (style direct) passent telles quelles ; tactique introuvable → fallback style.
+ */
+export function enrichPlanBRules(
+  planB: import('@/lib/types').PlanBRule[] | undefined,
+  team?: { savedTactics?: import('@/lib/types').SavedTactic[]; customStyles?: CustomTacticStyle[] },
+): import('./types').ResolvedPlanBRule[] {
+  return (planB ?? []).map((r) => {
+    if (!r.tacticId) return r;
+    const t = team?.savedTactics?.find((st) => st.id === r.tacticId);
+    if (!t) return r;
+    const cs = t.activeCustomStyleId
+      ? [...(t.customStyles ?? []), ...(team?.customStyles ?? [])].find((s) => s.id === t.activeCustomStyleId)
+      : undefined;
+    return { ...r, modsOverride: cs ? clampTacticMods(cs.mods) : getTacticMods(t.style), label: t.name };
+  });
+}
 
 function clampTacticMods(mods: import('./types').TacticMods): import('./types').TacticMods {
   const clamp = (v: number) => Math.max(0.1, Math.min(MOD_CAP, Number(v) || 1));
@@ -47,6 +73,11 @@ export function precomputeSide(
   customBench?: string[],
   plannedSubs?: PlannedSub[],
   positionMap?: Record<string, Position>,
+  directives?: {
+    planB?: import('./types').ResolvedPlanBRule[];
+    setPieceTakers?: import('@/lib/types').SetPieceTakers;
+    captainId?: string;
+  },
 ): SideRatings {
   let lineup: Player[];
   let bench: Player[];
@@ -179,6 +210,9 @@ export function precomputeSide(
     red: new Set(),
     tacticMods: mergedTacticMods,
     plannedSubs: (plannedSubs ?? []).map((s) => ({ ...s, done: false })),
+    planB: [...(directives?.planB ?? [])].sort((a, b) => a.fromMinute - b.fromMinute).map((r) => ({ ...r, done: false })),
+    takers: directives?.setPieceTakers,
+    captainId: directives?.captainId,
   };
 }
 

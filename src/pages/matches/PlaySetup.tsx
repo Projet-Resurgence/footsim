@@ -12,10 +12,12 @@ import { useTeams } from '@/stores/teams';
 import { useSession } from '@/stores/session';
 import { useMatch } from '@/stores/match';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
-import { resolveActiveTactic } from '@/lib/localTactics';
+import { resolveMatchTactics, resolveActiveCustomStyle } from '@/lib/localTactics';
+import { CLIMATE_ZONES, CLIMATE_ZONE_LABEL, rollWeather, hashSeed, zoneFromContinent, type ClimateZone } from '@/lib/sim/weather';
+import { pickReferee } from '@/lib/sim/referees';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 
-const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1', '4-5-1', '4-4-1-1', '3-4-1-2', '5-4-1', '3-6-1'];
+const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1', '4-5-1', '4-4-1-1', '3-4-1-2', '5-4-1', '3-6-1', '4-1-2-1-2', '3-4-2-1', '4-2-2-2', '4-2-4'];
 
 export default function PlaySetup() {
   const teams = useTeams((s) => s.teams);
@@ -36,9 +38,15 @@ export default function PlaySetup() {
   const [awayFormation, setAwayFormation] = useState<Formation>('4-3-3');
   const [awayTactics, setAwayTactics] = useState<TeamTactics | null>(null);
   const [awaySavedTactics, setAwaySavedTactics] = useState<SavedTactic[]>([]);
+  const [homeTeamData, setHomeTeamData] = useState<Team | null>(null);
+  const [awayTeamData, setAwayTeamData] = useState<Team | null>(null);
+  // true dès que l'utilisateur a choisi une tactique à la main — bloque la re-résolution auto
+  const [homeManualTactic, setHomeManualTactic] = useState(false);
+  const [awayManualTactic, setAwayManualTactic] = useState(false);
 
   const [speed, setSpeed] = useState<Speed>('1');
   const [rules, setRules] = useState<MatchRules>(DEFAULT_RULES);
+  const [weatherZone, setWeatherZone] = useState<ClimateZone | '' | 'auto'>('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -47,30 +55,44 @@ export default function PlaySetup() {
 
   useEffect(() => {
     if (!myTeam) return;
+    setHomeManualTactic(false);
     fetchTeam(myTeam.slug, ownerId, null, effectivePat).then((fresh) => {
       const t = fresh?.team ?? myTeam;
-      const tactics = resolveActiveTactic(t) ?? null;
-      setHomeTactics(tactics);
-      if (tactics) setHomeFormation(tactics.formation);
+      setHomeTeamData(t);
       setHomeSavedTactics(t.savedTactics ?? []);
     }).catch(() => {
-      const tactics = resolveActiveTactic(myTeam) ?? null;
-      setHomeTactics(tactics);
-      if (tactics) setHomeFormation(tactics.formation);
+      setHomeTeamData(myTeam);
       setHomeSavedTactics(myTeam.savedTactics ?? []);
     });
   }, [myTeam?.id]);
 
   async function handleAwaySlug(slug: string) {
     setAwaySlug(slug);
-    if (!slug) { setAwayTactics(null); setAwaySavedTactics([]); return; }
+    setAwayManualTactic(false);
+    if (!slug) { setAwayTeamData(null); setAwayTactics(null); setAwaySavedTactics([]); return; }
     const fresh = await fetchTeam(slug, ownerId, null, effectivePat).catch(() => null);
-    const t = fresh?.team ?? teams.find((x) => x.slug === slug);
-    const tactics = t ? (resolveActiveTactic(t) ?? null) : null;
-    setAwayTactics(tactics);
-    if (tactics) setAwayFormation(tactics.formation);
+    const t = fresh?.team ?? teams.find((x) => x.slug === slug) ?? null;
+    setAwayTeamData(t);
     setAwaySavedTactics(t?.savedTactics ?? []);
   }
+
+  // Résolution auto : contre-tactique > tactique ciblée (vsTeams) > tactique active,
+  // re-calculée quand l'un ou l'autre camp change — un choix manuel n'est jamais écrasé.
+  useEffect(() => {
+    const resolved = resolveMatchTactics(homeTeamData, awayTeamData, {
+      home: homeManualTactic ? homeTactics : undefined,
+      away: awayManualTactic ? awayTactics : undefined,
+    });
+    if (homeTeamData && !homeManualTactic) {
+      setHomeTactics(resolved.home ?? null);
+      if (resolved.home) setHomeFormation(resolved.home.formation);
+    }
+    if (awayTeamData && !awayManualTactic) {
+      setAwayTactics(resolved.away ?? null);
+      if (resolved.away) setAwayFormation(resolved.away.formation);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [homeTeamData, awayTeamData, homeManualTactic, awayManualTactic]);
 
   async function launch() {
     if (!myTeam) { toast('error', 'Aucune équipe associée à votre compte.'); return; }
@@ -86,12 +108,13 @@ export default function PlaySetup() {
         return;
       }
       const matchId = crypto.randomUUID();
-      const homeCustomStyle = homeTactics?.activeCustomStyleId
-        ? homeTactics.customStyles?.find((s) => s.id === homeTactics.activeCustomStyleId)
-        : undefined;
-      const awayCustomStyle = awayTactics?.activeCustomStyleId
-        ? awayTactics.customStyles?.find((s) => s.id === awayTactics.activeCustomStyleId)
-        : undefined;
+      const homeCustomStyle = resolveActiveCustomStyle(homeTactics, home.team);
+      const awayCustomStyle = resolveActiveCustomStyle(awayTactics, away.team);
+      const resolvedZone = weatherZone === 'auto'
+        ? (zoneFromContinent(home.team.continents?.[0] ?? home.team.continent) ?? 'europe-ouest')
+        : weatherZone || undefined;
+      const weather = resolvedZone ? rollWeather(resolvedZone, hashSeed(matchId)) : undefined;
+      const referee = pickReferee(hashSeed(matchId));
       start({
         matchId,
         home: {
@@ -102,6 +125,9 @@ export default function PlaySetup() {
           lineup: homeTactics?.lineup,
           bench: homeTactics?.bench,
           plannedSubs: homeTactics?.plannedSubs,
+          planB: homeTactics?.planB,
+          setPieceTakers: homeTactics?.setPieceTakers,
+          captainId: homeTactics?.captainId,
           tacticStyle: homeTactics?.style as TacticStyle | undefined,
           customTacticStyle: homeCustomStyle,
           positionMap: homeTactics?.positionMap,
@@ -116,6 +142,9 @@ export default function PlaySetup() {
           lineup: awayTactics?.lineup,
           bench: awayTactics?.bench,
           plannedSubs: awayTactics?.plannedSubs,
+          planB: awayTactics?.planB,
+          setPieceTakers: awayTactics?.setPieceTakers,
+          captainId: awayTactics?.captainId,
           tacticStyle: awayTactics?.style as TacticStyle | undefined,
           customTacticStyle: awayCustomStyle,
           positionMap: awayTactics?.positionMap,
@@ -124,6 +153,8 @@ export default function PlaySetup() {
         },
         speed,
         rules,
+        weather,
+        referee,
       });
       navigate(`/match/${matchId}`);
     } catch (err) {
@@ -168,6 +199,7 @@ export default function PlaySetup() {
                     value={(homeTactics as SavedTactic | null)?.id ?? ''}
                     onChange={(e) => {
                       const t = homeSavedTactics.find((x) => x.id === e.target.value) ?? null;
+                      setHomeManualTactic(true);
                       setHomeTactics(t);
                       if (t) setHomeFormation(t.formation);
                     }}
@@ -248,6 +280,7 @@ export default function PlaySetup() {
                       value={(awayTactics as SavedTactic | null)?.id ?? ''}
                       onChange={(e) => {
                         const tac = awaySavedTactics.find((x) => x.id === e.target.value) ?? null;
+                        setAwayManualTactic(true);
                         setAwayTactics(tac);
                         if (tac) setAwayFormation(tac.formation);
                       }}
@@ -314,6 +347,29 @@ export default function PlaySetup() {
             className="h-4 w-4 rounded border-border"
           />
           Hors-jeu désactivé
+        </label>
+        <label className="flex items-center gap-3 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={rules.homeAdvantage ?? false}
+            onChange={(e) => setRules({ ...rules, homeAdvantage: e.target.checked })}
+            className="h-4 w-4 rounded border-border"
+          />
+          Avantage du terrain (boost léger pour l'équipe à domicile)
+        </label>
+        <label className="flex items-center gap-3 text-sm flex-wrap">
+          <span className="text-muted">Météo</span>
+          <select
+            value={weatherZone}
+            onChange={(e) => setWeatherZone(e.target.value as ClimateZone | '' | 'auto')}
+            className="h-8 rounded border border-border bg-surface px-2 text-sm"
+          >
+            <option value="">Aucune</option>
+            <option value="auto">Selon le continent de l'équipe à domicile</option>
+            {CLIMATE_ZONES.map((z) => (
+              <option key={z} value={z}>{CLIMATE_ZONE_LABEL[z]}</option>
+            ))}
+          </select>
         </label>
         <label className="flex items-center gap-3 text-sm">
           <span className="text-muted">Remplacements max</span>

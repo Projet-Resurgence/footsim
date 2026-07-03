@@ -1,6 +1,8 @@
-import { useState } from 'react';
-import type { CustomTacticStyle, Formation, PlannedSub, Player, Position, TacticStyle, Team, TeamTactics } from '@/lib/types';
-import { POSITION_LABEL, TACTIC_STYLE_LABEL } from '@/lib/types';
+import { useEffect, useState } from 'react';
+import type { CustomTacticStyle, Formation, PlanBRule, PlanBTrigger, PlannedSub, Player, Position, SavedTactic, SetPieceTakers, TacticStyle, Team, TeamTactics } from '@/lib/types';
+import { PLAN_B_TRIGGER_LABEL, POSITION_LABEL, TACTIC_STYLE_LABEL } from '@/lib/types';
+import { useTeams } from '@/stores/teams';
+import { useBackendArgs } from '@/hooks/useBackendArgs';
 
 const FOOT: Record<string, string> = { right: 'D', left: 'G', both: 'D/G' };
 import type { TacticMods } from '@/lib/sim/types';
@@ -8,11 +10,19 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { pickXI } from '@/lib/sim/lineup';
+import { getTacticMods } from '@/lib/sim/precompute';
+import {
+  customStyleProfile, formationProfile, styleProfile,
+  FORMATION_MATCHUP, STYLE_MATCHUP,
+  FORMATION_PROFILE_LABEL, FORMATION_PROFILE_DESC,
+  STYLE_PROFILE_LABEL, STYLE_PROFILE_DESC,
+} from '@/lib/sim/matchup';
+import type { FormationProfile, StyleProfile } from '@/lib/sim/matchup';
 import { FormationEditor } from './FormationEditor';
 import type { FormationEditorResult } from './FormationEditor';
 
-const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1', '4-5-1', '4-4-1-1', '3-4-1-2', '5-4-1', '3-6-1'];
-const TACTIC_STYLES: TacticStyle[] = ['possession', 'contre-attaque', 'direct', 'pressing', 'ultra-defensif', 'gegenpressing', 'tiki-taka', 'long-ball', 'chaos'];
+const FORMATIONS: Formation[] = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1', '5-3-2', '4-1-4-1', '3-4-3', '4-3-2-1', '4-5-1', '4-4-1-1', '3-4-1-2', '5-4-1', '3-6-1', '4-1-2-1-2', '3-4-2-1', '4-2-2-2', '4-2-4'];
+const TACTIC_STYLES: TacticStyle[] = ['possession', 'tiki-taka', 'football-total', 'contre-attaque', 'direct', 'long-ball', 'ailes', 'pressing', 'gegenpressing', 'bloc-median', 'ultra-defensif', 'chaos'];
 
 type SlotDef = { pos: string; x: number; y: number };
 
@@ -100,7 +110,186 @@ const FORMATION_LAYOUT: Record<Formation, SlotDef[]> = {
     { pos: 'LM', x: 6, y: 47 }, { pos: 'DM', x: 24, y: 60 }, { pos: 'CM', x: 38, y: 44 }, { pos: 'CM', x: 62, y: 44 }, { pos: 'DM', x: 76, y: 60 }, { pos: 'RM', x: 94, y: 47 },
     { pos: 'ST', x: 50, y: 18 },
   ],
+  '4-1-2-1-2': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'LB', x: 12, y: 70 }, { pos: 'CB', x: 34, y: 72 }, { pos: 'CB', x: 66, y: 72 }, { pos: 'RB', x: 88, y: 70 },
+    { pos: 'DM', x: 50, y: 60 },
+    { pos: 'CM', x: 28, y: 47 }, { pos: 'CM', x: 72, y: 47 },
+    { pos: 'AM', x: 50, y: 33 },
+    { pos: 'ST', x: 34, y: 18 }, { pos: 'ST', x: 66, y: 18 },
+  ],
+  '3-4-2-1': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'CB', x: 24, y: 72 }, { pos: 'CB', x: 50, y: 73 }, { pos: 'CB', x: 76, y: 72 },
+    { pos: 'LM', x: 8, y: 52 }, { pos: 'CM', x: 34, y: 54 }, { pos: 'CM', x: 66, y: 54 }, { pos: 'RM', x: 92, y: 52 },
+    { pos: 'AM', x: 34, y: 32 }, { pos: 'AM', x: 66, y: 32 },
+    { pos: 'ST', x: 50, y: 16 },
+  ],
+  '4-2-2-2': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'LB', x: 12, y: 70 }, { pos: 'CB', x: 34, y: 72 }, { pos: 'CB', x: 66, y: 72 }, { pos: 'RB', x: 88, y: 70 },
+    { pos: 'DM', x: 34, y: 58 }, { pos: 'DM', x: 66, y: 58 },
+    { pos: 'AM', x: 28, y: 36 }, { pos: 'AM', x: 72, y: 36 },
+    { pos: 'ST', x: 34, y: 18 }, { pos: 'ST', x: 66, y: 18 },
+  ],
+  '4-2-4': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'LB', x: 12, y: 70 }, { pos: 'CB', x: 34, y: 72 }, { pos: 'CB', x: 66, y: 72 }, { pos: 'RB', x: 88, y: 70 },
+    { pos: 'CM', x: 34, y: 50 }, { pos: 'CM', x: 66, y: 50 },
+    { pos: 'LW', x: 10, y: 22 }, { pos: 'ST', x: 36, y: 16 }, { pos: 'ST', x: 64, y: 16 }, { pos: 'RW', x: 90, y: 22 },
+  ],
 };
+
+// ── Analyse tactique (matchups) ───────────────────────────────────────────────
+
+/** Description football réel de chaque style prédéfini */
+const STYLE_FLAVOR: Record<TacticStyle, string> = {
+  possession: 'Conserver le ballon pour contrôler le rythme. Circulation patiente, milieu renforcé — moins de tirs, mais mieux préparés.',
+  'tiki-taka': 'Passes courtes et triangles permanents (Barcelone 2009-12). Possession maximale qui épuise l\'adversaire, attaque parfois stérile.',
+  'football-total': 'Permutations permanentes, tout le monde attaque et défend (Ajax 1974). Fort partout vers l\'avant, arrière-garde exposée.',
+  'contre-attaque': 'Bloc qui recule puis projection éclair dans l\'espace. Peu de possession, mais des occasions franches en transition.',
+  direct: 'Verticalité immédiate : moins de passes, plus de tirs. Volume d\'occasions maximal, qualité variable.',
+  'long-ball': 'Longs ballons vers l\'attaquant cible en sautant le milieu. Punit les lignes hautes, pauvre en construction.',
+  ailes: 'Débordements, centres et renversements d\'aile à aile. Le danger vient des couloirs et du jeu de tête — l\'axe est délaissé.',
+  pressing: 'Récupération haute et organisée en bloc. Milieu adverse asphyxié, au prix de fautes plus fréquentes.',
+  gegenpressing: 'Contre-pressing immédiat dans les 5 secondes après la perte (Klopp). Intensité et milieu dominants, cartons plus fréquents.',
+  'bloc-median': 'Bloc compact entre les lignes, pièges à la récupération (Atlético de Simeone). Solide, discipliné, sobre devant.',
+  'ultra-defensif': 'Bus garé devant la surface. Tirs très rares, défense verrouillée — fait pour tenir un résultat.',
+  chaos: 'Tous azimuts : tirs et fautes en pagaille, zéro structure. Imprévisible pour tout le monde, y compris pour soi-même.',
+};
+
+const TACTIC_MOD_LABEL: Record<keyof TacticMods, string> = {
+  attackMult: 'Attaque',
+  midfieldMult: 'Milieu',
+  defenseMult: 'Défense',
+  shotFreqMult: 'Tirs',
+  foulRateMult: 'Fautes',
+};
+
+/** Chips ±% générés depuis les mods réels du moteur — jamais désynchronisés du sim */
+function ModChips({ mods }: { mods: TacticMods }) {
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
+      {(Object.keys(TACTIC_MOD_LABEL) as (keyof TacticMods)[]).map((k) => {
+        const pct = Math.round((mods[k] - 1) * 100);
+        if (pct === 0) return null;
+        // fautes en plus = coût, tout le reste en plus = bénéfice
+        const good = k === 'foulRateMult' ? pct < 0 : pct > 0;
+        return (
+          <span key={k} className={good ? 'text-green-400' : 'text-danger'}>
+            {TACTIC_MOD_LABEL[k]} {pct > 0 ? '+' : ''}{pct}%
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Score global d'un matchup [att, def, mid] : > 1 = favorable */
+function matchupScore([att, def, mid]: [number, number, number]): number {
+  return (att + def + mid) / 3;
+}
+
+function verdictLists<P extends string>(row: Record<P, [number, number, number]>, self: P): { favorable: P[]; unfavorable: P[] } {
+  const favorable: P[] = [];
+  const unfavorable: P[] = [];
+  for (const opp of Object.keys(row) as P[]) {
+    if (opp === self) continue;
+    const s = matchupScore(row[opp]);
+    if (s >= 1.005) favorable.push(opp);
+    else if (s <= 0.995) unfavorable.push(opp);
+  }
+  return { favorable, unfavorable };
+}
+
+/** Formations regroupées par profil, pour illustrer les verdicts */
+function formationsOfProfile(p: FormationProfile): Formation[] {
+  return FORMATIONS.filter((f) => formationProfile(f) === p);
+}
+
+function FormationAnalysis({ formation }: { formation: Formation }) {
+  const profile = formationProfile(formation);
+  const row = FORMATION_MATCHUP[profile];
+  const { favorable, unfavorable } = verdictLists(row, profile);
+  return (
+    <div className="rounded-lg border border-border bg-bg p-3 space-y-2 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="rounded bg-accent/15 px-2 py-0.5 font-medium text-accent">{FORMATION_PROFILE_LABEL[profile]}</span>
+        <span className="text-muted">Profil tactique du {formation}</span>
+      </div>
+      <p className="text-muted">{FORMATION_PROFILE_DESC[profile]}</p>
+      <div className="grid gap-1 sm:grid-cols-2">
+        <div>
+          <span className="text-green-400 font-medium">✓ Favorable contre</span>
+          <ul className="mt-0.5 space-y-0.5 text-muted">
+            {favorable.length === 0 && <li>—</li>}
+            {favorable.map((p) => (
+              <li key={p}>{FORMATION_PROFILE_LABEL[p]} <span className="opacity-60">({formationsOfProfile(p).slice(0, 3).join(', ')})</span></li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <span className="text-danger font-medium">✗ Défavorable contre</span>
+          <ul className="mt-0.5 space-y-0.5 text-muted">
+            {unfavorable.length === 0 && <li>—</li>}
+            {unfavorable.map((p) => (
+              <li key={p}>{FORMATION_PROFILE_LABEL[p]} <span className="opacity-60">({formationsOfProfile(p).slice(0, 3).join(', ')})</span></li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Styles prédéfinis regroupés par profil de matchup */
+function stylesOfProfile(p: StyleProfile): TacticStyle[] {
+  return TACTIC_STYLES.filter((s) => styleProfile(s) === p);
+}
+
+/** Listes fort/faible contre pour un profil de style — partagé entre styles prédéfinis et perso */
+function StyleMatchupVerdicts({ profile }: { profile: StyleProfile }) {
+  const row = STYLE_MATCHUP[profile];
+  const { favorable, unfavorable } = verdictLists(row, profile);
+  return (
+    <div className="grid gap-1 sm:grid-cols-2">
+      <div>
+        <span className="text-green-400 font-medium">✓ Fort contre</span>
+        <ul className="mt-0.5 space-y-0.5 text-muted">
+          {favorable.length === 0 && <li>—</li>}
+          {favorable.map((p) => (
+            <li key={p}>{STYLE_PROFILE_LABEL[p]} <span className="opacity-60">({stylesOfProfile(p).map((s) => TACTIC_STYLE_LABEL[s]).join(', ')})</span></li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <span className="text-danger font-medium">✗ Faible contre</span>
+        <ul className="mt-0.5 space-y-0.5 text-muted">
+          {unfavorable.length === 0 && <li>—</li>}
+          {unfavorable.map((p) => (
+            <li key={p}>{STYLE_PROFILE_LABEL[p]} <span className="opacity-60">({stylesOfProfile(p).map((s) => TACTIC_STYLE_LABEL[s]).join(', ')})</span></li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function StyleAnalysis({ style }: { style: TacticStyle }) {
+  const profile = styleProfile(style);
+  return (
+    <div className="rounded-lg border border-border bg-bg p-3 space-y-2 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="font-medium">{TACTIC_STYLE_LABEL[style]}</span>
+        <span className="rounded bg-accent/15 px-2 py-0.5 text-accent">{STYLE_PROFILE_LABEL[profile]}</span>
+      </div>
+      <p className="text-muted">{STYLE_FLAVOR[style]}</p>
+      <ModChips mods={getTacticMods(style)} />
+      <p className="text-muted">{STYLE_PROFILE_DESC[profile]}</p>
+      <StyleMatchupVerdicts profile={profile} />
+    </div>
+  );
+}
 
 type Props = {
   team: Team;
@@ -109,7 +298,7 @@ type Props = {
   onSaveStyles?: (styles: CustomTacticStyle[], activeId?: string) => void;
 };
 
-type PanelTab = 'formation' | 'style' | 'stylesperso' | 'remplacements';
+type PanelTab = 'formation' | 'style' | 'stylesperso' | 'consignes' | 'remplacements';
 
 export function TacticsPanel({ team, players, onSave, onSaveStyles }: Props) {
   const [panelTab, setPanelTab] = useState<PanelTab>('formation');
@@ -126,6 +315,9 @@ export function TacticsPanel({ team, players, onSave, onSaveStyles }: Props) {
   );
   const [benchOrder, setBenchOrder] = useState<string[]>(team.tactics?.bench ?? []);
   const [plannedSubs, setPlannedSubs] = useState<PlannedSub[]>(team.tactics?.plannedSubs ?? []);
+  const [planB, setPlanB] = useState<PlanBRule[]>(team.tactics?.planB ?? []);
+  const [takers, setTakers] = useState<SetPieceTakers>(team.tactics?.setPieceTakers ?? {});
+  const [captainId, setCaptainId] = useState<string | undefined>(team.tactics?.captainId);
   const [pickingSlot, setPickingSlot] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [freeEditor, setFreeEditor] = useState(false);
@@ -264,7 +456,8 @@ export function TacticsPanel({ team, players, onSave, onSaveStyles }: Props) {
       const validPlannedSubs = plannedSubs.filter((s) => filledSet.has(s.outId) && players.some((p) => p.id === s.inId));
       const cs = overrideStyles ?? customStyles;
       const acid = overrideActiveId !== undefined ? overrideActiveId : activeCustomStyleId;
-      await onSave({ style, formation, lineup: filled, bench: validBench.length ? validBench : undefined, plannedSubs: validPlannedSubs.length ? validPlannedSubs : undefined, formationLabel, positionMap, tokenPositions, customStyles: cs, activeCustomStyleId: acid });
+      const hasTakers = takers.penalty || takers.freeKick || takers.corner;
+      await onSave({ style, formation, lineup: filled, bench: validBench.length ? validBench : undefined, plannedSubs: validPlannedSubs.length ? validPlannedSubs : undefined, formationLabel, positionMap, tokenPositions, customStyles: cs, activeCustomStyleId: acid, planB: planB.length ? planB : undefined, setPieceTakers: hasTakers ? takers : undefined, captainId });
     } finally {
       setSaving(false);
     }
@@ -353,15 +546,18 @@ export function TacticsPanel({ team, players, onSave, onSaveStyles }: Props) {
     <div className="space-y-4">
       {/* Tab bar */}
       <div className="flex gap-1 border-b border-border">
-        {(['formation', 'style', 'stylesperso', 'remplacements'] as PanelTab[]).map((t) => (
+        {(['formation', 'style', 'stylesperso', 'consignes', 'remplacements'] as PanelTab[]).map((t) => (
           <button
             key={t}
             onClick={() => setPanelTab(t)}
             className={`px-3 py-1.5 text-sm font-medium transition-colors ${panelTab === t ? 'border-b-2 border-accent text-accent' : 'text-muted hover:text-text'}`}
           >
-            {t === 'formation' ? 'Formation' : t === 'style' ? 'Style de jeu' : t === 'stylesperso' ? 'Styles perso' : 'Remplacements'}
+            {t === 'formation' ? 'Formation' : t === 'style' ? 'Style de jeu' : t === 'stylesperso' ? 'Styles perso' : t === 'consignes' ? 'Consignes' : 'Remplacements'}
             {t === 'stylesperso' && customStyles.length > 0 && (
               <span className="ml-1.5 rounded-full bg-accent/20 px-1.5 text-[10px] text-accent">{customStyles.length}</span>
+            )}
+            {t === 'consignes' && (planB.length > 0 || captainId) && (
+              <span className="ml-1.5 rounded-full bg-accent/20 px-1.5 text-[10px] text-accent">{planB.length + (captainId ? 1 : 0)}</span>
             )}
             {t === 'remplacements' && plannedSubs.length > 0 && (
               <span className="ml-1.5 rounded-full bg-accent/20 px-1.5 text-[10px] text-accent">{plannedSubs.length}</span>
@@ -415,6 +611,8 @@ export function TacticsPanel({ team, players, onSave, onSaveStyles }: Props) {
               </div>
             )}
           </div>
+
+          <FormationAnalysis formation={formation} />
 
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
             <div className="relative shrink-0" style={{ width: 280, height: 400, background: 'var(--pitch)', borderRadius: 8, border: '2px solid var(--pitch-line)' }}>
@@ -485,17 +683,7 @@ export function TacticsPanel({ team, players, onSave, onSaveStyles }: Props) {
               </Button>
             ))}
           </div>
-          <p className="text-xs text-muted">
-            {style === 'possession' && 'Milieu renforcé (+12%), fréquence de tirs réduite.'}
-            {style === 'contre-attaque' && 'Attaque boostée (+10%), moins de possession.'}
-            {style === 'direct' && 'Fréquence de tirs maximale (+18%).'}
-            {style === 'pressing' && 'Pressing intense — milieu (+15%), fautes adverses.'}
-            {style === 'ultra-defensif' && 'Bloc bas — tirs très rares (−35%), défense renforcée.'}
-            {style === 'gegenpressing' && 'Récupération haute intensité — milieu (+18%), fautes élevées.'}
-            {style === 'tiki-taka' && 'Passes courtes — possession maximale (+20%), peu de tirs.'}
-            {style === 'long-ball' && 'Ballons longs — attaque boostée (+15%), milieu réduit.'}
-            {style === 'chaos' && 'Tous azimuts — tirs (+30%) et fautes (+35%) extrêmes.'}
-          </p>
+          <StyleAnalysis style={style} />
           <Button onClick={() => save()} disabled={saving || filledCount < 11}>
             {saving ? <Spinner className="mr-2 h-4 w-4" /> : null}
             Sauvegarder
@@ -510,6 +698,26 @@ export function TacticsPanel({ team, players, onSave, onSaveStyles }: Props) {
           activeId={activeCustomStyleId}
           onChange={saveCustomStyles}
           onSaveTactics={() => save()}
+          saving={saving}
+          canSave={filledCount >= 11}
+        />
+      )}
+
+      {panelTab === 'consignes' && (
+        <ConsignesPanel
+          players={players}
+          lineup={lineup.filter(Boolean) as string[]}
+          otherTactics={(team.savedTactics ?? [])
+            .filter((t) => t.id !== (team.tactics as SavedTactic | undefined)?.id)
+            .map((t) => ({ id: t.id, name: t.name }))}
+          selfTeamId={team.id}
+          captainId={captainId}
+          onCaptain={setCaptainId}
+          takers={takers}
+          onTakers={setTakers}
+          planB={planB}
+          onPlanB={setPlanB}
+          onSave={() => save()}
           saving={saving}
           canSave={filledCount >= 11}
         />
@@ -818,6 +1026,26 @@ function CustomStyleEditor({
         </div>
         <p className="text-[10px] text-muted">+1 pt par % de bonus · malus rend 0.5 pt · max ±30% par slider</p>
       </div>
+      {/* Profil matchup détecté — détermine comment ce style réagit aux styles adverses */}
+      {(() => {
+        const profile = customStyleProfile(mods);
+        return (
+          <div className="rounded border border-border bg-surface px-3 py-2 text-xs space-y-2">
+            <div>
+              <span className="text-muted">Profil matchup détecté : </span>
+              {profile
+                ? <span className="rounded bg-accent/15 px-1.5 py-0.5 font-medium text-accent">{STYLE_PROFILE_LABEL[profile]}</span>
+                : <span className="text-muted">neutre (aucun axe dominant)</span>}
+            </div>
+            <p className="text-[10px] text-muted">
+              {profile
+                ? STYLE_PROFILE_DESC[profile]
+                : 'Sans axe dominant, ce style ne subit ni ne crée d\'avantage de matchup contre les styles adverses.'}
+            </p>
+            {profile && <StyleMatchupVerdicts profile={profile} />}
+          </div>
+        );
+      })()}
       <div className="space-y-3">
         {(Object.keys(MOD_LABELS) as (keyof TacticMods)[]).map((k) => (
           <ModSlider key={k} label={MOD_LABELS[k]} value={mods[k]} onChange={(v) => setMod(k, v)} budgetLeft={remaining} invert={k === 'foulRateMult'} />
@@ -885,13 +1113,22 @@ function CustomStylesPanel({
       <div className="space-y-2">
         {customStyles.map((s) => {
           const isActive = s.id === activeId;
+          const profile = customStyleProfile(s.mods);
           return (
             <div
               key={s.id}
               className={`rounded-lg border p-3 space-y-2 transition-colors ${isActive ? 'border-accent bg-accent/5' : 'border-border bg-bg'}`}
             >
               <div className="flex items-center justify-between">
-                <span className={`font-medium text-sm ${isActive ? 'text-accent' : ''}`}>{s.name}</span>
+                <span className={`flex items-center gap-2 font-medium text-sm ${isActive ? 'text-accent' : ''}`}>
+                  {s.name}
+                  <span
+                    className="rounded bg-border/40 px-1.5 py-0.5 text-[10px] font-normal text-muted"
+                    title={profile ? STYLE_PROFILE_DESC[profile] : 'Aucun axe dominant — pas de matchup de style'}
+                  >
+                    {profile ? STYLE_PROFILE_LABEL[profile] : 'Neutre'}
+                  </span>
+                </span>
                 <div className="flex gap-2">
                   <button onClick={() => handleActivate(s.id)} className={`text-xs px-2 py-0.5 rounded border transition-colors ${isActive ? 'border-accent text-accent' : 'border-border text-muted hover:border-accent hover:text-accent'}`}>
                     {isActive ? '✓ Actif' : 'Activer'}
@@ -997,6 +1234,292 @@ function PlayerPicker({ slotDef, players, currentId, takenIds, onPick, onClear, 
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Consignes Panel : capitaine, tireurs désignés, plans B ───────────────────
+
+/** Sélecteur avec recherche intégrée — le XI de départ (s'il est fait) passe en tête avec un badge */
+function PlayerSearchSelect({ players, xiIds, value, onChange, placeholder }: {
+  players: Player[];
+  xiIds: Set<string>;
+  value?: string;
+  onChange: (id: string | undefined) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const selected = value ? players.find((p) => p.id === value) : undefined;
+  const searchLower = search.toLowerCase();
+  const sorted = [...players]
+    .sort((a, b) => {
+      const ax = xiIds.has(a.id) ? 1 : 0;
+      const bx = xiIds.has(b.id) ? 1 : 0;
+      if (ax !== bx) return bx - ax;
+      return b.overall - a.overall;
+    })
+    .filter((p) => search === '' || `${p.firstName} ${p.lastName}`.toLowerCase().includes(searchLower));
+
+  function pick(id: string | undefined) {
+    onChange(id);
+    setOpen(false);
+    setSearch('');
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((v) => !v); setSearch(''); }}
+        className="flex w-full items-center justify-between gap-2 rounded border border-border bg-surface px-2 py-1.5 text-left text-sm outline-none focus:border-accent"
+      >
+        {selected ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 rounded bg-border/40 px-1 font-mono text-[10px]">{POSITION_LABEL[selected.position]}</span>
+            <span className="truncate">{selected.firstName} {selected.lastName}</span>
+            {xiIds.has(selected.id) && <span className="shrink-0 rounded bg-accent/15 px-1 text-[9px] font-medium text-accent">XI</span>}
+            <span className="shrink-0 text-xs text-muted">({selected.overall})</span>
+          </span>
+        ) : (
+          <span className="text-muted">{placeholder}</span>
+        )}
+        <span className="shrink-0 text-[10px] text-muted">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setSearch(''); }} />
+          <div className="absolute z-20 mt-1 w-full min-w-[220px] space-y-1 rounded border border-border bg-surface p-2 shadow-lg">
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher un joueur…"
+              className="w-full rounded border border-border bg-bg px-2 py-1 text-sm outline-none focus:border-accent"
+            />
+            <div className="max-h-52 space-y-0.5 overflow-y-auto">
+              <button
+                type="button"
+                onClick={() => pick(undefined)}
+                className={`w-full rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-border/40 ${!value ? 'text-accent' : 'text-muted'}`}
+              >
+                {placeholder}
+              </button>
+              {sorted.map((p) => (
+                <button
+                  type="button"
+                  key={p.id}
+                  onClick={() => pick(p.id)}
+                  className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-border/40 ${p.id === value ? 'bg-accent/10 text-accent' : ''}`}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="shrink-0 rounded bg-border/40 px-1 font-mono text-[10px]">{POSITION_LABEL[p.position]}</span>
+                    <span className="truncate">{p.firstName} {p.lastName}</span>
+                    {xiIds.has(p.id) && <span className="shrink-0 rounded bg-accent/15 px-1 text-[9px] font-medium text-accent">XI</span>}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted">{p.overall} · {p.age}a</span>
+                </button>
+              ))}
+              {sorted.length === 0 && <p className="px-2 py-2 text-xs text-muted">Aucun joueur.</p>}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const PLAN_B_TRIGGERS: PlanBTrigger[] = ['losing', 'winning', 'drawing', 'redCard'];
+
+function ConsignesPanel({
+  players, lineup, otherTactics, selfTeamId, captainId, onCaptain, takers, onTakers, planB, onPlanB, onSave, saving, canSave,
+}: {
+  players: Player[];
+  /** XI de départ (ids) — priorisé dans les sélecteurs quand il est défini */
+  lineup: string[];
+  /** autres tactiques sauvegardées de l'équipe — cibles des plans B */
+  otherTactics: { id: string; name: string }[];
+  selfTeamId: string;
+  captainId?: string;
+  onCaptain: (id: string | undefined) => void;
+  takers: SetPieceTakers;
+  onTakers: (t: SetPieceTakers) => void;
+  planB: PlanBRule[];
+  onPlanB: (rules: PlanBRule[]) => void;
+  onSave: () => void;
+  saving: boolean;
+  canSave: boolean;
+}) {
+  const outfield = players.filter((p) => p.position !== 'GK');
+  const xiIds = new Set(lineup);
+  const hasTactics = otherTactics.length > 0;
+
+  // Liste d'équipes pour la condition adversaire des plans B
+  const teams = useTeams((s) => s.teams);
+  const refreshIfStale = useTeams((s) => s.refreshIfStale);
+  const { ownerId, prApiToken } = useBackendArgs();
+  useEffect(() => {
+    if (ownerId) refreshIfStale(ownerId, null, prApiToken);
+  }, [ownerId, prApiToken, refreshIfStale]);
+  const opponentOptions = teams
+    .filter((t) => t.id !== selfTeamId)
+    .map((t) => ({ id: t.id, name: t.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  function patchRule(id: string, patch: Partial<PlanBRule>) {
+    onPlanB(planB.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+  return (
+    <div className="space-y-6">
+      {/* Capitaine */}
+      <div className="space-y-2">
+        <div className="text-sm font-medium">Capitaine</div>
+        <p className="text-xs text-muted">
+          Tant qu'il est sur le terrain : fautes de l'équipe −7 %, cartons jaunes −10 %,
+          et le momentum adverse après un but encaissé est réduit de moitié (résilience).
+        </p>
+        <PlayerSearchSelect players={players} xiIds={xiIds} value={captainId} onChange={onCaptain} placeholder="— Aucun capitaine —" />
+      </div>
+
+      {/* Tireurs désignés */}
+      <div className="space-y-2 border-t border-border pt-4">
+        <div className="text-sm font-medium">Tireurs désignés</div>
+        <p className="text-xs text-muted">
+          Prioritaires sur la sélection automatique s'ils sont sur le terrain. Penalties : finition + sang-froid.
+          Coups francs : frappe de loin. Corners : la qualité de centre améliore la conversion des têtes.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {([['penalty', 'Penalties'], ['freeKick', 'Coups francs'], ['corner', 'Corners']] as const).map(([k, label]) => (
+            <div key={k} className="space-y-1">
+              <label className="text-xs text-muted">{label}</label>
+              <PlayerSearchSelect
+                players={outfield}
+                xiIds={xiIds}
+                value={takers[k]}
+                onChange={(id) => onTakers({ ...takers, [k]: id })}
+                placeholder="Auto"
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Plans B */}
+      <div className="space-y-2 border-t border-border pt-4">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium">Plans B conditionnels</div>
+          {planB.length < 3 && (
+            <button
+              onClick={() => onPlanB([...planB, {
+                id: crypto.randomUUID(), trigger: 'losing', fromMinute: 70,
+                ...(hasTactics
+                  ? { tacticId: otherTactics[0].id, tacticName: otherTactics[0].name }
+                  : { style: 'chaos' as TacticStyle }),
+              }])}
+              className="text-xs text-accent hover:underline"
+            >
+              + Ajouter un plan B
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-muted">
+          Bascule automatique vers une autre tactique sauvegardée en cours de match (son style est appliqué —
+          la formation et le XI restent ceux du coup d'envoi). Chaque règle se déclenche une seule fois,
+          dès que sa condition est vraie à partir de la minute choisie. L'événement apparaît dans le fil du match.
+        </p>
+        {!hasTactics && (
+          <p className="text-xs text-warning">
+            Aucune autre tactique sauvegardée — les plans B basculent sur un style en attendant.
+          </p>
+        )}
+        {planB.length === 0 && (
+          <p className="text-xs text-muted py-2 text-center">Aucun plan B. Exemple : « Si mené à la 70ᵉ → Tactique offensive ».</p>
+        )}
+        <div className="space-y-2">
+          {planB.map((rule, idx) => (
+            <div key={rule.id} className="space-y-1.5 rounded-lg border border-border bg-bg p-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-4 text-center text-muted tabular-nums">{idx + 1}.</span>
+                <select
+                  value={rule.trigger}
+                  onChange={(e) => patchRule(rule.id, { trigger: e.target.value as PlanBTrigger })}
+                  className="rounded border border-border bg-surface px-2 py-1 outline-none focus:border-accent"
+                >
+                  {PLAN_B_TRIGGERS.map((t) => <option key={t} value={t}>{PLAN_B_TRIGGER_LABEL[t]}</option>)}
+                </select>
+                <span className="text-muted">dès la</span>
+                <input
+                  type="number" min={1} max={120}
+                  value={rule.fromMinute}
+                  onChange={(e) => patchRule(rule.id, { fromMinute: Math.max(1, Math.min(120, Number(e.target.value) || 1)) })}
+                  className="w-14 rounded border border-border bg-surface px-2 py-1 text-center outline-none focus:border-accent"
+                />
+                <span className="text-muted">ᵉ →</span>
+                {hasTactics ? (
+                  <select
+                    value={rule.tacticId ?? ''}
+                    onChange={(e) => {
+                      const t = otherTactics.find((x) => x.id === e.target.value);
+                      if (t) patchRule(rule.id, { tacticId: t.id, tacticName: t.name, style: undefined });
+                    }}
+                    className="flex-1 min-w-[140px] rounded border border-border bg-surface px-2 py-1 outline-none focus:border-accent"
+                  >
+                    {/* règle legacy encore sur un style : option affichée tant qu'elle n'est pas migrée */}
+                    {!rule.tacticId && rule.style && (
+                      <option value="">Style : {TACTIC_STYLE_LABEL[rule.style]}</option>
+                    )}
+                    {otherTactics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                ) : (
+                  <select
+                    value={rule.style ?? 'chaos'}
+                    onChange={(e) => patchRule(rule.id, { style: e.target.value as TacticStyle, tacticId: undefined, tacticName: undefined })}
+                    className="flex-1 min-w-[140px] rounded border border-border bg-surface px-2 py-1 outline-none focus:border-accent"
+                  >
+                    {TACTIC_STYLES.map((s) => <option key={s} value={s}>{TACTIC_STYLE_LABEL[s]}</option>)}
+                  </select>
+                )}
+                <button onClick={() => onPlanB(planB.filter((r) => r.id !== rule.id))} className="text-muted hover:text-danger transition-colors">✕</button>
+              </div>
+              {/* Condition adversaire : restreint ou annule la règle contre une équipe précise */}
+              <div className="flex flex-wrap items-center gap-2 pl-6">
+                <select
+                  value={rule.vsMode ?? ''}
+                  onChange={(e) => {
+                    const mode = (e.target.value || undefined) as PlanBRule['vsMode'];
+                    patchRule(rule.id, mode
+                      ? { vsMode: mode }
+                      : { vsMode: undefined, vsTeamId: undefined, vsTeamName: undefined });
+                  }}
+                  className="rounded border border-border bg-surface px-2 py-1 outline-none focus:border-accent"
+                >
+                  <option value="">Contre tous les adversaires</option>
+                  <option value="only">Seulement contre…</option>
+                  <option value="except">Sauf contre…</option>
+                </select>
+                {rule.vsMode && (
+                  <select
+                    value={rule.vsTeamId ?? ''}
+                    onChange={(e) => {
+                      const opp = opponentOptions.find((t) => t.id === e.target.value);
+                      patchRule(rule.id, { vsTeamId: opp?.id, vsTeamName: opp?.name });
+                    }}
+                    className="flex-1 min-w-[140px] rounded border border-border bg-surface px-2 py-1 outline-none focus:border-accent"
+                  >
+                    <option value="">— Choisir l'équipe —</option>
+                    {opponentOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <Button onClick={onSave} disabled={saving || !canSave}>
+        {saving ? <Spinner className="mr-2 h-4 w-4" /> : null}
+        Sauvegarder la tactique
+      </Button>
     </div>
   );
 }

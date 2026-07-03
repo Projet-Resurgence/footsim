@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, Fragment } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
@@ -10,6 +10,8 @@ import { StartingXI } from '@/components/team/StartingXI';
 import { PlayerEdit } from '@/components/team/PlayerEdit';
 import { TacticsPanel } from '@/components/team/TacticsPanel';
 import { TacticsSummary } from '@/components/team/TacticsSummary';
+import { CounterTacticsPanel } from '@/components/team/CounterTacticsPanel';
+import { MatchHistoryTable } from '@/components/team/MatchHistoryTable';
 import type { Player, SavedTactic, Team, TeamTactics, Culture, Continent } from '@/lib/types';
 import type { CompHistoryEntry } from '@/lib/competition/types';
 import { FORMAT_LABEL } from '@/lib/competition/types';
@@ -56,10 +58,10 @@ const [regenStrength, setRegenStrength] = useState(false);
   const [editStrength, setEditStrength] = useState(60);
   const [editManagerId, setEditManagerId] = useState('');
   const [editJerseyColor, setEditJerseyColor] = useState('#e63c3c');
+  const [editJerseyAwayColor, setEditJerseyAwayColor] = useState('#f4f0e6');
   const [showActionFoot, setShowActionFoot] = useState(false);
   const [actionFootRating, setActionFootRating] = useState(0);
   const [actionFootFunding, setActionFootFunding] = useState(0);
-  const [editMatchOutcome, setEditMatchOutcome] = useState<'win' | 'loss' | 'draw' | null>(null);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -86,7 +88,9 @@ const [regenStrength, setRegenStrength] = useState(false);
     if (existing.length > 0) {
       setSavedTactics(existing);
       setActiveTacticId(team.activeTacticId ?? existing[0]?.id);
-    } else if (team.tactics) {
+    } else if (team.savedTactics === undefined && team.tactics) {
+      // Legacy team that never used saved tactics — seed from the single tactic.
+      // savedTactics === [] means the user explicitly deleted everything: don't resurrect.
       const seeded: SavedTactic = { ...team.tactics, id: crypto.randomUUID(), name: 'Tactique de base' };
       setSavedTactics([seeded]);
       setActiveTacticId(seeded.id);
@@ -120,7 +124,17 @@ const [regenStrength, setRegenStrength] = useState(false);
       next.flatMap((t) => t.customStyles ?? [])
         .reduce<Record<string, import('@/lib/types').CustomTacticStyle>>((acc, s) => { acc[s.id] = s; return acc; }, {})
     );
-    mutate({ ...data, team: { ...data.team, savedTactics: next, activeTacticId: activeId, customStyles: mergedStyles } });
+    // Deleting the last tactic must not resurrect the legacy single tactic:
+    // clear team.tactics + local caches, otherwise the init effect / resolveActiveTactic
+    // re-seed the deleted tactic from them.
+    const legacyTactics = next.length === 0 ? undefined : data.team.tactics;
+    if (next.length === 0) {
+      try {
+        localStorage.removeItem(`footsim.tactics.${data.team.id}`);
+        localStorage.setItem(`footsim.savedtactics.${data.team.id}`, JSON.stringify({ savedTactics: [], activeTacticId: undefined }));
+      } catch { /* storage unavailable — server state still cleared */ }
+    }
+    mutate({ ...data, team: { ...data.team, savedTactics: next, activeTacticId: activeId, customStyles: mergedStyles, tactics: legacyTactics } });
   }
 
 
@@ -360,9 +374,9 @@ async function applyNewStrength(strength: number) {
     setEditStrength(team.globalStrength);
     setEditManagerId(team.managerDiscordId ?? '');
     setEditJerseyColor(team.jerseyColor ?? '#e63c3c');
+    setEditJerseyAwayColor(team.jerseyAwayColor ?? '#f4f0e6');
     setActionFootRating(team.actionFoot?.rating ?? 5);
     setActionFootFunding(team.actionFoot?.funding ?? 0);
-    setEditMatchOutcome(team.matchOutcome ?? null);
     setShowActionFoot(false);
     setTab('infos');
   }
@@ -400,7 +414,8 @@ async function applyNewStrength(strength: number) {
         continents: editContinent.length > 0 ? editContinent : undefined,
         managerDiscordId: editManagerId.trim() || undefined,
         jerseyColor: editJerseyColor,
-        matchOutcome: editMatchOutcome ?? undefined,
+        jerseyAwayColor: editJerseyAwayColor,
+        matchOutcome: team.matchOutcome,
       },
       players: updatedPlayers,
     });
@@ -588,6 +603,12 @@ async function applyNewStrength(strength: number) {
             onRename={renameTactic}
           />
 
+          <CounterTacticsPanel
+            savedTactics={savedTactics}
+            selfTeamId={team.id}
+            onChange={(next) => mutateSavedTactics(next, activeTacticId)}
+          />
+
           <div>
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium">
@@ -649,8 +670,10 @@ async function applyNewStrength(strength: number) {
       )}
 
       {tab === 'historique' && (
-        <HistoriqueTab
-          matches={team.recentMatches ?? []}
+        <MatchHistoryTable
+          recentMatches={team.recentMatches ?? []}
+          teamId={team.id}
+          onEnrich={(next) => mutate({ team: { ...team, recentMatches: next }, players })}
           onDelete={(matchId) => {
             const next = (team.recentMatches ?? []).filter((m) => m.matchId !== matchId);
             mutate({ team: { ...team, recentMatches: next }, players });
@@ -685,42 +708,10 @@ async function applyNewStrength(strength: number) {
             onManagerId={setEditManagerId}
             jerseyColor={editJerseyColor}
             onJerseyColor={setEditJerseyColor}
+            jerseyAwayColor={editJerseyAwayColor}
+            onJerseyAwayColor={setEditJerseyAwayColor}
             onSave={saveInfos}
           />
-
-          {/* Résultat forcé */}
-          <div className="border-t border-border pt-6 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">Résultat forcé</span>
-              <span className="text-xs text-muted">(admin uniquement — s'applique à tous les matchs)</span>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              {([null, 'win', 'draw', 'loss'] as const).map((v) => (
-                <button
-                  key={String(v)}
-                  onClick={() => {
-                    setEditMatchOutcome(v);
-                    mutate({ team: { ...team, matchOutcome: v ?? undefined }, players });
-                  }}
-                  className={`px-4 py-1.5 rounded text-sm border transition-colors ${
-                    editMatchOutcome === v
-                      ? v === 'win' ? 'border-accent bg-accent/20 text-accent'
-                        : v === 'loss' ? 'border-danger bg-danger/20 text-danger'
-                        : v === 'draw' ? 'border-warning bg-warning/20 text-warning'
-                        : 'border-border bg-surface/80 text-text'
-                      : 'border-border bg-surface text-muted hover:text-text'
-                  }`}
-                >
-                  {v === null ? 'Normal' : v === 'win' ? '🏆 Victoire' : v === 'draw' ? '🤝 Match nul' : '💀 Défaite'}
-                </button>
-              ))}
-            </div>
-            {editMatchOutcome && (
-              <p className="text-xs text-warning">
-                ⚠ Cette équipe {editMatchOutcome === 'win' ? 'gagnera' : editMatchOutcome === 'loss' ? 'perdra' : 'fera match nul'} tous ses prochains matchs.
-              </p>
-            )}
-          </div>
 
           {/* Action sur le Foot */}
           <div className="border-t border-border pt-6">
@@ -1135,7 +1126,7 @@ function ActionFootPanel({
 function CultureEditPanel({
   name, onName, flag, onFlag, strength, onStrength,
   cultures, continents, onChange, onChangeContinents, managerId, onManagerId,
-  jerseyColor, onJerseyColor, onSave,
+  jerseyColor, onJerseyColor, jerseyAwayColor, onJerseyAwayColor, onSave,
 }: {
   name: string;
   onName: (v: string) => void;
@@ -1151,6 +1142,8 @@ function CultureEditPanel({
   onManagerId: (v: string) => void;
   jerseyColor: string;
   onJerseyColor: (v: string) => void;
+  jerseyAwayColor: string;
+  onJerseyAwayColor: (v: string) => void;
   onSave: () => void;
 }) {
   const total = cultures.reduce((s, c) => s + c.weight, 0);
@@ -1320,7 +1313,7 @@ function CultureEditPanel({
       )}
 
       <div className="space-y-2 border-t border-border pt-4">
-        <label className="block text-sm text-muted">Couleur du maillot</label>
+        <label className="block text-sm text-muted">Couleur du maillot domicile</label>
         <div className="flex items-center gap-3">
           <input
             type="color"
@@ -1331,6 +1324,23 @@ function CultureEditPanel({
           <span className="font-mono text-xs text-muted">{jerseyColor}</span>
           <div className="h-6 w-6 rounded-full border border-border" style={{ background: jerseyColor }} />
         </div>
+      </div>
+
+      <div className="space-y-2 border-t border-border pt-4">
+        <label className="block text-sm text-muted">Couleur du maillot extérieur</label>
+        <div className="flex items-center gap-3">
+          <input
+            type="color"
+            value={jerseyAwayColor}
+            onChange={(e) => onJerseyAwayColor(e.target.value)}
+            className="h-9 w-14 cursor-pointer rounded border border-border bg-transparent p-0.5"
+          />
+          <span className="font-mono text-xs text-muted">{jerseyAwayColor}</span>
+          <div className="h-6 w-6 rounded-full border border-border" style={{ background: jerseyAwayColor }} />
+        </div>
+        <p className="text-xs text-muted">
+          Porté en déplacement quand la couleur principale est trop proche de celle de l'adversaire.
+        </p>
       </div>
 
       <div className="space-y-2 border-t border-border pt-4">
@@ -1479,31 +1489,6 @@ function PalmaresTab({ compHistory, isAdmin, onRemoveEntry }: {
   );
 }
 
-function RecentMatchDetails({ m }: { m: RecentMatchSummary }) {
-  const goals = m.scorers ?? [];
-  const cards = m.cards ?? [];
-  if (!goals.length && !cards.length) return null;
-  return (
-    <div className="flex flex-wrap gap-x-6 gap-y-1 py-1 text-xs text-muted">
-      {goals.map((g, i) => (
-        <span key={i} className="flex items-center gap-1">
-          <span>⚽</span>
-          <span className="font-medium text-text">{g.playerName}</span>
-          <span className="text-muted/60">{g.minute}'</span>
-          {g.assistName && <span className="text-muted/60">(p. {g.assistName})</span>}
-        </span>
-      ))}
-      {cards.map((c, i) => (
-        <span key={i} className="flex items-center gap-1">
-          <span>{c.type === 'red' ? '🟥' : '🟨'}</span>
-          <span className="font-medium text-text">{c.playerName}</span>
-          <span className="text-muted/60">{c.minute}'</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function StatsIndividuellesTab({
   recentMatches,
   players,
@@ -1571,105 +1556,6 @@ function StatsIndividuellesTab({
           </div>
         </section>
       )}
-    </div>
-  );
-}
-
-function HistoriqueTab({
-  matches,
-  onDelete,
-  onDeleteAll,
-}: {
-  matches: RecentMatchSummary[];
-  onDelete: (matchId: string) => void;
-  onDeleteAll: () => void;
-}) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const sortedMatches = [...matches].sort((a, b) => b.playedAt.localeCompare(a.playedAt));
-
-  if (matches.length === 0) {
-    return (
-      <div className="py-16 text-center text-muted text-sm">
-        Aucun match dans l'historique.
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted">
-          Historique complet · {matches.length} match{matches.length > 1 ? 's' : ''}
-        </p>
-        <button
-          onClick={() => { if (confirm('Supprimer tout l\'historique de matchs ?')) onDeleteAll(); }}
-          className="rounded-md border border-danger/40 px-3 py-1.5 text-xs text-danger hover:bg-danger/10 transition-colors"
-        >
-          Tout supprimer
-        </button>
-      </div>
-
-      <div className="overflow-hidden rounded-lg border border-border bg-surface">
-        <table className="w-full text-sm">
-          <thead className="bg-bg text-left text-xs text-muted uppercase tracking-wide">
-            <tr>
-              <th className="px-3 py-2">Date</th>
-              <th className="px-3 py-2">Adversaire</th>
-              <th className="px-3 py-2 text-center">D/E</th>
-              <th className="px-3 py-2 text-center">Score</th>
-              <th className="px-3 py-2 text-center">Résultat</th>
-              <th className="px-3 py-2 text-right">Pts CMF</th>
-              <th className="px-3 py-2 text-right">Importance</th>
-              <th className="px-2 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedMatches.map((m) => {
-              const result = m.scoreFor > m.scoreAgainst ? 'V' : m.scoreFor === m.scoreAgainst ? 'N' : 'D';
-              const resultColor = result === 'V' ? 'text-green-500' : result === 'N' ? 'text-yellow-400' : 'text-red-500';
-              const date = new Date(m.playedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
-              const hasDetails = !!(m.scorers?.length || m.cards?.length);
-              const isExpanded = expanded === m.matchId;
-              return (
-                <Fragment key={m.matchId}>
-                  <tr
-                    className={`border-t border-border transition-colors ${hasDetails ? 'cursor-pointer hover:bg-border/10' : ''}`}
-                    onClick={() => hasDetails && setExpanded(isExpanded ? null : m.matchId)}
-                  >
-                    <td className="px-3 py-2 text-xs text-muted tabular-nums">{date}</td>
-                    <td className="px-3 py-2 font-medium">{m.opponentName}</td>
-                    <td className="px-3 py-2 text-center text-xs text-muted">{m.homeAway === 'home' ? 'D' : 'E'}</td>
-                    <td className="px-3 py-2 text-center tabular-nums font-mono">{m.scoreFor}–{m.scoreAgainst}</td>
-                    <td className={`px-3 py-2 text-center font-bold ${resultColor}`}>{result}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-xs text-accent">
-                      {m.cmfPoints != null ? (m.cmfPoints > 0 ? `+${m.cmfPoints}` : m.cmfPoints) : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs text-muted">
-                      {m.compImportance ?? '—'}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onDelete(m.matchId); }}
-                        className="rounded px-2 py-0.5 text-xs text-danger hover:bg-danger/10 transition-colors"
-                        title="Supprimer ce match de l'historique"
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                  {isExpanded && hasDetails && (
-                    <tr className="border-t border-border/30">
-                      <td colSpan={8} className="px-4 py-2 bg-surface/60">
-                        <RecentMatchDetails m={m} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

@@ -97,6 +97,7 @@ export type StoredMatch = {
   away: SideResult;
   events: MatchState['events'];
   finalScore: { home: number; away: number };
+  weather?: import('@/lib/sim/weather').Weather;
 };
 
 export type SideResult = {
@@ -132,6 +133,9 @@ export type RecentMatchSummary = {
   compKind?: import('@/lib/competition/types').CompetitionKind;
   compScope?: import('@/lib/competition/types').CompetitionScope;
   compImportance?: import('@/lib/competition/types').CompetitionImportance;
+  /** compétition d'origine — lien direct depuis l'historique */
+  competitionId?: string;
+  competitionName?: string;
   participantCount?: number;
   /** Goal scorers for this team in this match */
   scorers?: import('@/lib/competition/types').GoalEvent[];
@@ -165,6 +169,7 @@ export async function saveMatch(
     away: buildSide(input.away.team, input.away.formation, input.away.players.map((p) => p.id), state, 'away'),
     events: state.events,
     finalScore: state.score,
+    weather: state.weather,
   };
 
   const existing = await readJson<StoredMatch>(MATCH_PATH(state.matchId), token);

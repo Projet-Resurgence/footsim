@@ -92,6 +92,34 @@ const FORMATION_LAYOUT: Record<Formation, SlotDef[]> = {
     { pos: 'LM', x: 6, y: 50 }, { pos: 'DM', x: 24, y: 52 }, { pos: 'CM', x: 38, y: 47 }, { pos: 'CM', x: 62, y: 47 }, { pos: 'DM', x: 76, y: 52 }, { pos: 'RM', x: 94, y: 50 },
     { pos: 'ST', x: 50, y: 18 },
   ],
+  '4-1-2-1-2': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'LB', x: 12, y: 70 }, { pos: 'CB', x: 34, y: 72 }, { pos: 'CB', x: 66, y: 72 }, { pos: 'RB', x: 88, y: 70 },
+    { pos: 'DM', x: 50, y: 60 },
+    { pos: 'CM', x: 28, y: 47 }, { pos: 'CM', x: 72, y: 47 },
+    { pos: 'AM', x: 50, y: 33 },
+    { pos: 'ST', x: 34, y: 18 }, { pos: 'ST', x: 66, y: 18 },
+  ],
+  '3-4-2-1': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'CB', x: 24, y: 72 }, { pos: 'CB', x: 50, y: 73 }, { pos: 'CB', x: 76, y: 72 },
+    { pos: 'LM', x: 8, y: 52 }, { pos: 'CM', x: 34, y: 54 }, { pos: 'CM', x: 66, y: 54 }, { pos: 'RM', x: 92, y: 52 },
+    { pos: 'AM', x: 34, y: 32 }, { pos: 'AM', x: 66, y: 32 },
+    { pos: 'ST', x: 50, y: 16 },
+  ],
+  '4-2-2-2': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'LB', x: 12, y: 70 }, { pos: 'CB', x: 34, y: 72 }, { pos: 'CB', x: 66, y: 72 }, { pos: 'RB', x: 88, y: 70 },
+    { pos: 'DM', x: 34, y: 58 }, { pos: 'DM', x: 66, y: 58 },
+    { pos: 'AM', x: 28, y: 36 }, { pos: 'AM', x: 72, y: 36 },
+    { pos: 'ST', x: 34, y: 18 }, { pos: 'ST', x: 66, y: 18 },
+  ],
+  '4-2-4': [
+    { pos: 'GK', x: 50, y: 88 },
+    { pos: 'LB', x: 12, y: 70 }, { pos: 'CB', x: 34, y: 72 }, { pos: 'CB', x: 66, y: 72 }, { pos: 'RB', x: 88, y: 70 },
+    { pos: 'CM', x: 34, y: 50 }, { pos: 'CM', x: 66, y: 50 },
+    { pos: 'LW', x: 10, y: 22 }, { pos: 'ST', x: 36, y: 16 }, { pos: 'ST', x: 64, y: 16 }, { pos: 'RW', x: 90, y: 22 },
+  ],
 };
 
 // ── Pitch visual ──────────────────────────────────────────────────────────────

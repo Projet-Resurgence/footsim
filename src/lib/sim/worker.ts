@@ -1,6 +1,6 @@
 import type { Player } from '@/lib/types';
 import type { MatchInput, MatchState, Speed } from './types';
-import { precomputeSide } from './precompute';
+import { precomputeSide, enrichPlanBRules } from './precompute';
 import { computeMatchupAdjustment } from './matchup';
 import { initialState, tick, performManualSub, type EngineCtx } from './engine';
 
@@ -45,8 +45,8 @@ function matchSeedFromId(matchId: string): number {
 
 function buildCtx(input: MatchInput): EngineCtx {
   const seed = matchSeedFromId(input.matchId);
-  const homeRatings = precomputeSide(input.home.players, input.home.formation, input.home.lineup, input.home.tacticStyle, input.home.team.coach, seed, input.home.team.coachSuspended, input.home.customTacticStyle, input.home.morale, input.home.unavailablePlayerIds ? new Set(input.home.unavailablePlayerIds) : undefined, input.home.bench, input.home.plannedSubs, input.home.positionMap);
-  const awayRatings = precomputeSide(input.away.players, input.away.formation, input.away.lineup, input.away.tacticStyle, input.away.team.coach, seed + 1, input.away.team.coachSuspended, input.away.customTacticStyle, input.away.morale, input.away.unavailablePlayerIds ? new Set(input.away.unavailablePlayerIds) : undefined, input.away.bench, input.away.plannedSubs, input.away.positionMap);
+  const homeRatings = precomputeSide(input.home.players, input.home.formation, input.home.lineup, input.home.tacticStyle, input.home.team.coach, seed, input.home.team.coachSuspended, input.home.customTacticStyle, input.home.morale, input.home.unavailablePlayerIds ? new Set(input.home.unavailablePlayerIds) : undefined, input.home.bench, input.home.plannedSubs, input.home.positionMap, { planB: enrichPlanBRules(input.home.planB, input.home.team), setPieceTakers: input.home.setPieceTakers, captainId: input.home.captainId });
+  const awayRatings = precomputeSide(input.away.players, input.away.formation, input.away.lineup, input.away.tacticStyle, input.away.team.coach, seed + 1, input.away.team.coachSuspended, input.away.customTacticStyle, input.away.morale, input.away.unavailablePlayerIds ? new Set(input.away.unavailablePlayerIds) : undefined, input.away.bench, input.away.plannedSubs, input.away.positionMap, { planB: enrichPlanBRules(input.away.planB, input.away.team), setPieceTakers: input.away.setPieceTakers, captainId: input.away.captainId });
 
   // No-tactic penalty: disorganised side — crippled offensively, defence collapses
   if (!input.home.hasTactic) {
@@ -139,6 +139,13 @@ self.onmessage = (ev: MessageEvent<Inbound>) => {
       state.awayAvailableBench = [...ctx.away.ratings.bench];
       if (msg.input.corruption) state.corruption = msg.input.corruption;
       if (msg.input.leg1Score) state.leg1Score = msg.input.leg1Score;
+      if (msg.input.weather) state.weather = msg.input.weather;
+      if (msg.input.referee) {
+        state.referee = msg.input.referee;
+        // Générosité variable du temps additionnel selon l'arbitre
+        state.homeAddedTime = Math.max(0, state.homeAddedTime + msg.input.referee.addedTimeBias);
+        state.awayAddedTime = Math.max(0, state.awayAddedTime + msg.input.referee.addedTimeBias);
+      }
       tick(state, ctx); // kickoff
       send({ type: 'state', state });
       startLoop();
@@ -163,13 +170,29 @@ self.onmessage = (ev: MessageEvent<Inbound>) => {
         send({ type: 'state', state });
       }
     } else if (msg.type === 'updatetactic') {
-      if (ctx) {
+      if (ctx && state) {
+        // Rebuild BOTH sides: matchup adjustments are cross-side — a home tactic
+        // change also shifts the away side's formation/style matchup multipliers.
         const newCtx = buildCtx(msg.input);
-        if (msg.side === 'home') {
-          ctx = { ...ctx, home: newCtx.home };
-        } else {
-          ctx = { ...ctx, away: newCtx.away };
+        // Preserve in-match reality: players already on the pitch must not
+        // reappear on the rebuilt benches (double-sub guard), and planned subs
+        // already executed stay executed.
+        const onPitch = new Set([...state.homeOnPitch, ...state.awayOnPitch]);
+        for (const side of ['home', 'away'] as const) {
+          const fresh = newCtx[side].ratings;
+          const old = ctx[side].ratings;
+          fresh.bench = fresh.bench.filter((id) => !onPitch.has(id));
+          for (const plan of fresh.plannedSubs) {
+            if (old.plannedSubs.some((p) => p.done && p.outId === plan.outId && p.inId === plan.inId)) {
+              plan.done = true;
+            }
+          }
+          // Un plan B déjà déclenché ne se réarme pas après un changement tactique en match
+          for (const rule of fresh.planB) {
+            if (old.planB.some((r) => r.done && r.id === rule.id)) rule.done = true;
+          }
         }
+        ctx = newCtx;
       }
     }
   } catch (err) {

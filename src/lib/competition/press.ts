@@ -5,8 +5,11 @@ import { createSuspension } from './injuries';
 import type { Standing } from './types';
 import type { Player } from '@/lib/types';
 import type { Coach } from '@/lib/gen/coach';
+import type { MatchState } from '@/lib/sim/types';
+import type { Referee } from '@/lib/sim/referees';
+import { refereeTemperament } from '@/lib/sim/referees';
 
-export type PressCategory = 'victoire' | 'defaite' | 'scandale' | 'forme' | 'crise' | 'neutralite' | 'exploit' | 'critique' | 'revolte' | 'drame' | 'cmf';
+export type PressCategory = 'victoire' | 'defaite' | 'scandale' | 'forme' | 'crise' | 'neutralite' | 'exploit' | 'critique' | 'revolte' | 'drame' | 'cmf' | 'arbitrage';
 
 export type PressMentionPlayer = {
   type: 'player';
@@ -37,7 +40,19 @@ export type PressMentionCoach = {
   negativeTraits: string[];
 };
 
-export type PressMention = PressMentionPlayer | PressMentionCoach;
+export type PressMentionReferee = {
+  type: 'referee';
+  name: string;
+  /** 'très sévère' | 'strict' | 'équilibré' | 'laxiste' */
+  temperament: string;
+  foulStrictness: number;
+  cardStrictness: number;
+  redTendency: number;
+  penaltyTendency: number;
+  addedTimeBias: number;
+};
+
+export type PressMention = PressMentionPlayer | PressMentionCoach | PressMentionReferee;
 
 export type PressItem = {
   id: string;
@@ -84,6 +99,16 @@ export type PressItem = {
       teamName: string;
       rating: number;
     };
+    /** Arbitre du match — profil complet pour pop-up cliquable */
+    referee?: PressMentionReferee;
+    /** Météo du match — libellé FR (ex. « Pluie · 12°C ») */
+    weather?: string;
+    /** Affluence au stade */
+    attendance?: number;
+    /** Buteurs du match dans l'ordre chronologique */
+    scorers?: { name: string; teamId: string; minute: number; penalty?: boolean }[];
+    /** Séance de tirs au but (élimination directe / barrages) */
+    penalties?: { home: number; away: number };
   };
   /** Additional match snapshots for forme articles (up to 2 extra link cards) */
   extraMatchSnapshots?: NonNullable<PressItem['matchSnapshot']>[];
@@ -97,13 +122,19 @@ export type PressItem = {
     bestPlayer?: { playerName: string; teamId: string; teamName: string; avgRating: number; overall: number };
     bestGK?: { playerName: string; teamId: string; teamName: string; cleanSheets: number; overall: number };
     winner?: { teamId: string; teamName: string };
-    /** For lpm_playoff debut articles — per-pair favorites */
+    /**
+     * For lpm_playoff debut articles — pronostics barrages.
+     * Chaque barragiste reçoit son PROPRE % de qualification (P ∝ force²) ;
+     * les deux % d'une paire somment à 100. Remplace l'ancienne cote unique par paire.
+     */
     playoffPairs?: {
       homeTeamId: string; homeTeamName: string;
       awayTeamId: string; awayTeamName: string;
       favoriteTeamId: string; favoriteTeamName: string;
       underdogTeamId: string; underdogTeamName: string;
-      cote: number;
+      /** Probabilité de qualification (0-100, entier) — home + away = 100 */
+      homeQualifyPct: number;
+      awayQualifyPct: number;
     }[];
   };
 };
@@ -118,6 +149,132 @@ function rng(seed: string): () => number {
 }
 
 function pick<T>(arr: T[], r: () => number): T { return arr[Math.floor(r() * arr.length)]; }
+
+// ── Faits de match — extraits du MatchState pour des articles cohérents ──────
+
+const WEATHER_PRESS_LABEL: Record<string, string> = {
+  clair: 'Ciel dégagé',
+  couvert: 'Ciel couvert',
+  pluie: 'Pluie',
+  orage: 'Orage',
+  neige: 'Neige',
+  vent: 'Vent fort',
+  brouillard: 'Brouillard',
+  canicule: 'Canicule',
+};
+
+export type MatchFacts = {
+  /** Buteurs dans l'ordre chronologique */
+  scorers: { playerId?: string; name: string; teamId: string; minute: number; penalty?: boolean }[];
+  redCards: { home: { name: string; minute: number }[]; away: { name: string; minute: number }[] };
+  yellowCount: { home: number; away: number };
+  referee?: PressMentionReferee;
+  weatherKind?: string;
+  weatherLabel?: string;
+  attendance: number;
+  /** Camp qui a gagné/égalisé après avoir été mené de 2+ buts */
+  comeback?: 'home' | 'away';
+  /** But décisif (écart final de 1) inscrit à la 85e ou après */
+  lateWinner?: { name: string; minute: number; teamId: string };
+  possession: { home: number; away: number };
+  shots: { home: number; away: number };
+  /** Séance de tirs au but (matchs à élimination directe) */
+  penaltyScore?: { home: number; away: number };
+};
+
+/**
+ * Construit les faits marquants d'un match depuis le MatchState final —
+ * source unique pour que la presse raconte ce qui s'est réellement passé.
+ */
+export function buildMatchFacts(
+  state: MatchState,
+  home: { teamId: string; players: Player[] },
+  away: { teamId: string; players: Player[] },
+  seed: string,
+): MatchFacts {
+  const nameOf = (side: 'home' | 'away', pid?: string) => {
+    const p = (side === 'home' ? home.players : away.players).find((pl) => pl.id === pid);
+    return p ? `${p.firstName} ${p.lastName}` : 'un joueur';
+  };
+  const teamIdOf = (side: 'home' | 'away') => (side === 'home' ? home.teamId : away.teamId);
+
+  const goalEvents = state.events.filter((e) => e.type === 'goal' && e.side);
+  const scorers: MatchFacts['scorers'] = goalEvents.map((e) => {
+    const side = e.side as 'home' | 'away';
+    // penalty transformé : un événement 'penalty' du même camp à la même minute précède le but
+    const penalty = state.events.some((pe) => pe.type === 'penalty' && pe.side === e.side && pe.minute === e.minute && pe.id < e.id);
+    return { playerId: e.playerId, name: nameOf(side, e.playerId), teamId: teamIdOf(side), minute: e.minute, penalty: penalty || undefined };
+  });
+
+  // Remontada : mené de 2+ puis victoire ou nul
+  let h = 0, a = 0, maxDeficitHome = 0, maxDeficitAway = 0;
+  for (const e of goalEvents) {
+    if (e.side === 'home') h++; else a++;
+    maxDeficitHome = Math.max(maxDeficitHome, a - h);
+    maxDeficitAway = Math.max(maxDeficitAway, h - a);
+  }
+  const final = state.score;
+  let comeback: MatchFacts['comeback'];
+  if (maxDeficitHome >= 2 && final.home >= final.away) comeback = 'home';
+  else if (maxDeficitAway >= 2 && final.away >= final.home) comeback = 'away';
+
+  // But décisif tardif : écart final de 1, dernier but du vainqueur à 85' ou après
+  let lateWinner: MatchFacts['lateWinner'];
+  if (Math.abs(final.home - final.away) === 1 && goalEvents.length > 0) {
+    const winnerSide: 'home' | 'away' = final.home > final.away ? 'home' : 'away';
+    const last = goalEvents[goalEvents.length - 1];
+    if (last.side === winnerSide && last.minute >= 85) {
+      lateWinner = { name: nameOf(winnerSide, last.playerId), minute: last.minute, teamId: teamIdOf(winnerSide) };
+    }
+  }
+
+  const redOf = (side: 'home' | 'away') =>
+    state.events
+      .filter((e) => e.type === 'red' && e.side === side && e.playerId)
+      .map((e) => ({ name: nameOf(side, e.playerId), minute: e.minute }));
+
+  // Affluence déterministe : 12 000 à 80 000, arrondie à la centaine
+  const ar = rng(seed + 'attendance');
+  const attendance = Math.round((12000 + ar() * 68000) / 100) * 100;
+
+  const ref = state.referee;
+  return {
+    scorers,
+    redCards: { home: redOf('home'), away: redOf('away') },
+    yellowCount: { home: state.cards.home.yellow.length, away: state.cards.away.yellow.length },
+    referee: ref ? refereeToMention(ref) : undefined,
+    weatherKind: state.weather?.kind,
+    weatherLabel: state.weather ? `${WEATHER_PRESS_LABEL[state.weather.kind] ?? state.weather.kind} · ${state.weather.tempC}°C` : undefined,
+    attendance,
+    comeback,
+    lateWinner,
+    possession: state.possession,
+    shots: state.shots,
+    penaltyScore: state.penaltyScore,
+  };
+}
+
+export function refereeToMention(ref: Referee): PressMentionReferee {
+  return {
+    type: 'referee',
+    name: ref.name,
+    temperament: refereeTemperament(ref),
+    foulStrictness: ref.foulStrictness,
+    cardStrictness: ref.cardStrictness,
+    redTendency: ref.redTendency,
+    penaltyTendency: ref.penaltyTendency,
+    addedTimeBias: ref.addedTimeBias,
+  };
+}
+
+/** Cotes bookmaker pré-match : P ∝ force², cote = 1/P (min 1.01) */
+export function computeMatchCotes(homeStrength: number, awayStrength: number): { home: number; away: number } {
+  const hs = Math.max(1, homeStrength);
+  const as = Math.max(1, awayStrength);
+  const total = hs * hs + as * as;
+  const coteOf = (s: number) => Math.max(1.01, Math.round((total / (s * s)) * 100) / 100);
+  return { home: coteOf(hs), away: coteOf(as) };
+}
 
 // ── Template banks ──────────────────────────────────────────────────────────
 
@@ -151,6 +308,10 @@ const WIN_BODIES = [
   '{team} marque des points, au sens propre comme au figuré. La cohérence collective commence à payer.',
   'Ce n\'est pas la manière qui a séduit, mais l\'efficacité clinique de {team}. Un groupe qui sait gagner laid, c\'est signe de maturité.',
   '"Victoire bonifiée ou pas, on s\'en fiche — les points comptent", a tranché le sélectionneur de {team} avec un sourire de satisfaction.',
+  'Pas de fioritures, pas de blabla : {team} a pris ses trois points et est rentré à la maison. Le genre de soirée dont on ne fait pas un film mais qui construit une saison.',
+  'On attendait {team} au tournant. Réponse claire : victoire, propreté défensive, et un message envoyé sans un mot. Le vestiaire respire.',
+  'Le sélectionneur de {team} a savouré en silence. "On a fait le job. Point." Rien à ajouter — le tableau d\'affichage parlait pour lui.',
+  'Match sérieux, victoire méritée. {team} n\'a rien lâché, rien offert, rien gaspillé. C\'est comme ça qu\'on avance dans une compétition qui ne pardonne rien.',
 ];
 
 const BIG_WIN_HEADLINES = [
@@ -175,6 +336,9 @@ const BIG_WIN_BODIES = [
   'La presse étrangère parle déjà de ce résultat. {team} entre dans une autre dimension. Les adversaires sont prévenus : il faudra être parfaits pour les stopper.',
   'Rarement une équipe aura semblé aussi supérieure dans cette compétition. {team} a transformé ce match en démonstration. Le vestiaire chantait encore une heure après le coup de sifflet final.',
   '"Ce groupe est exceptionnel", a soufflé le préparateur physique de {team} en quittant le stade. Ce soir, difficile de le contredire.',
+  'L\'adversaire a passé la soirée à courir après un ballon qu\'il n\'a jamais vu. {team} a joué avec, s\'est amusé, a plié le match — et a laissé une équipe entière sur le carreau. Brutal et magnifique.',
+  'Il y a des soirs où le foot ressemble à une punition pour l\'un et à une fête pour l\'autre. {team} était du bon côté, et n\'a montré aucune pitié. Les concurrents ont pris note, et pris peur.',
+  'Ça n\'était plus un match, c\'était une cour de récré à sens unique. {team} a humilié, sans forcer, avec le sourire. Le genre de démonstration qui installe une équipe dans la tête des autres pour longtemps.',
 ];
 const MANITA_HEADLINES = [
   'MANITA : {team} signe la performance de la saison',
@@ -187,7 +351,123 @@ const MANITA_BODIES = [
   'Ce score n\'est pas un accident. {team} a construit cette goleada pied à pied, avec méthode. Une domination totale, dans tous les compartiments du jeu.',
   'Cinq buts. Cinq. L\'adversaire n\'a pas existé. {team} a joué à son propre niveau ce soir — et son niveau est bien au-dessus du reste.',
   'Le tableau d\'affichage ne ment pas. {team} a humilié un adversaire entier en 90 minutes. Ce genre de résultat ne s\'oublie pas.',
+  '{score}. On relit, on n\'y croit toujours pas. {team} n\'a pas battu son adversaire, il l\'a effacé de la carte. Une leçon d\'arrogance footballistique assumée, et méritée.',
+  'Il n\'y avait rien à défendre en face, alors {team} s\'est servi. Encore. Et encore. Cinq fois. L\'adversaire est reparti sans dignité, {team} avec un statut de croque-mort de la compétition.',
 ];
+
+// ── Narrations factuelles — déclenchées par les faits réels du match ─────────
+
+/** Victoire/nul après avoir été mené de 2+ buts */
+const REMONTADA_PAIRS: [string, string][] = [
+  [
+    'REMONTADA : {team} renverse un match perdu — irrespirable !',
+    'Mené de deux buts, {team} aurait pu couler. Il a fait l\'inverse. But après but, l\'équipe a refait son retard puis fait basculer la rencontre ({score}). Un scénario qu\'on ne voit qu\'une poignée de fois par saison — et qui en dit long sur le mental de ce groupe.',
+  ],
+  [
+    '{team} revient de nulle part — le scénario fou de la soirée',
+    'À un moment du match, tout semblait plié. Deux buts de retard, un adversaire en confiance. Et puis {team} a décidé que non. La remontée s\'est construite dans l\'intensité, portée par un public médusé. Score final : {score}. Personne n\'a quitté le stade avant le coup de sifflet.',
+  ],
+  [
+    'MENÉ 2-0, {team} S\'EN SORT — un caractère en acier trempé',
+    'Les statistiques disent qu\'on ne revient presque jamais de deux buts de retard. {team} n\'a pas lu les statistiques. La réaction a été immédiate, violente, collective. Ce genre de soirée soude un vestiaire pour une compétition entière.',
+  ],
+];
+
+/** L'équipe menait de 2+ et a laissé filer (défaite ou nul) */
+const CHOKE_PAIRS: [string, string][] = [
+  [
+    '{team} craque : mener de deux buts et tout gâcher',
+    'C\'est le genre de scénario qui hante les vestiaires. {team} menait de deux buts et contrôlait le match. Puis tout s\'est délité — le pressing adverse, les jambes lourdes, la panique. Score final : {score}. Il faudra des réponses, pas des excuses.',
+  ],
+  [
+    'Effondrement de {team} — un avantage de deux buts jeté aux orties',
+    'Comment perd-on un match qu\'on tenait à deux mains ? Demandez à {team}, qui a réussi ce soir l\'anti-exploit de la journée. L\'avance a fondu, les certitudes avec. Le staff parlera de "accident". Les supporters, eux, parlent déjà de honte.',
+  ],
+];
+
+/** Victoire d'un gros outsider (cote élevée) */
+const UPSET_PAIRS: [string, string][] = [
+  [
+    'SURPRISE : {team} déjoue tous les pronostics (cote {cote}) !',
+    'Les bookmakers donnaient {team} à {cote} contre un. Autant dire : aucune chance. Sauf que le football se joue sur un terrain, pas dans les agences de paris. Victoire {score}, pronostiqueurs ridiculisés, et une équipe qui vient de rappeler à tout le monde pourquoi on aime ce sport.',
+  ],
+  [
+    '{team} fait tomber le favori — les parieurs n\'en reviennent pas',
+    'Personne ne l\'avait vu venir. Coté à {cote}, {team} partait avec l\'étiquette de victime consentante. L\'équipe a joué sans complexe, avec un plan clair et une discipline de fer. Résultat : {score}, et une hiérarchie qui vacille.',
+  ],
+  [
+    'EXPLOIT au tableau d\'affichage : {team} renverse la logique',
+    'La cote était de {cote}. L\'écart de niveau, réel. Mais {team} a produit le match parfait au moment parfait — et le score ({score}) est là pour l\'éternité. Les favoris sont prévenus : cette équipe ne respecte personne.',
+  ],
+];
+
+/** But décisif à la 85e ou après ({player}, {minute}) */
+const LATE_WINNER_PAIRS: [string, string][] = [
+  [
+    '{player} délivre {team} à la {minute}e — le stade explose',
+    'Le match filait vers un partage des points quand {player} a surgi à la {minute}e minute. Un but qui vaut trois points, arraché dans les tout derniers instants. Sur le banc de {team}, tout le monde a bondi. Ces victoires-là comptent double dans les têtes.',
+  ],
+  [
+    'Coup de théâtre : {team} gagne dans les dernières minutes',
+    'Il restait une poignée de secondes à jouer quand {player} a fait basculer la rencontre ({minute}e). Cruauté absolue pour l\'adversaire, délivrance totale pour {team}. Le football tient parfois à un dernier ballon — ce soir, il est tombé du bon côté.',
+  ],
+  [
+    '{minute}e minute : {player} crucifie l\'adversaire — {team} l\'emporte au buzzer',
+    'On jouait les arrêts de jeu de la fin de match. {player} n\'a pas tremblé. Ce but tardif offre à {team} une victoire au scénario cruel mais parfaitement légale — c\'est même la définition du sport de haut niveau : tenir jusqu\'à la dernière seconde.',
+  ],
+];
+
+// Suffixes factuels — ajoutés au corps de l'article selon les faits réels
+const FACT_BRACE_SUFFIX = [
+  `Auteur d'un doublé, {player} a porté son équipe sur les épaules ce soir.`,
+  `Deux buts pour {player} — l'homme en forme du moment ne s'arrête plus.`,
+  `{player} a frappé deux fois. Quand un joueur prend feu comme ça, difficile de l'éteindre.`,
+];
+const FACT_HATTRICK_SUFFIX = [
+  `TRIPLÉ de {player} ! Le ballon du match est déjà dans son sac — et son nom dans les mémoires.`,
+  `{player} repart avec le ballon : trois buts, une démonstration individuelle rarissime à ce niveau.`,
+];
+const FACT_RED_LOSS_SUFFIX = [
+  `Le tournant ? L'expulsion de {player} à la {minute}e, qui a laissé les siens à dix dans un match encore ouvert.`,
+  `Réduits à dix après le rouge de {player} ({minute}e), les coéquipiers n'ont jamais retrouvé leur équilibre.`,
+];
+const FACT_RED_WIN_SUFFIX = [
+  `Et le plus fort : cette victoire a été décrochée à dix, après l'expulsion de {player} à la {minute}e. Chapeau bas.`,
+  `Même le rouge de {player} ({minute}e) n'a pas fait dérailler la machine. À dix, l'équipe a serré les rangs et tenu bon.`,
+];
+const FACT_CLEAN_SHEET_SUFFIX = [
+  `Et derrière, rien n'est passé : clean sheet, défense de fer, gardien serein.`,
+  `Zéro but encaissé — la solidité défensive affichée ce soir est une base sur laquelle on construit des titres.`,
+];
+const FACT_STERILE_SUFFIX = [
+  `Le paradoxe fait mal : {possession}% de possession, {shots} tirs — et rien au bout. Dominer n'est pas gagner.`,
+  `Les chiffres accablent : {possession}% du ballon, {shots} tentatives. Le football ne récompense pas la domination, il récompense les buts.`,
+];
+const FACT_HOLDUP_SUFFIX = [
+  `Soyons honnêtes : avec {possession}% de possession et moins de tirs que l'adversaire, c'est un hold-up parfait. Mais les hold-up rapportent aussi trois points.`,
+  `L'adversaire a eu le ballon, les occasions, le contrôle — et {team} a eu les buts. L'efficacité, cette qualité qu'on n'apprend pas.`,
+];
+const FACT_WEATHER_SUFFIX: Record<string, string[]> = {
+  pluie: [
+    `Le tout sous une pluie battante qui a transformé la pelouse en patinoire.`,
+    `La pluie continue n'a épargné personne — chaque passe était une aventure.`,
+  ],
+  orage: [
+    `Un match disputé sous l'orage, dans des conditions à la limite du praticable.`,
+  ],
+  neige: [
+    `La neige a ajouté son grain de folie : ballon orange, lignes effacées, duels glissants.`,
+  ],
+  canicule: [
+    `Le tout par une chaleur écrasante qui a coupé les jambes des deux équipes en seconde période.`,
+  ],
+  brouillard: [
+    `Dans un brouillard épais où les tribunes devinaient plus qu'elles ne voyaient.`,
+  ],
+  vent: [
+    `Avec un vent violent qui a rendu chaque ballon aérien imprévisible.`,
+  ],
+};
 
 const DRAW_HEADLINES = [
   'Match nul frustrant pour {team}',
@@ -398,8 +678,8 @@ const SCANDAL_PAIRS: [string, string][] = [
     'Une source très proche de l\'arbitre du dernier match de {team} affirme avoir entendu le capitaine lui murmurer des menaces après le coup de sifflet final. L\'instance disciplinaire a été alertée. Le joueur dément fermement.',
   ],
   [
-    'Scandale de vestiaire chez {team} : une vidéo compromettante circule',
-    'Une vidéo filmée à l\'intérieur du vestiaire de {team} après un match serait en train de circuler dans certains cercles médiatiques. Son contenu exact reste flou, mais les réactions au sein du groupe sont vives. Le staff a formellement nié toute fuite organisée.',
+    'Scandale de vestiaire chez {team} : des propos compromettants rapportés',
+    'Selon plusieurs témoins présents dans les couloirs, des propos très compromettants auraient été tenus dans le vestiaire de {team} après un match. La teneur exacte reste floue, mais les réactions au sein du groupe sont vives. Le staff a formellement nié toute fuite organisée.',
   ],
   [
     '{team} accusé d\'avoir falsifié des documents d\'identité de joueurs',
@@ -408,6 +688,30 @@ const SCANDAL_PAIRS: [string, string][] = [
   [
     'Altercation entre un joueur de {team} et un fan après le match',
     'En quittant le stade, un joueur de {team} aurait répondu de façon virulente à des provocations de supporters adverses. La scène aurait dégénéré. Des témoins ont parlé à la presse. Le joueur "regrette" — selon le communiqué officiel.',
+  ],
+  [
+    'PARIS ILLÉGAUX : un joueur de {team} aurait misé sur ses propres matchs',
+    'Des paris liés à un joueur de {team} ont été repérés par la cellule d\'intégrité auprès de plusieurs bookmakers. Des mises auraient été placées sur plusieurs rencontres de la compétition — dont certaines impliquant sa propre équipe. Le joueur nie tout lien avec ces paris. L\'enquête suit son cours.',
+  ],
+  [
+    '{team} : le dérapage d\'un cadre en zone mixte enflamme les tribunes',
+    'Au micro des journalistes après le match, un joueur cadre de {team}, visiblement à cran, a ouvertement insulté une partie de ses propres supporters. Ses mots ont fait le tour des tribunes en quelques heures. La fédération a présenté des excuses officielles. Trop tard : la colère gronde.',
+  ],
+  [
+    'Primes impayées chez {team} : les joueurs menacent la grève',
+    'Selon nos informations, les primes de qualification promises aux joueurs de {team} n\'auraient jamais été versées. Une réunion houleuse a opposé les cadres du vestiaire à la direction. Le mot "grève" a été prononcé. La fédération assure que "tout sera régularisé". Personne n\'y croit.',
+  ],
+  [
+    '{team} : un agent accusé de double jeu déstabilise le vestiaire',
+    'L\'agent de trois joueurs de {team} négocierait en secret leurs départs — en pleine compétition. Des documents ont fuité. Les joueurs concernés jurent n\'être au courant de rien, mais le mal est fait : dans le vestiaire, chacun regarde son voisin autrement.',
+  ],
+  [
+    'Scandale billetterie : des places du match de {team} revendues au marché noir par un salarié',
+    'Un employé de la fédération de {team} aurait détourné plusieurs centaines de billets pour les revendre à prix d\'or. Des supporters munis de billets officiels se sont retrouvés refoulés à l\'entrée. La police enquête, la fédération "condamne fermement" — et rembourse au compte-goutte.',
+  ],
+  [
+    '{team} : altercation nocturne à l\'hôtel de la délégation, la police appelée',
+    'Aux alentours de 3h du matin, des clients de l\'hôtel où réside {team} ont alerté la réception après des cris et des bruits de mobilier. La police est intervenue. Aucune interpellation, mais des témoins affirment que deux joueurs étaient au centre de l\'incident. Le staff parle d\'un "malentendu".',
   ],
 ];
 
@@ -428,12 +732,36 @@ const STANDINGS_CLIMB_WIN = [
   'Trois points précieux qui changent la physionomie du groupe pour {team}.',
 ];
 
-/** Inséré quand l'équipe est en danger de relégation/élimination après défaite */
+/** Inséré quand l'équipe est en danger au classement après défaite (générique tous formats) */
 const STANDINGS_DANGER_LOSS = [
-  '{team} glisse vers la zone de relégation. L\'urgence est réelle.',
+  '{team} glisse vers la zone dangereuse du classement. L\'urgence est réelle.',
   'La défaite plonge {team} dans une situation critique au classement. Il faut réagir.',
   '{team} regarde désormais vers le bas du tableau. Un scénario cauchemardesque se profile.',
   'La marge se réduit dangereusement pour {team}. Le prochain match sera vital.',
+];
+
+// ── Contexte classement par format de compétition ────────────────────────────
+
+/** Championnat pur (format league) — fond de classement. PAS de relégation ni d'élimination dans ce format. */
+const LEAGUE_BOTTOM_BODIES = [
+  '{team} s\'enfonce dans les profondeurs du classement. Pas de couperet dans ce championnat — mais une saison qui s\'annonce très longue si rien ne change.',
+  'Le tableau fait mal : {team} traîne dans le fond du classement. Le titre est un mirage lointain — l\'objectif est désormais de remonter la pente et de sauver l\'honneur.',
+  'Au fond du classement, {team} joue pour sa fierté. Chaque journée sans réaction rend la lecture du tableau un peu plus douloureuse.',
+  'Lanterne du championnat en ligne de mire pour {team}. Personne ne descend, certes — mais personne n\'oublie non plus une saison pareille.',
+];
+
+/** Championnat pur — la course au titre s'éloigne (remplace tout discours de qualification) */
+const LEAGUE_TITLE_FADING_BODIES = [
+  'Au classement, la course au titre s\'éloigne sérieusement pour {team}. Les points perdus ne se rattrapent pas — il faudrait un parcours parfait pour y croire encore.',
+  'Chaque point laissé en route creuse l\'écart avec le haut du tableau. {team} voit le titre s\'éloigner journée après journée.',
+  'Le haut du classement devient une ligne d\'horizon pour {team}. Sans une série immédiate, cette saison se jouera dans le ventre mou.',
+];
+
+/** Phase de groupes (coupe / groupes+KO / CdM) — la qualification se complique */
+const GROUP_DANGER_BODIES = [
+  'Au classement du groupe, la qualification se complique sérieusement pour {team}. Les prochains matchs n\'offriront aucun droit à l\'erreur.',
+  '{team} se retrouve sous la ligne de qualification. Tout reste jouable, mais il faudra désormais prendre des points là où personne ne les attend.',
+  'Le groupe se resserre et {team} est du mauvais côté de la barre. La sortie de phase de groupes, personne n\'y pense à voix haute — mais tout le monde y pense.',
 ];
 
 /** Inséré quand l'équipe est déjà quasi éliminée après défaite */
@@ -594,6 +922,20 @@ const LPM_ELIMINATED_BODIES = [
 
 // ── Templates contextuels — phases finales ───────────────────────────────────
 
+/** Qualification/titre décroché aux tirs au but ({tab} = score de la séance vu du camp de l'équipe) */
+const TAB_WIN_BODIES = [
+  'Il a fallu aller jusqu\'aux tirs au but ({tab}) pour départager les deux équipes. {team} a gardé son sang-froid dans la loterie — et ce n\'est pas un hasard : gardien décisif, tireurs impeccables, nerfs d\'acier.',
+  'Une séance de tirs au but, c\'est une éternité condensée. {team} l\'a traversée sans trembler ({tab}). Tout s\'est joué à onze mètres — et ce groupe a répondu présent.',
+  '120 minutes n\'ont pas suffi. Aux tirs au but, {team} a été le plus solide ({tab}). On dit que les séances de penaltys sont une loterie — ceux qui les gagnent savent que c\'est faux.',
+  'Les nerfs, le froid, la peur — {team} a tout dompté dans la séance ({tab}). Onze mètres qui séparent l\'enfer du paradis, et ce groupe a choisi le bon côté. Le gardien restera le héros de la soirée.',
+  'Rien de plus cruel, rien de plus beau qu\'une séance de tirs au but. {team} l\'a gagnée ({tab}) avec un sang-froid qui force le respect. Quand tout se joue sur un geste, ce sont les caractères qui parlent — et celui de {team} a hurlé.',
+];
+const TAB_LOSS_BODIES = [
+  'La cruauté du football à l\'état pur : {team} s\'incline aux tirs au but ({tab}) après avoir tenu tête pendant tout le match. Personne ne mérite de perdre comme ça — mais quelqu\'un devait avancer.',
+  'Éliminé à onze mètres. {team} a tout donné, mais la séance de tirs au but ({tab}) a tourné du mauvais côté. Les joueurs sont restés de longues minutes au centre du terrain, incapables de quitter la pelouse.',
+  'Les tirs au but ont rendu leur verdict : {team} sort par la plus petite des portes ({tab}). Dans le vestiaire, un silence de cathédrale. Ce genre de défaite ne s\'explique pas — elle se digère, lentement.',
+];
+
 const KNOCKOUT_PHASE_LABEL: Record<string, string> = {
   R64: 'trente-deuxièmes de finale',
   R32: 'seizièmes de finale',
@@ -605,10 +947,15 @@ const KNOCKOUT_PHASE_LABEL: Record<string, string> = {
 };
 
 const KO_WIN_HEADLINES: Record<string, string[]> = {
+  R64: [
+    '{team} passe les trente-deuxièmes — l\'aventure continue',
+    'Premier cap franchi : {team} verra les seizièmes de finale',
+    '{team} entre dans le tableau final par la grande porte',
+  ],
   R32: [
-    '{team} franchit les huitièmes de finale — le tableau s\'ouvre',
-    'Qualification de {team} : le rendez-vous des quarts est pris',
-    '{team} passe le cap des huitièmes avec autorité',
+    '{team} franchit les seizièmes de finale — les huitièmes en ligne de mire',
+    'Qualification de {team} : le rendez-vous des huitièmes est pris',
+    '{team} passe le cap des seizièmes avec autorité',
   ],
   R16: [
     '{team} en quarts de finale — la compétition prend une autre dimension',
@@ -631,6 +978,9 @@ const KO_WIN_HEADLINES: Record<string, string[]> = {
     'CHAMPION ! {team} soulève le trophée au bout d\'un match épique !',
     '{team} SACRÉ CHAMPION — une victoire qui restera dans l\'histoire !',
     'LE TITRE ! {team} réalise son rêve et entre dans la légende !',
+    'SUR LE TOIT DU MONDE : {team} est CHAMPION, la nation explose de joie !',
+    '{team} au sommet — un sacre pour l\'éternité, gravé dans le marbre !',
+    'ILS L\'ONT FAIT ! {team} triomphe et écrit la plus belle page de son histoire !',
   ],
   '3rd': [
     '{team} termine troisième — une médaille de bronze bien méritée',
@@ -639,10 +989,14 @@ const KO_WIN_HEADLINES: Record<string, string[]> = {
 };
 
 const KO_WIN_BODIES: Record<string, string[]> = {
+  R64: [
+    'Premier tour éliminatoire, première réponse : {team} a fait le travail. Le tableau est encore long, mais l\'aventure est lancée.',
+    '{team} passe les trente-deuxièmes sans trembler. Le staff a fait tourner intelligemment — la suite demandera davantage.',
+  ],
   R32: [
     'La qualification est acquise et c\'est amplement mérité. {team} a montré qu\'il avait les arguments pour aller loin dans cette compétition.',
-    'En huitièmes de finale, {team} a su faire le travail. Le groupe est serein, le staff déjà tourné vers la suite.',
-    '{team} avance dans le tableau et chaque victoire renforce la croyance collective. Les quarts de finale se profilent.',
+    'En seizièmes de finale, {team} a su faire le travail. Le groupe est serein, le staff déjà tourné vers la suite.',
+    '{team} avance dans le tableau et chaque victoire renforce la croyance collective. Les huitièmes de finale se profilent.',
   ],
   R16: [
     'Les quarts de finale sont l\'objectif minimum que s\'était fixé {team}. C\'est dans la poche. Maintenant, il faut voir jusqu\'où ce groupe peut aller.',
@@ -663,6 +1017,9 @@ const KO_WIN_BODIES: Record<string, string[]> = {
     'Le trophée est dans les mains de {team}. Une compétition entière condensée dans ce moment. Des larmes, des cris, des accolades. Une équipe, un titre, une légende.',
     '{team} champion. Le sélectionneur, les joueurs, le staff — tous épuisés, tous heureux, tous ensemble. Ce groupe restera dans les mémoires pour longtemps.',
     'La finale était un chef-d\'œuvre de tension. {team} a su tenir, souffrir, puis frapper. Un titre qui résume parfaitement cette incroyable aventure collective.',
+    'Champions. Le mot claque, définitif, immense. {team} n\'a pas volé ce sacre — il l\'a arraché avec les tripes, dans la douleur et la beauté d\'une finale qu\'on racontera longtemps. Les enfants qui regardaient ce soir savent désormais quel maillot ils porteront demain.',
+    'Il y a des équipes qui gagnent, et des équipes qui entrent dans l\'Histoire. {team} vient de basculer dans la seconde catégorie. Le trophée brandi vers le ciel, les larmes qui coulent, un peuple entier debout — ce moment-là est éternel. Personne ne pourra jamais le leur prendre.',
+    '{team} tout en haut. Après des semaines de sueur, de doutes et de nuits blanches, le voilà le sommet. Le sélectionneur, agenouillé au centre du terrain, n\'a pas dit un mot — il pleurait. Parfois, le football offre des instants qui valent toutes les phrases du monde.',
   ],
   '3rd': [
     '{team} repart avec une médaille de bronze. Ce n\'était pas l\'objectif premier, mais dans les circonstances, ce résultat représente une belle récompense pour un groupe qui a tout donné.',
@@ -671,10 +1028,14 @@ const KO_WIN_BODIES: Record<string, string[]> = {
 };
 
 const KO_LOSS_HEADLINES: Record<string, string[]> = {
+  R64: [
+    '{team} sorti dès les trente-deuxièmes — la douche froide',
+    'Élimination d\'entrée de tableau pour {team} — brutal',
+  ],
   R32: [
-    '{team} éliminé dès les huitièmes — l\'aventure s\'arrête trop tôt',
-    'Au revoir trop précoce pour {team} — huitièmes fatals',
-    '{team} tombe en huitièmes : une élimination amère',
+    '{team} éliminé dès les seizièmes — l\'aventure s\'arrête trop tôt',
+    'Au revoir trop précoce pour {team} — seizièmes fatals',
+    '{team} tombe en seizièmes : une élimination amère',
   ],
   R16: [
     '{team} s\'arrête en quarts de finale — si près, si loin',
@@ -702,9 +1063,13 @@ const KO_LOSS_HEADLINES: Record<string, string[]> = {
 };
 
 const KO_LOSS_BODIES: Record<string, string[]> = {
+  R64: [
+    'Sortir dès les trente-deuxièmes, c\'est le scénario que personne n\'avait envisagé chez {team}. L\'adversaire a saisi sa chance — pas eux. Le tableau final se fera sans eux.',
+    'Un seul match éliminatoire, et déjà la sortie. {team} quitte la compétition par la première porte. Difficile de faire plus court, difficile de faire plus frustrant.',
+  ],
   R32: [
-    'L\'aventure de {team} s\'arrête aux huitièmes. Une élimination prématurée qui laissera des traces. Le groupe s\'était donné les moyens d\'aller plus loin — il n\'a pas su franchir ce cap.',
-    'Huitièmes fatals pour {team}. Difficile d\'expliquer ce qui s\'est passé. L\'adversaire a été meilleur, et {team} n\'a pas trouvé les ressources pour inverser la tendance.',
+    'L\'aventure de {team} s\'arrête aux seizièmes. Une élimination prématurée qui laissera des traces. Le groupe s\'était donné les moyens d\'aller plus loin — il n\'a pas su franchir ce cap.',
+    'Seizièmes fatals pour {team}. Difficile d\'expliquer ce qui s\'est passé. L\'adversaire a été meilleur, et {team} n\'a pas trouvé les ressources pour inverser la tendance.',
   ],
   R16: [
     'Les quarts de finale étaient à portée. {team} ne les atteindra pas. Cette élimination laisse un goût amer, et les questions sur ce qui aurait pu être différent hanteront longtemps les joueurs.',
@@ -914,7 +1279,7 @@ const WC_SCANDAL_PAIRS: [string, string][] = [
     'Des images de vidéosurveillance ont fuité : des membres de la délégation {team} étaient impliqués dans une altercation avec des officiels d\'une nation concurrente après le match. Les deux parties campent sur leurs positions. La CMF est en train d\'examiner les images. Le Mondial a son scandale du jour.',
   ],
   [
-    '{team} accusé de triche — le VAR au cœur de la polémique mondiale',
+    '{team} accusé de triche — l\'arbitrage au cœur de la polémique mondiale',
     'La rencontre de {team} laisse un arrière-goût amer. Plusieurs décisions arbitrales controversées, des accusations de simulation flagrante, et une communauté footballistique en ébullition. La presse mondiale s\'enflamme. La CMF promet une "analyse approfondie". {team} préfère ne pas commenter.',
   ],
   [
@@ -923,7 +1288,7 @@ const WC_SCANDAL_PAIRS: [string, string][] = [
   ],
   [
     '{team} : le gardien suspendu pour geste grossier envers le public adverse',
-    'Les images ont fait le tour du monde en moins d\'une heure. Le gardien de {team}, à l\'issue du match, a adressé un geste obscène aux supporters adverses. Convoqué en urgence par la commission disciplinaire de la CMF, il écope d\'une suspension immédiate. Le staff de {team} présente ses excuses, mais le mal est fait.',
+    'La scène a fait le tour des tribunes en un éclair. Le gardien de {team}, à l\'issue du match, a adressé un geste obscène aux supporters adverses. Convoqué en urgence par la commission disciplinaire de la CMF, il écope d\'une suspension immédiate. Le staff de {team} présente ses excuses, mais le mal est fait.',
   ],
   [
     'SCANDALE RACISTE : un joueur de {team} visé par une enquête internationale',
@@ -1038,6 +1403,10 @@ const CRITIQUE_HEADLINES_L3_EXTRA = [
   '{team} désintégré — une catastrophe industrielle de 90 minutes',
   'Ce qu\'on a vu ce soir avec {team} dépasse l\'entendement humain',
   '{team} : l\'équipe qui a inventé la capitulation comme style de jeu',
+  '{team} : bande de branquignols en short — le foutage de gueule intégral',
+  'Onze mecs, zéro couille : {team} a chié dans les grandes largeurs',
+  '{team}, c\'est même plus une équipe, c\'est un guichet à buts encaissés',
+  'Que quelqu\'un rende leur dignité aux supporters de {team} — eux au moins étaient venus',
 ];
 
 const CRITIQUE_BODIES_L3_EXTRA = [
@@ -1046,6 +1415,10 @@ const CRITIQUE_BODIES_L3_EXTRA = [
   'Chaque fois qu\'on pensait que {team} ne pouvait pas tomber plus bas, ils trouvaient un étage en dessous. Ce soir, ils ont découvert le sous-sol. Passons : il n\'y a rien à analyser ici. Rien à sauver. Juste à tirer la chasse.',
   'Les adversaires s\'amusaient. Littéralement. Ils ricanaient entre eux en se passant le ballon face à {team} planté au milieu du terrain comme des poteaux. Et la réaction ? Quelques jurons, deux-trois gestes d\'énervement, retour à l\'hôtel. Scandaleux.',
   'On a compté les duels gagnés par {team} en seconde mi-temps. Deux. Deux sur quarante-cinq minutes. C\'est pas une stat de football, c\'est un crime contre le sport. Ce résultat est une punition juste et insuffisante à la fois.',
+  'Faut le dire clairement : {team} nous a chié une purge de 90 minutes qu\'on aurait payé pour ne pas voir. Aucune intensité, aucune idée, aucune honte. Ils touchent un salaire pour ça ? Qu\'on nous rembourse.',
+  'Le niveau affiché par {team} ce soir insulte quiconque a déjà tapé dans un ballon. Des piquets auraient mieux défendu. Des enfants auraient mieux couru. On ne perd pas comme ça — on abandonne. Et {team} a abandonné.',
+  'Y a des défaites qu\'on encaisse et des défaites qui puent. Celle de {team} pue. Pue le renoncement, pue le je-m\'en-foutisme, pue une équipe qui a déjà la tête aux vacances. Écœurant, du premier au dernier.',
+  'Comment on appelle onze types payés pour courir et qui refusent de courir ? Des imposteurs. {team} a aligné onze imposteurs ce soir, et l\'adversaire s\'est servi comme dans un buffet à volonté. Pathétique.',
 ];
 
 // ── Crise niveau supplémentaire — ton plus cru et direct ─────────────────────
@@ -1058,6 +1431,10 @@ const CRISE_HEADLINES_EXTRA = [
   'Tout fout le camp chez {team} — et personne ne sait comment stopper l\'hémorragie',
   '{team} : le vestiaire est un champ de mines, le terrain un désastre',
   'C\'est foutu ? Les questions qui font mal chez {team}',
+  '{team} part en couilles : clans, coups bas et un coach dépassé',
+  'Le bordel total chez {team} — plus personne ne tient la baraque',
+  '{team} : ça se tire dans les pattes pendant que le bateau coule',
+  'Fin de règne puante chez {team} — l\'odeur du sabotage interne',
 ];
 
 const CRISE_BODIES_EXTRA = [
@@ -1066,6 +1443,9 @@ const CRISE_BODIES_EXTRA = [
   'Le sélectionneur de {team} a convoqué l\'ensemble du groupe pour une réunion de crise. Deux heures de huis clos. À l\'issue : aucune déclaration, aucune image, aucun mot. Juste des visages fermés et des regards qui ne se croisent plus. On tire ses propres conclusions.',
   'Un joueur de {team} a refusé de participer à l\'échauffement ce matin. Le staff a géré en interne. Un autre aurait demandé à être libéré du groupe. Ces informations, démenties officiellement, sont confirmées par plusieurs sources proches du vestiaire. {team} est en train d\'imploser.',
   'Ce n\'est plus de la mauvaise passe — c\'est de la décomposition. {team} ne joue plus pour gagner. Il joue pour que ça finisse. Les automatismes ont disparu, la confiance aussi. Ce qui reste, c\'est une collection d\'individualités qui cohabitent sans se parler. Une équipe qui s\'effondre à petit feu.',
+  'Appelons un chat un chat : {team} est en train de crever de l\'intérieur. Les joueurs se détestent, le staff ment, les dirigeants planquent la merde sous le tapis. Et sur le terrain, ça donne le naufrage qu\'on voit chaque semaine. Personne ne veut prendre ses responsabilités — alors tout le monde coule.',
+  'Un joueur cadre de {team}, sous couvert d\'anonymat : "On n\'en peut plus, c\'est le bordel du matin au soir." Voilà l\'état réel du groupe. Pas une crise de résultats — une faillite humaine. Et ça ne se répare pas avec un discours de motivation à deux balles.',
+  'Le vestiaire de {team} pue la trahison. Des joueurs qui balancent en off, un coach qui se sait condamné et qui s\'accroche, des dirigeants aux abonnés absents. C\'est plus une équipe de foot, c\'est une émission de télé-réalité pourrie où tout le monde poignarde tout le monde.',
 ];
 
 // ── Révolte niveau supplémentaire — ultra-cru ────────────────────────────────
@@ -1078,6 +1458,10 @@ const REVOLTE_HEADLINES_EXTRA = [
   'ON EN PEUT PLUS : {team} déclenche la révolution populaire',
   '{team} : les supporters ont pété un câble — scènes surréalistes cette nuit',
   '"On va tout brûler si vous partez pas" — le message des fans de {team}',
+  '"Cassez-vous, bande de parasites" — {team} au bord de l\'insurrection',
+  '{team} : la fédé assiégée, les dirigeants planqués comme des rats',
+  'Nuit de guerre chez {team} — les fans ne veulent plus de prisonniers',
+  '"Dégagez ou on vous sort" — les ultras de {team} passent à l\'ultimatum',
 ];
 
 const REVOLTE_BODIES_EXTRA = [
@@ -1086,6 +1470,9 @@ const REVOLTE_BODIES_EXTRA = [
   'La nuit de {team} restera dans les annales. Bouteilles, fumigènes, chants de mort contre le comité. Un ancien international a tenté de calmer la foule depuis un mégaphone improvisé — il s\'est fait huer. Personne ne représente plus rien dans cette fédération. La rue a pris le pouvoir. Et la rue n\'est pas rassasiée.',
   'C\'est pas un mouvement de colère. C\'est un verdict populaire. Les supporters de {team} ont condamné le comité à mort publique ce soir devant la fédération. Cocktails Molotov pas encore lancés, mais l\'atmosphère y était. La police parle de "situation explosive". Un responsable local confie : "On ne sait pas jusqu\'où ça peut aller." Signe que personne ne contrôle plus rien.',
   '"Remboursez nos larmes." Ce message tagué sur la facade de la fédération {team} résume une décennie d\'humiliation. Les supporters n\'ont plus rien à perdre — et ça se voyait cette nuit. Aucune crainte, aucun recul, aucune retenue. Le point de rupture est dépassé depuis longtemps. Ce soir, il a juste été rendu visible.',
+  '"Ces enculés nous prennent pour des cons depuis des années." La phrase, hurlée dans un mégaphone devant la fédération de {team}, a été reprise en chœur par des milliers de gorges. Fumigènes, barrières arrachées, tôles défoncées. Les dirigeants planqués n\'ont pas osé montrer un cheveu. Bande de lâches jusqu\'au bout.',
+  'On ne manifeste plus chez {team} — on assiège. Le siège fédéral a passé la nuit sous les projectiles, les insultes et les menaces de mort à peine voilées. "Ils ont tué notre club, on va leur rendre la monnaie", crachait un ultra encagoulé. La haine est totale, froide, définitive. Rien ne l\'apaisera à part des démissions.',
+  'Ce n\'est plus de la colère, c\'est de la rage pure. Les supporters de {team} veulent des têtes, et ils l\'ont dit sans détour : "Qu\'ils crèvent, ces voleurs." La fédé, retranchée, appelle au calme depuis un communiqué lâche. Personne n\'écoute. Personne ne pardonne. La rue a tranché, et le verdict est sans appel.',
 ];
 
 // ── Journalistes fictifs pour les critiques ───────────────────────────────────
@@ -1105,7 +1492,105 @@ const JOURNALISTS: { name: string; outlet: string }[] = [
   { name: 'Fatima Okonkwo', outlet: 'L\'Indépendant Sportif' },
   { name: 'René Delacroix', outlet: 'La Plume du Stade' },
   { name: 'Soo-Jin Park', outlet: 'Revue Internationale du Sport' },
+  { name: 'Aurélien Vasseur', outlet: 'Le Sifflet' },
+  { name: 'Nadia Benkacem', outlet: 'Contre-Pied Magazine' },
+  { name: 'Björn Eriksen', outlet: 'Stade & Vestiaires' },
+  { name: 'Camille Fontaine', outlet: 'La Minute de Jeu' },
+  { name: 'Ademola Adeyemi', outlet: 'Planète Crampons' },
 ];
+
+// ── Polémique arbitrale — article dédié quand l'arbitre marque le match ──────
+const ARBITRAGE_PAIRS: [string, string][] = [
+  [
+    'Arbitrage en question : {referee} a-t-il tué le match {homeTeam} – {awayTeam} ?',
+    '{cards} cartons. C\'est le bilan de {referee} sur cette rencontre. Réputé {temperament}, l\'homme en noir a haché le jeu coup de sifflet après coup de sifflet. Les deux bancs ont terminé la soirée debout à protester. Le corps arbitral défendra son homme — comme toujours. Mais les images, elles, sont éloquentes.',
+  ],
+  [
+    '{referee} au centre de toutes les conversations après {homeTeam} – {awayTeam}',
+    'On devrait parler du score ({score}). On ne parle que de l\'arbitre. {referee}, connu pour être {temperament}, a rythmé le match à coups de cartons — {cards} au total. À chaque décision, la tension montait d\'un cran. Certains arbitres apaisent les matchs. D\'autres les électrisent. Ce soir, chacun jugera dans quelle catégorie il se range.',
+  ],
+  [
+    'Cartons en rafale : la soirée agitée de {referee}',
+    'Le tableau disciplinaire de {homeTeam} – {awayTeam} donne le tournis : {cards} cartons distribués par {referee}. Un arbitrage {temperament} qui a fini par prendre le pas sur le football. Les deux staffs, une fois n\'est pas coutume, sont d\'accord sur un point : "On n\'a jamais pu jouer."',
+  ],
+];
+const ARBITRAGE_RED_PAIRS: [string, string][] = [
+  [
+    'Rouge polémique : {referee} a sorti le carton qui a tout changé',
+    'L\'expulsion sifflée par {referee} restera comme LE tournant de {homeTeam} – {awayTeam} ({score}). Décision sévère ou justifiée ? Le débat fait rage dans les tribunes et les rédactions. Une chose est sûre : avec un arbitre réputé {temperament}, mieux vaut éviter le moindre geste limite.',
+  ],
+  [
+    '{homeTeam} – {awayTeam} : le match a basculé sur un carton rouge',
+    'Un match à onze contre onze, puis plus rien. Le rouge brandi par {referee} a déséquilibré la rencontre et relégué le football au second plan. Score final : {score}. La commission d\'arbitrage examinera la décision — les supporters, eux, ont déjà rendu leur verdict.',
+  ],
+];
+
+/**
+ * Article dédié à l'arbitrage — déclenché quand le match a été marqué par les
+ * cartons (≥7) ou une expulsion d'un arbitre au profil marqué. ~50% des cas.
+ */
+export function generateRefereePressItem(opts: {
+  round: number;
+  seed: string;
+  facts: MatchFacts;
+  matchId?: string;
+  matchSnapshot: NonNullable<PressItem['matchSnapshot']>;
+}): PressItem | null {
+  const ref = opts.facts.referee;
+  if (!ref) return null;
+  const reds = opts.facts.redCards.home.length + opts.facts.redCards.away.length;
+  const totalCards = opts.facts.yellowCount.home + opts.facts.yellowCount.away + reds;
+  const hotProfile = ref.cardStrictness >= 1.25 || ref.redTendency >= 1.4;
+  const triggered = totalCards >= 7 || (reds >= 1 && hotProfile) || reds >= 2;
+  if (!triggered) return null;
+  const r = rng(opts.seed + 'arbitrage');
+  if (r() >= 0.5) return null;
+
+  const snap = opts.matchSnapshot;
+  const inject = (s: string) => s
+    .replace(/{referee}/g, ref.name)
+    .replace(/{temperament}/g, ref.temperament)
+    .replace(/{cards}/g, String(totalCards))
+    .replace(/{homeTeam}/g, snap.homeTeamName)
+    .replace(/{awayTeam}/g, snap.awayTeamName)
+    .replace(/{score}/g, `${snap.homeScore}-${snap.awayScore}`);
+  const [h, b] = pick(reds >= 1 ? ARBITRAGE_RED_PAIRS : ARBITRAGE_PAIRS, r);
+  return {
+    id: crypto.randomUUID(),
+    round: opts.round,
+    teamId: null,
+    category: 'arbitrage',
+    headline: inject(h),
+    body: inject(b),
+    createdAt: new Date().toISOString(),
+    matchId: opts.matchId,
+    matchSnapshot: snap,
+    mentions: [ref],
+    journalist: pick(JOURNALISTS, r),
+  };
+}
+
+/** Communiqué CMF discipline — match très haché (2 rouges ou ≥9 cartons), ~50% des cas */
+export function generateCmfDisciplineItem(opts: {
+  round: number;
+  seed: string;
+  facts: MatchFacts;
+  matchId?: string;
+  matchSnapshot?: NonNullable<PressItem['matchSnapshot']>;
+}): PressItem | null {
+  const reds = opts.facts.redCards.home.length + opts.facts.redCards.away.length;
+  const total = opts.facts.yellowCount.home + opts.facts.yellowCount.away + reds;
+  if (!(reds >= 2 || total >= 9)) return null;
+  const r = rng(opts.seed + 'cmfdiscipline');
+  if (r() >= 0.5) return null;
+  return generateCmfCommunique({
+    round: opts.round,
+    seed: opts.seed,
+    type: 'discipline',
+    matchId: opts.matchId,
+    matchSnapshot: opts.matchSnapshot,
+  });
+}
 
 // ── Presse hostile / critique ─────────────────────────────────────────────────
 // Niveau 1 : défaite normale — ton journalistique acerbe
@@ -1333,6 +1818,8 @@ export function generateMatchPressItem(opts: {
   seed: string;
   /** CompMatch.phase — 'group' | 'league' | 'R32' | 'R16' | 'QF' | 'SF' | 'F' | '3rd' */
   phase?: string;
+  /** Format de la compétition — conditionne le discours (titre vs qualification vs zones LPM) */
+  format?: 'league' | 'cup' | 'groups_knockout' | 'lpm';
   /** Current standing of this team in its group/league */
   standing?: Standing;
   /** Total teams in the group/league (to compute rank context) */
@@ -1361,17 +1848,34 @@ export function generateMatchPressItem(opts: {
   matchId?: string;
   /** Match snapshot for the clickable match card */
   matchSnapshot?: PressItem['matchSnapshot'];
+  /** Faits réels du match — buteurs, rouges, arbitre, météo, remontada… */
+  facts?: MatchFacts;
+  /** Cote bookmaker pré-match de CETTE équipe (≥3 = outsider) */
+  cote?: number;
 }): MatchPressResult {
   const r = rng(opts.seed);
   const diff = opts.goalsFor - opts.goalsAgainst;
   const scoreStr = `${opts.goalsFor}-${opts.goalsAgainst}`;
   const sub = (s: string) => s.replace(/{team}/g, opts.teamName).replace(/{score}/g, scoreStr);
+  // Camp de cette équipe dans le snapshot (pour lire les faits côté équipe)
+  const mySide: 'home' | 'away' | null = opts.matchSnapshot
+    ? (opts.matchSnapshot.homeTeamId === opts.teamId ? 'home' : opts.matchSnapshot.awayTeamId === opts.teamId ? 'away' : null)
+    : null;
+  const facts = opts.facts;
   const isBigWin = diff >= 3;
   const isManita = diff >= 5;
   const isBigLoss = diff <= -3;
   const phase = opts.phase ?? 'league';
   const isKnockout = !['group', 'league', 'lpm_playoff'].includes(phase);
   const isWorldCup = opts.isWorldCup ?? false;
+  // Contexte compétition — le discours doit coller au format.
+  // Format connu = source de vérité ; heuristique 40+ équipes seulement en legacy (format absent).
+  const isLPMComp = opts.format
+    ? opts.format === 'lpm'
+    : ((phase === 'league' || phase === 'lpm_playoff') && (opts.totalTeams ?? 0) >= 40);
+  // Championnat pur : pas de qualification, pas de relégation, pas d'élimination — seul le titre compte
+  const isPureLeague = opts.format === 'league' && phase === 'league' && !isLPMComp;
+  const isEliminated = isPureLeague ? false : (opts.isEliminated ?? false);
 
   let category: PressCategory;
   let headline: string;
@@ -1386,7 +1890,22 @@ export function generateMatchPressItem(opts: {
   const pool = nonGK.length > 0 ? nonGK : (opts.players ?? []);
   // Sort by overall desc, pick from top 5 so it's a key player, weighted by seed
   const top5 = pool.slice().sort((a, b) => b.overall - a.overall).slice(0, 5);
-  const featuredPlayer = top5.length > 0 ? pick(top5, r) : null;
+  // Buteurs réels de cette équipe (cohérence : la presse cite celui qui a marqué)
+  const myScorers = (facts?.scorers ?? []).filter((s) => s.teamId === opts.teamId);
+  const goalsByScorer = new Map<string, { name: string; playerId?: string; count: number; minutes: number[] }>();
+  for (const s of myScorers) {
+    const key = s.playerId ?? s.name;
+    const e = goalsByScorer.get(key) ?? { name: s.name, playerId: s.playerId, count: 0, minutes: [] };
+    e.count++; e.minutes.push(s.minute);
+    goalsByScorer.set(key, e);
+  }
+  const topScorerEntry = [...goalsByScorer.values()].sort((a, b) => b.count - a.count)[0] ?? null;
+  const topScorerPlayer = topScorerEntry
+    ? (opts.players ?? []).find((p) => p.id === topScorerEntry.playerId || `${p.firstName} ${p.lastName}` === topScorerEntry.name) ?? null
+    : null;
+  // En cas de victoire/but marqué, le joueur mis en avant est le buteur — sinon top 5 overall
+  const rollFeatured = top5.length > 0 ? pick(top5, r) : null;
+  const featuredPlayer = (diff >= 0 && topScorerPlayer) ? topScorerPlayer : rollFeatured;
   const playerMention = featuredPlayer
     ? `${featuredPlayer.firstName} ${featuredPlayer.lastName}`
     : null;
@@ -1411,7 +1930,7 @@ export function generateMatchPressItem(opts: {
   // Presse hostile : uniquement sur défaite, jamais si autre événement spécial
   const isHumiliation = diff <= -4;
   const isBrutalLoss = diff <= -3 && diff > -4;
-  const critiqueable = !isPlayerDoping && !isTeamDoping && !scandalize && !opts.isEliminated && diff < 0;
+  const critiqueable = !isPlayerDoping && !isTeamDoping && !scandalize && !isEliminated && diff < 0;
   const critiqueChance = critiqueable
     ? (isHumiliation ? 0.40 : isBrutalLoss ? 0.22 : 0.10)
     : 0;
@@ -1600,13 +2119,35 @@ export function generateMatchPressItem(opts: {
         body += sub(` En ${phaseLabel}, il n'y a pas de lendemain. {team} le sait désormais.`);
       }
     } else {
-      category = 'neutralite';
-      headline = sub(pick(DRAW_HEADLINES, r));
-      body = sub(pick(DRAW_BODIES, r));
+      // Nul en élimination directe : le sort s'est joué aux tirs au but
+      const pens = facts?.penaltyScore;
+      const oppPensSide = mySide === 'home' ? 'away' : 'home';
+      if (pens && mySide && pens[mySide] !== pens[oppPensSide]) {
+        const wonPens = pens[mySide] > pens[oppPensSide];
+        const tabStr = `${pens[mySide]}-${pens[oppPensSide]} aux t.a.b.`;
+        if (wonPens) {
+          category = phase === 'F' ? 'exploit' : 'victoire';
+          moraleBoost = 8 + Math.floor(r() * 7);
+          headline = (isWorldCup && wcWinHeads[phase] && r() < 0.7)
+            ? sub(pick(wcWinHeads[phase], r))
+            : sub(pick(koWinHeads, r));
+          body = sub(pick(TAB_WIN_BODIES, r)).replace(/{tab}/g, tabStr);
+        } else {
+          category = 'defaite';
+          headline = (isWorldCup && wcLossHeads[phase] && r() < 0.7)
+            ? sub(pick(wcLossHeads[phase], r))
+            : sub(pick(koLossHeads, r));
+          body = sub(pick(TAB_LOSS_BODIES, r)).replace(/{tab}/g, tabStr);
+        }
+      } else {
+        category = 'neutralite';
+        headline = sub(pick(DRAW_HEADLINES, r));
+        body = sub(pick(DRAW_BODIES, r));
+      }
     }
   } else {
     // ── Phase de groupe ou ligue ─────────────────────────────────────────────
-    const isLPM = (phase === 'league' || phase === 'lpm_playoff') && opts.totalTeams && opts.totalTeams >= 40;
+    const isLPM = isLPMComp;
     const isLPMEliminated = isLPM && opts.rank !== undefined && opts.rank > 40;
     const isLPMDanger = isLPM && opts.rank !== undefined && opts.rank >= 25 && opts.rank <= 40;
     const isLPMZoneOr = isLPM && opts.rank !== undefined && opts.rank <= 24;
@@ -1614,12 +2155,12 @@ export function generateMatchPressItem(opts: {
     const isLPMBarrageAller = isLPMBarrage && opts.matchId !== undefined && /leg.*1|aller/i.test(opts.matchId ?? '');
 
     // Critiques spéciales LPM — 18% sur défaite normale, 35% sur grosse défaite
-    const lpmCritiqueChance = isLPM && !isKnockout && diff < 0 && !opts.isEliminated
+    const lpmCritiqueChance = isLPM && !isKnockout && diff < 0 && !isEliminated
       ? (isBigLoss ? 0.35 : 0.18) : 0;
     const isLPMCritique = !isCritique && r() < lpmCritiqueChance;
 
     // Scandales spécifiques LPM — 0.8% sur n'importe quel résultat en LPM
-    const lpmScandalChance = isLPM && !opts.isEliminated && !isPlayerDoping && !isTeamDoping && !scandalize ? 0.008 : 0;
+    const lpmScandalChance = isLPM && !isEliminated && !isPlayerDoping && !isTeamDoping && !scandalize ? 0.008 : 0;
     const isLPMScandal = r() < lpmScandalChance;
 
     // Élimination mathématique confirmée (groupe/ligue standard) — article dédié
@@ -1629,7 +2170,7 @@ export function generateMatchPressItem(opts: {
       headline = sub(h);
       body = sub(b);
       moraleShock = -(8 + Math.floor(r() * 10));
-    } else if (opts.isEliminated) {
+    } else if (isEliminated) {
       category = 'crise';
       moraleShock = -(10 + Math.floor(r() * 8));
       if (isLPMEliminated) {
@@ -1664,7 +2205,7 @@ export function generateMatchPressItem(opts: {
         body = sub(pick(isManita ? MANITA_BODIES : isBigWin ? BIG_WIN_BODIES : WIN_BODIES, r));
       }
       // Contexte classement LPM
-      if (isLPM && !opts.isEliminated && r() < 0.55) {
+      if (isLPM && !isEliminated && r() < 0.55) {
         if (isLPMBarrage) {
           body += ' ' + sub(pick(isLPMBarrageAller ? LPM_BARRAGE_ALLER_WIN_BODIES : LPM_BARRAGE_RETOUR_WIN_BODIES, r));
         } else if (isLPMZoneOr && r() < 0.5) {
@@ -1676,7 +2217,7 @@ export function generateMatchPressItem(opts: {
         } else if (opts.rank && opts.rank >= 2 && r() < 0.5) {
           body += ' ' + sub(pick(STANDINGS_CLIMB_WIN, r));
         }
-      } else if (!isLPM && !opts.isEliminated) {
+      } else if (!isLPM && !isEliminated) {
         if (opts.rank === 1 && r() < 0.6) {
           body += ' ' + sub(pick(STANDINGS_LEADER_WIN, r));
         } else if (opts.rank && opts.rank >= 2 && r() < 0.5) {
@@ -1702,32 +2243,141 @@ export function generateMatchPressItem(opts: {
         body = sub(pick(isBigLoss ? HEAVY_LOSS_BODIES : LOSS_BODIES, r));
       }
       // Suffixes standings/danger seulement si encore en course et réellement en danger
-      if (!opts.isEliminated) {
+      if (!isEliminated) {
         if (isLPMBarrage) {
           body += ' ' + sub(pick(isLPMBarrageAller ? LPM_BARRAGE_ALLER_LOSS_BODIES : LPM_BARRAGE_RETOUR_LOSS_BODIES, r));
         } else if (opts.isInDangerZone || isLPMDanger) {
-          body += ' ' + sub(pick(DANGER_ZONE_BODIES, r));
+          // Discours selon le format : barrages (LPM), qualification (groupes), fond de tableau (championnat)
+          const dangerBank = isLPM ? DANGER_ZONE_BODIES : isPureLeague ? LEAGUE_BOTTOM_BODIES : GROUP_DANGER_BODIES;
+          body += ' ' + sub(pick(dangerBank, r));
         } else if (opts.standing && opts.rank && opts.totalTeams && opts.rank > Math.ceil(opts.totalTeams / 2)) {
           // Seulement si team est dans la moitié basse du tableau
           const ptsPerGame = opts.standing.played > 0 ? opts.standing.points / opts.standing.played : 0;
           if (ptsPerGame < 1 && opts.standing.played >= 2 && r() < 0.55) {
-            body += ' ' + sub(pick(STANDINGS_ELIMINATED_RISK, r));
+            // Championnat pur : la course au titre s'éloigne — jamais de « qualification »
+            body += ' ' + sub(pick(isPureLeague ? LEAGUE_TITLE_FADING_BODIES : STANDINGS_ELIMINATED_RISK, r));
           }
         }
       }
     } else {
-      category = 'neutralite';
-      if (isWorldCup && r() < 0.60) {
-        headline = sub(pick(WC_GROUP_DRAW_HEADLINES, r));
-        body = sub(pick(WC_GROUP_DRAW_BODIES, r));
+      // Barrage LPM décidé aux tirs au but : le nul n'existe pas, quelqu'un se qualifie
+      const pens = facts?.penaltyScore;
+      const oppPensSide = mySide === 'home' ? 'away' : 'home';
+      if (isLPMBarrage && pens && mySide && pens[mySide] !== pens[oppPensSide]) {
+        const wonPens = pens[mySide] > pens[oppPensSide];
+        const tabStr = `${pens[mySide]}-${pens[oppPensSide]} aux t.a.b.`;
+        if (wonPens) {
+          category = 'victoire';
+          moraleBoost = 8 + Math.floor(r() * 7);
+          headline = sub(pick(WIN_HEADLINES, r));
+          body = sub(pick(TAB_WIN_BODIES, r)).replace(/{tab}/g, tabStr);
+          if (!isLPMBarrageAller) body += ' ' + sub(pick(LPM_BARRAGE_RETOUR_WIN_BODIES, r));
+        } else {
+          category = 'defaite';
+          headline = sub(pick(LOSS_HEADLINES, r));
+          body = sub(pick(TAB_LOSS_BODIES, r)).replace(/{tab}/g, tabStr);
+          if (!isLPMBarrageAller) body += ' ' + sub(pick(LPM_BARRAGE_RETOUR_LOSS_BODIES, r));
+        }
       } else {
-        headline = sub(pick(DRAW_HEADLINES, r));
-        body = sub(pick(DRAW_BODIES, r));
+        category = 'neutralite';
+        if (isWorldCup && r() < 0.60) {
+          headline = sub(pick(WC_GROUP_DRAW_HEADLINES, r));
+          body = sub(pick(WC_GROUP_DRAW_BODIES, r));
+        } else {
+          headline = sub(pick(DRAW_HEADLINES, r));
+          body = sub(pick(DRAW_BODIES, r));
+        }
       }
       // Nul en danger zone = mauvaise nouvelle (seulement si encore en course)
-      if (!opts.isEliminated && (opts.isInDangerZone || isLPMDanger)) {
-        body += ' ' + sub(pick(STANDINGS_DANGER_LOSS, r));
+      if (!isEliminated && (opts.isInDangerZone || isLPMDanger)) {
+        const drawDangerBank = isPureLeague ? LEAGUE_BOTTOM_BODIES : isLPM ? STANDINGS_DANGER_LOSS : GROUP_DANGER_BODIES;
+        body += ' ' + sub(pick(drawDangerBank, r));
       }
+    }
+  }
+
+  // ── Narrations factuelles — le scénario réel du match prime sur le générique ─
+  const isPerfCategory = ['victoire', 'exploit', 'defaite', 'crise', 'neutralite'].includes(category);
+  const pushPlayerMention = (p: Player) => {
+    const nm = `${p.firstName} ${p.lastName}`;
+    if (mentions.some((m) => m.name === nm)) return;
+    mentions.push({
+      type: 'player',
+      name: nm,
+      overall: p.overall,
+      position: p.position,
+      stats: {
+        technical: p.stats.technical as unknown as Record<string, number>,
+        mental: p.stats.mental as unknown as Record<string, number>,
+        physical: p.stats.physical as unknown as Record<string, number>,
+        ...(p.stats.goalkeeping ? { goalkeeping: p.stats.goalkeeping as unknown as Record<string, number> } : {}),
+      },
+    });
+  };
+  if (facts && mySide && isPerfCategory && !isEliminated) {
+    const isFinalPhase = phase === 'F' || phase === '3rd';
+    // Remontada / effondrement / exploit d'outsider : remplace titre + corps
+    if (facts.comeback === mySide && diff > 0 && !isFinalPhase) {
+      const [h, b] = pick(REMONTADA_PAIRS, r);
+      headline = sub(h); body = sub(b);
+      category = 'exploit';
+      moraleBoost = Math.max(moraleBoost ?? 0, 10 + Math.floor(r() * 7));
+    } else if (diff > 0 && (opts.cote ?? 0) >= 3 && !isFinalPhase && r() < 0.8) {
+      const [h, b] = pick(UPSET_PAIRS, r);
+      const coteStr = (opts.cote ?? 3).toFixed(2);
+      headline = sub(h).replace(/{cote}/g, coteStr);
+      body = sub(b).replace(/{cote}/g, coteStr);
+      category = 'exploit';
+      moraleBoost = Math.max(moraleBoost ?? 0, 8 + Math.floor(r() * 6));
+    } else if (facts.comeback && facts.comeback !== mySide && diff < 0) {
+      const [h, b] = pick(CHOKE_PAIRS, r);
+      headline = sub(h); body = sub(b);
+      category = 'crise';
+      if (!moraleShock) moraleShock = -(6 + Math.floor(r() * 7));
+    } else if (diff > 0 && facts.lateWinner && facts.lateWinner.teamId === opts.teamId && !isFinalPhase && r() < 0.6) {
+      const [h, b] = pick(LATE_WINNER_PAIRS, r);
+      const inject = (s: string) => sub(s)
+        .replace(/{player}/g, facts.lateWinner!.name)
+        .replace(/{minute}/g, String(facts.lateWinner!.minute));
+      headline = inject(h); body = inject(b);
+      const lw = (opts.players ?? []).find((p) => `${p.firstName} ${p.lastName}` === facts.lateWinner!.name);
+      if (lw) pushPlayerMention(lw);
+    }
+
+    // Suffixes factuels (2 max) — doublé/triplé, rouge, clean sheet, stats, météo
+    let factSuffixes = 0;
+    const addSuffix = (s: string) => { if (factSuffixes < 2) { body += ' ' + s; factSuffixes++; } };
+    if (diff > 0 && topScorerEntry && topScorerEntry.count >= 2) {
+      const bank = topScorerEntry.count >= 3 ? FACT_HATTRICK_SUFFIX : FACT_BRACE_SUFFIX;
+      addSuffix(pick(bank, r).replace(/{player}/g, topScorerEntry.name));
+      if (topScorerPlayer) pushPlayerMention(topScorerPlayer);
+    }
+    const myReds = facts.redCards[mySide];
+    if (myReds.length > 0 && diff !== 0) {
+      const red = myReds[0];
+      const bank = diff < 0 ? FACT_RED_LOSS_SUFFIX : FACT_RED_WIN_SUFFIX;
+      addSuffix(pick(bank, r).replace(/{player}/g, red.name).replace(/{minute}/g, String(red.minute)));
+      const rp = (opts.players ?? []).find((p) => `${p.firstName} ${p.lastName}` === red.name);
+      if (rp) pushPlayerMention(rp);
+    }
+    const myPoss = facts.possession[mySide];
+    const myShots = facts.shots[mySide];
+    const oppShots = facts.shots[mySide === 'home' ? 'away' : 'home'];
+    const wonOverall = category === 'victoire' || category === 'exploit'; // victoire aux t.a.b. incluse
+    if (diff <= 0 && !wonOverall && myPoss >= 58 && myShots >= oppShots + 4) {
+      addSuffix(pick(FACT_STERILE_SUFFIX, r).replace(/{possession}/g, String(myPoss)).replace(/{shots}/g, String(myShots)));
+    } else if (diff > 0 && myPoss <= 42 && myShots < oppShots) {
+      addSuffix(sub(pick(FACT_HOLDUP_SUFFIX, r)).replace(/{possession}/g, String(myPoss)));
+    } else if (diff > 0 && opts.goalsAgainst === 0 && r() < 0.5) {
+      addSuffix(pick(FACT_CLEAN_SHEET_SUFFIX, r));
+    }
+    const weatherBank = facts.weatherKind ? FACT_WEATHER_SUFFIX[facts.weatherKind] : undefined;
+    if (weatherBank && r() < 0.35) addSuffix(pick(weatherBank, r));
+    // Arbitre pointé du doigt quand le match a dégénéré en cartons
+    const totalCards = facts.yellowCount.home + facts.yellowCount.away + facts.redCards.home.length + facts.redCards.away.length;
+    if (facts.referee && (totalCards >= 7 || facts.redCards.home.length + facts.redCards.away.length >= 2) && r() < 0.35) {
+      addSuffix(`Un mot enfin sur l'arbitrage : ${facts.referee.name} (réputé ${facts.referee.temperament}) a distribué ${totalCards} cartons — le match a souvent viré au bras de fer.`);
+      if (!mentions.some((m) => m.name === facts.referee!.name)) mentions.push(facts.referee);
     }
   }
 
@@ -1839,9 +2489,14 @@ export function generateMatchPressItem(opts: {
     }
   }
 
+  // Byline : critiques toujours signées, scandales souvent, articles de match parfois
   const journalist = category === 'critique'
     ? pick(JOURNALISTS, r)
-    : undefined;
+    : category === 'scandale' && r() < 0.6
+      ? pick(JOURNALISTS, r)
+      : ['victoire', 'exploit', 'defaite', 'crise', 'neutralite'].includes(category) && r() < 0.45
+        ? pick(JOURNALISTS, r)
+        : undefined;
 
   return {
     item: {
@@ -2029,6 +2684,7 @@ const FORME_BODIES_3 = [
   'La régularité est la marque des grandes équipes. {team} en donne une belle illustration avec trois succès consécutifs. Le collectif tourne bien, la confiance est là — et ça se voit sur le terrain.',
   'Depuis trois journées, {team} ne connaît pas la défaite. La série est courte, mais la tendance est claire : ce groupe monte en puissance. Les prochains adversaires sont prévenus.',
   'Trois victoires de suite pour {team}. Les joueurs arrivent à l\'entraînement avec le sourire, les séances sont intenses, et le coach commence à faire confiance à un groupe de base stable. Les bases sont là.',
+  'Trois succès, et déjà un parfum de sérieux qui flotte autour de {team}. Rien de tapageur — juste une équipe qui gagne, encaisse peu, et donne l\'impression de savoir exactement où elle va. Souvent, c\'est comme ça que naissent les belles saisons.',
 ];
 
 const FORME_BODIES_5 = [
@@ -2036,12 +2692,14 @@ const FORME_BODIES_5 = [
   'On ne peut plus parler de coïncidence. {team} enchaîne les succès depuis cinq journées, et chaque victoire renforce un peu plus la cohésion du groupe. "On joue pour les uns pour les autres" résumait un joueur après le match. Ça ressemble à une équipe qui peut aller loin.',
   'Cinq sur cinq. {team} surfe sur une vague de confiance impressionnante. L\'équipe concède peu, marque régulièrement, et semble gérer les moments compliqués avec une maturité inattendue. La série mérite d\'être regardée de près.',
   'La série continue. Cinq victoires consécutives pour {team}, qui s\'installe durablement dans les hauteurs du classement. Les concurrents commencent à regarder avec inquiétude. À raison.',
+  'Cinq victoires, et une évidence : {team} n\'est plus un outsider, c\'est un candidat. La défense est un mur, l\'attaque un rouleau compresseur, et le mental un roc. Les adversaires ne se demandent plus s\'ils vont perdre contre {team} — mais de combien.',
 ];
 
 const FORME_BODIES_8 = [
   '{streak} victoires de suite pour {team} — une série qui entre dans la légende de cette compétition. Le groupe ne tremble plus, les doutes semblent appartenir au passé. Chaque match est abordé avec la même intensité, la même concentration. Quelque chose de spécial est en train de se construire.',
   'Il faut remonter loin pour trouver une pareille série dans cette compétition. {team} aligne {streak} victoires consécutives avec une régularité déconcertante. L\'entraîneur reste prudent en conférence de presse, mais les yeux brillent. Ce groupe a quelque chose — et tout le monde le sent.',
   '{streak} sans défaite. {team} est entré dans une dimension à part. Les stats sont impressionnantes, le collectif tourne à plein régime, et même les matchs difficiles sont gagnés dans le dur. C\'est le signe d\'une grande équipe.',
+  '{streak} victoires. On ne parle plus d\'une série, on parle d\'un règne. {team} écrase la concurrence avec une froideur de machine et une faim de titan. À ce stade, la vraie question n\'est plus de savoir qui les battra — mais si quelqu\'un en est seulement capable.',
 ];
 
 const FORME_PLAYER_SUFFIXES = [
@@ -2058,8 +2716,48 @@ const FORME_COACH_SUFFIXES = [
   `La méthode {coach} fonctionne. Série de victoires, collectif soudé, moral au beau fixe — c\'est rarement le fruit du hasard.`,
 ];
 
+// ── Méforme — séries de défaites ─────────────────────────────────────────────
+
+const MEFORME_HEADLINES_3 = [
+  '{team} : trois défaites de suite — la spirale est enclenchée',
+  'Rien ne va plus pour {team} : troisième revers consécutif',
+  '{team} s\'enfonce — trois matchs, trois défaites',
+  'La série noire de {team} continue : où est le fond ?',
+];
+const MEFORME_HEADLINES_5 = [
+  '{team} : CINQ défaites d\'affilée — c\'est une chute libre',
+  '{streak} revers de rang : {team} ne sait plus gagner, ni même exister',
+  'La descente aux enfers de {team} : {streak} défaites consécutives',
+  '{team} en perdition totale — {streak} matchs, zéro point',
+];
+const MEFORME_BODIES_3 = [
+  'Trois défaites consécutives, et un constat qui s\'impose : {team} a perdu le fil. Le jeu se délite, la confiance s\'effrite, et chaque match ressemble un peu plus au précédent. Le staff cherche le déclic — il ferait bien de le trouver vite.',
+  'Une défaite est un accident. Deux, une alerte. Trois, une tendance. {team} est officiellement en crise de résultats, et le calendrier ne fera aucun cadeau. La prochaine rencontre a déjà des airs de match couperet.',
+  'Le vestiaire de {team} assure que "le groupe vit bien". Les résultats racontent autre chose : trois revers de suite, un jeu méconnaissable, des cadres en dedans. La vérité est sur le terrain — et elle fait mal.',
+  'Trois défaites, et le doute qui s\'installe partout : dans les jambes, dans les têtes, dans les tribunes. {team} ne joue plus libéré, il joue crispé, la peur au ventre. Casser cette spirale relève désormais autant de la psychologie que de la tactique.',
+];
+const MEFORME_BODIES_5 = [
+  '{streak} défaites d\'affilée. À ce stade, ce n\'est plus une mauvaise passe, c\'est un effondrement structurel. {team} ne défend plus, n\'attaque plus, ne réagit plus. Tout est à reconstruire — et la compétition, elle, n\'attend personne.',
+  'Il faut le voir pour le croire : {team} vient d\'aligner {streak} défaites consécutives. Les explications tactiques ne suffisent plus. C\'est la tête, le cœur, l\'envie — tout a déserté ce groupe. Un électrochoc est indispensable, et il ne viendra pas tout seul.',
+  'La presse cherche encore un qualificatif pour la série en cours de {team} : {streak} revers de rang. Les supporters, eux, ont trouvé les leurs — et ils ne sont pas publiables. Chaque journée qui passe rapproche ce groupe du point de non-retour.',
+  '{streak} défaites. À ce compte-là, ce n\'est plus une équipe, c\'est une victime consentante qui descend sur le terrain en sachant déjà qu\'elle va perdre. {team} a besoin d\'un électrochoc — un vrai — parce que la honte, elle, ne connaît pas de plancher.',
+];
+// Variantes fin de parcours : la compétition est TERMINÉE pour l'équipe (élimination KO / finale perdue)
+// — aucune allusion à un « prochain match » ou à la suite du calendrier.
+const MEFORME_BODIES_3_OVER = [
+  'Trois défaites consécutives, et le couperet au bout : {team} quitte la compétition sur une série noire. Le jeu s\'est délité match après match, la confiance a fondu, et l\'aventure s\'arrête là. Le staff aura tout l\'intersaison pour comprendre ce qui a déraillé.',
+  'Une défaite est un accident. Deux, une alerte. Trois, une élimination. {team} sort par la petite porte, au bout d\'une spirale que personne n\'a su enrayer. L\'heure n\'est plus au calendrier, mais au bilan.',
+  'Le vestiaire de {team} assurait que « le groupe vit bien ». La sortie de route dit autre chose : trois revers de suite, et la porte qui se referme sur la compétition. La vérité était sur le terrain — elle a coûté cher.',
+];
+const MEFORME_BODIES_5_OVER = [
+  '{streak} défaites d\'affilée, et le rideau qui tombe. Ce n\'était plus une mauvaise passe, c\'était un effondrement — et il s\'achève par une élimination. {team} ne défendait plus, n\'attaquait plus, ne réagissait plus. Tout est à reconstruire, mais ce sera pour une autre fois.',
+  'Il faut le voir pour le croire : {team} termine son parcours sur {streak} défaites consécutives. Les explications tactiques ne suffisent plus — c\'est la tête, le cœur, l\'envie qui ont déserté. La compétition, elle, continue sans eux.',
+  'La presse cherchait un qualificatif pour la série de {team} : {streak} revers de rang, et une sortie sans gloire. Les supporters, eux, ont trouvé les leurs — et ils ne sont pas publiables. Le point de non-retour a été franchi ce soir.',
+];
+
 /**
- * Generates a "forme" press article when a team is on a win streak (≥ 3).
+ * Generates a "forme" press article when a team is on a win streak (≥ 3)
+ * — ou un article méforme (catégorie crise) sur une série de défaites (≥ 3).
  * @param matchSnapshots - up to last 3 matches (most recent first), shown as link cards
  */
 export function generateFormePressItem(opts: {
@@ -2067,11 +2765,46 @@ export function generateFormePressItem(opts: {
   teamId: string;
   teamName: string;
   winStreak: number;
+  /** Série de défaites consécutives — prioritaire seulement si winStreak < 3 */
+  lossStreak?: number;
+  /**
+   * La compétition est TERMINÉE pour cette équipe après ce match (élimination
+   * knockout ou finale/petite finale). Bascule les textes méforme sur des
+   * variantes « fin de parcours » — pas d'allusion à un prochain match / à la
+   * suite du calendrier, qui serait incohérente.
+   */
+  competitionOver?: boolean;
   seed: string;
   matchSnapshots?: NonNullable<PressItem['matchSnapshot']>[];
   players?: Player[];
   coach?: Coach;
 }): PressItem | null {
+  // Méforme : série de défaites
+  if (opts.winStreak < 3 && (opts.lossStreak ?? 0) >= 3) {
+    const lr = rng(opts.seed + 'meforme');
+    const ls = opts.lossStreak!;
+    const isHeavy = ls >= 5;
+    // 3 défaites : 50%, 4 : 35%, 5+ : toujours
+    const chance = isHeavy ? 1 : ls === 4 ? 0.35 : 0.5;
+    if (lr() >= chance) return null;
+    const streakStr = String(ls);
+    const over = opts.competitionOver === true;
+    const headPool = isHeavy ? MEFORME_HEADLINES_5 : MEFORME_HEADLINES_3;
+    const bodyPool = over
+      ? (isHeavy ? MEFORME_BODIES_5_OVER : MEFORME_BODIES_3_OVER)
+      : (isHeavy ? MEFORME_BODIES_5 : MEFORME_BODIES_3);
+    return {
+      id: crypto.randomUUID(),
+      round: opts.round,
+      teamId: opts.teamId,
+      category: 'crise',
+      headline: pick(headPool, lr).replace(/{team}/g, opts.teamName).replace(/{streak}/g, streakStr),
+      body: pick(bodyPool, lr).replace(/{team}/g, opts.teamName).replace(/{streak}/g, streakStr),
+      createdAt: new Date().toISOString(),
+      matchSnapshot: opts.matchSnapshots?.[0],
+      journalist: lr() < 0.5 ? pick(JOURNALISTS, lr) : undefined,
+    };
+  }
   if (opts.winStreak < 3) return null;
   const r = rng(opts.seed + 'forme');
   // Only trigger at thresholds or with decaying probability
@@ -2339,6 +3072,158 @@ export function generateDrameHommageItem(opts: {
   };
 }
 
+// ── Événements rares — scandales déterministes (faible proba par match) ───────
+// Tous seedés, aucune donnée moteur requise : réutilisent le matchSnapshot + les
+// joueurs déjà chargés côté page. Registre tabloïd assumé.
+
+/** Construit une mention joueur cliquable à partir d'un Player. */
+function playerMention(p: Player): PressMention {
+  return {
+    type: 'player',
+    name: `${p.firstName} ${p.lastName}`,
+    overall: p.overall,
+    position: p.position,
+    stats: {
+      technical: p.stats.technical as unknown as Record<string, number>,
+      mental: p.stats.mental as unknown as Record<string, number>,
+      physical: p.stats.physical as unknown as Record<string, number>,
+      ...(p.stats.goalkeeping ? { goalkeeping: p.stats.goalkeeping as unknown as Record<string, number> } : {}),
+    },
+  };
+}
+
+// C1 — Paris truqués / match arrangé (joueur soupçonné)
+const FIXING_PAIRS: [string, string][] = [
+  [
+    'MATCHS TRUQUÉS : {player} ({team}) au cœur d\'un scandale de paris',
+    'La bombe a éclaté en fin de soirée : {player}, joueur de {team}, serait impliqué dans un réseau de paris truqués. Des mouvements suspects sur des sites de paris auraient été détectés juste avant plusieurs rencontres. Le joueur nie tout en bloc, mais les enquêteurs disposeraient déjà d\'échanges compromettants. Si les faits sont avérés, c\'est une suspension à vie qui menace — et l\'image de {team} qui vole en éclats.',
+  ],
+  [
+    'PARIS ILLÉGAUX : lourds soupçons sur {player}',
+    'Un nom, une ombre, un scandale. {player} ({team}) est visé par une enquête pour manipulation présumée de résultats. Selon nos informations, des sommes importantes auraient été misées par des proches du joueur sur des événements précis d\'un match — cartons, corners, score exact. Le genre de détails qu\'on ne parie pas par hasard. {team} se dit "sous le choc" et promet sa pleine coopération. La suite risque d\'être terrible.',
+  ],
+  [
+    'Le foot rattrapé par l\'argent sale : {player} soupçonné d\'avoir vendu un match',
+    '"Il a vendu son âme pour du fric." La phrase, lâchée par une source proche de l\'enquête, résume la gravité de l\'affaire visant {player} ({team}). Des transactions financières douteuses, des contacts avec des parieurs connus des services, un comportement étrange sur le terrain repéré a posteriori : le faisceau d\'indices s\'épaissit. {player} clame son innocence. Les enquêteurs, eux, ne semblent pas près de lâcher.',
+  ],
+];
+
+/** C1 — scandale paris truqués visant un joueur. ~0.3 %/match. */
+export function generateFixingScandalItem(opts: {
+  round: number;
+  seed: string;
+  teamId: string;
+  teamName: string;
+  player: Player;
+  matchId?: string;
+  matchSnapshot?: NonNullable<PressItem['matchSnapshot']>;
+}): PressItem {
+  const r = rng(opts.seed + 'fixing');
+  const name = `${opts.player.firstName} ${opts.player.lastName}`;
+  const [hTpl, bTpl] = pick(FIXING_PAIRS, r);
+  const sub = (s: string) => s.replace(/{player}/g, name).replace(/{team}/g, opts.teamName);
+  return {
+    id: crypto.randomUUID(),
+    round: opts.round,
+    teamId: opts.teamId,
+    category: 'scandale',
+    headline: sub(hTpl),
+    body: sub(bTpl),
+    createdAt: new Date().toISOString(),
+    matchId: opts.matchId,
+    matchSnapshot: opts.matchSnapshot,
+    mentions: [playerMention(opts.player)],
+    journalist: r() < 0.6 ? pick(JOURNALISTS, r) : undefined,
+  };
+}
+
+// C2 — Bagarre / clash vestiaire
+const BRAWL_PAIRS: [string, string][] = [
+  [
+    'CLASH VIOLENT dans le vestiaire de {team} : ça a failli dégénérer',
+    'Ce qui devait rester entre les quatre murs du vestiaire a fuité. Après le match, {player} et un coéquipier en seraient venus aux mains dans les couloirs de {team}. Coups de poing, insultes, staff obligé de s\'interposer : la scène aurait duré de longues secondes avant que le calme ne revienne. "Il y avait du sang", confie un témoin. Le vestiaire est fracturé, et personne ne sait comment recoller les morceaux.',
+  ],
+  [
+    'BAGARRE INTERNE : {team} implose de l\'intérieur',
+    'Les tensions couvaient, elles ont explosé. {player} serait au centre d\'une altercation physique avec un cadre du groupe {team}, quelques minutes après le coup de sifflet final. Chaises renversées, cris entendus depuis le couloir, deux joueurs séparés in extremis. Le sélectionneur aurait hurlé "ça suffit !" avant de claquer la porte. Une chose est sûre : ce vestiaire-là ne respire plus la sérénité.',
+  ],
+  [
+    '"Ils ont failli s\'entretuer" — le vestiaire de {team} part en vrille',
+    'L\'ambiance chez {team} est irrespirable, et ce soir elle a viré au pugilat. {player} et un partenaire se seraient jetés l\'un sur l\'autre dans le vestiaire, sous les yeux médusés du reste du groupe. Il a fallu plusieurs membres du staff pour les séparer. Officiellement, {team} parle d\'un "échange viril". Officieusement, c\'est un vestiaire au bord de la guerre civile.',
+  ],
+];
+
+/** C2 — bagarre/clash vestiaire. ~0.5 %/match. */
+export function generateLockerRoomBrawlItem(opts: {
+  round: number;
+  seed: string;
+  teamId: string;
+  teamName: string;
+  player: Player;
+  matchId?: string;
+  matchSnapshot?: NonNullable<PressItem['matchSnapshot']>;
+}): PressItem {
+  const r = rng(opts.seed + 'brawl');
+  const name = `${opts.player.firstName} ${opts.player.lastName}`;
+  const [hTpl, bTpl] = pick(BRAWL_PAIRS, r);
+  const sub = (s: string) => s.replace(/{player}/g, name).replace(/{team}/g, opts.teamName);
+  return {
+    id: crypto.randomUUID(),
+    round: opts.round,
+    teamId: opts.teamId,
+    category: 'scandale',
+    headline: sub(hTpl),
+    body: sub(bTpl),
+    createdAt: new Date().toISOString(),
+    matchId: opts.matchId,
+    matchSnapshot: opts.matchSnapshot,
+    mentions: [playerMention(opts.player)],
+    journalist: r() < 0.5 ? pick(JOURNALISTS, r) : undefined,
+  };
+}
+
+// C3 — Propos / incidents discriminatoires en tribune
+const DISCRIMINATION_PAIRS: [string, string][] = [
+  [
+    'HONTE : des cris racistes entachent {homeTeam} – {awayTeam}',
+    'Le football a montré son plus mauvais visage ce soir. Lors de {homeTeam} – {awayTeam}, une partie des tribunes s\'est illustrée par des cris et des gestes racistes visant plusieurs joueurs. Le match a été brièvement interrompu, un message a été diffusé dans le stade, mais les insultes ont repris de plus belle. Les faits, rapportés par tous les envoyés présents, suscitent l\'indignation générale. La CMF a annoncé l\'ouverture immédiate d\'une procédure.',
+  ],
+  [
+    'Incidents discriminatoires lors de {homeTeam} – {awayTeam} — l\'indignation',
+    'Des chants discriminatoires ont souillé la rencontre {homeTeam} – {awayTeam}. Ciblés à plusieurs reprises, des joueurs ont fait signe à l\'arbitre, qui a activé le protocole prévu. Rien n\'y a fait : une frange de supporters a continué, assumant sa haine à visage découvert. "On ne peut pas laisser passer ça", a réagi un capitaine, la voix tremblante. La sanction s\'annonce lourde — et elle sera méritée.',
+  ],
+  [
+    'Le racisme s\'invite à {homeTeam} – {awayTeam} : le stade sous le choc',
+    'Ce qui s\'est passé dans les tribunes de {homeTeam} – {awayTeam} n\'a rien à voir avec le football. Des insultes racistes, répétées, ont visé plusieurs acteurs du match. Certains joueurs ont menacé de quitter le terrain. Le speaker a lancé plusieurs avertissements, en vain. Une honte collective, filmée sous tous les angles, que plus personne ne peut ignorer. La CMF promet la fermeté absolue.',
+  ],
+];
+
+/** C3 — incident discriminatoire en tribune (déclenche un communiqué CMF huis clos). ~0.3 %/match. */
+export function generateDiscriminationItem(opts: {
+  round: number;
+  seed: string;
+  matchId: string;
+  matchSnapshot: NonNullable<PressItem['matchSnapshot']>;
+}): PressItem {
+  const r = rng(opts.seed + 'discrim');
+  const [hTpl, bTpl] = pick(DISCRIMINATION_PAIRS, r);
+  const sub = (s: string) => s
+    .replace(/{homeTeam}/g, opts.matchSnapshot.homeTeamName)
+    .replace(/{awayTeam}/g, opts.matchSnapshot.awayTeamName);
+  return {
+    id: crypto.randomUUID(),
+    round: opts.round,
+    teamId: opts.matchSnapshot.homeTeamId,
+    category: 'scandale',
+    headline: sub(hTpl),
+    body: sub(bTpl),
+    createdAt: new Date().toISOString(),
+    matchId: opts.matchId,
+    matchSnapshot: opts.matchSnapshot,
+    journalist: r() < 0.5 ? pick(JOURNALISTS, r) : undefined,
+  };
+}
+
 // ── CMF communiqués officiels (dopage, corruption, drame) ────────────────────
 
 const CMF_COMMUNIQUE_DOPING_PLAYER: [string, string][] = [
@@ -2397,6 +3282,21 @@ const CMF_COMMUNIQUE_CORRUPTION_POINTS: [string, string][] = [
   ],
 ];
 
+const CMF_COMMUNIQUE_DISCIPLINE: [string, string][] = [
+  [
+    'CMF — Ouverture d\'un dossier disciplinaire après un match houleux',
+    'Au vu du rapport de l\'arbitre ({cards} cartons distribués), la commission de discipline de la CMF ouvre un dossier sur la rencontre {homeTeam} – {awayTeam}. Les comportements des deux bancs seront examinés. La CMF rappelle que l\'engagement physique ne doit jamais dégénérer en anti-jeu.',
+  ],
+  [
+    'Communiqué CMF : la commission de discipline saisie après {homeTeam} – {awayTeam}',
+    'Le nombre inhabituel de sanctions ({cards} cartons) relevé lors de cette rencontre a conduit la CMF à demander un rapport complémentaire à l\'arbitre et aux délégués officiels. Des sanctions additionnelles ne sont pas exclues. Décision attendue sous 72 heures.',
+  ],
+  [
+    'CMF — Rappel à l\'ordre : l\'engagement oui, la brutalité non',
+    'Suite aux incidents disciplinaires constatés lors de {homeTeam} – {awayTeam}, la CMF adresse un rappel à l\'ordre formel aux deux fédérations. Le barème des sanctions sera appliqué avec la plus grande rigueur sur les prochaines journées. Les capitaines des deux équipes seront reçus par la commission.',
+  ],
+];
+
 const CMF_COMMUNIQUE_DRAME: [string, string][] = [
   [
     'CMF — Communiqué officiel : drame en tribune, la CMF présente ses condoléances',
@@ -2412,16 +3312,49 @@ const CMF_COMMUNIQUE_DRAME: [string, string][] = [
   ],
 ];
 
+const CMF_COMMUNIQUE_HUIS_CLOS: [string, string][] = [
+  [
+    'CMF — Sanction : huis clos et amende après des incidents inacceptables',
+    'Suite aux incidents survenus lors de la rencontre {homeTeam} – {awayTeam}, la commission de discipline de la CMF prononce un match à huis clos et une amende à l\'encontre du club fautif. La CMF rappelle qu\'aucune forme de discrimination ou de violence n\'a sa place dans les stades. La tolérance est nulle, la fermeté totale.',
+  ],
+  [
+    'Communiqué CMF — Le stade fermé au public après les débordements',
+    'La CMF a statué : le prochain match de l\'équipe concernée se jouera à huis clos. Les images des incidents survenus lors de {homeTeam} – {awayTeam} ont été examinées par la commission, qui a jugé les faits d\'une gravité suffisante pour justifier une sanction exemplaire. Une enquête complémentaire pourra alourdir la peine. Le football ne cédera rien.',
+  ],
+  [
+    'CMF — Tolérance zéro : huis clos immédiat prononcé',
+    'La CMF condamne avec la plus grande fermeté les comportements observés lors de {homeTeam} – {awayTeam}. Sanction : huis clos pour la prochaine rencontre à domicile, amende ferme, et rappel officiel adressé à la fédération concernée. La CMF annonce le renforcement des dispositifs de détection et de sanction pour les éditions à venir. Ceux qui salissent ce sport n\'y ont pas leur place.',
+  ],
+];
+
+const CMF_COMMUNIQUE_PALMARES: [string, string][] = [
+  [
+    'CMF — Pour l\'Histoire : {team} entre dans les records de la compétition',
+    'La Commission enregistre officiellement la performance réalisée par {team} ({score}). Un résultat qui figurera au palmarès des faits marquants de cette édition. La CMF salue une démonstration sportive qui restera dans les annales et rappelle que ce sont ces moments qui font la grandeur de la compétition.',
+  ],
+  [
+    'Communiqué CMF — Une performance historique signée {team}',
+    'La CMF tient à souligner la performance exceptionnelle de {team} ({score}), inscrite parmi les résultats de référence de la compétition. Au-delà du sportif, c\'est une page qui s\'écrit. La Commission adresse ses félicitations institutionnelles à l\'ensemble de la délégation.',
+  ],
+  [
+    'CMF — {team} au tableau d\'honneur de la compétition',
+    'La performance de {team} ({score}) est officiellement portée au palmarès des grands moments de cette édition. La CMF, garante de la mémoire de la compétition, se félicite de voir le niveau de jeu atteindre de tels sommets. Un exploit qui inspirera, à n\'en pas douter, les générations futures.',
+  ],
+];
+
 export function generateCmfCommunique(opts: {
   round: number;
   seed: string;
-  type: 'doping_player' | 'doping_team' | 'corruption' | 'corruption_points' | 'drame';
+  type: 'doping_player' | 'doping_team' | 'corruption' | 'corruption_points' | 'drame' | 'discipline' | 'huis_clos' | 'palmares';
   matchId?: string;
   matchSnapshot?: NonNullable<PressItem['matchSnapshot']>;
   /** Player name for doping_player — injected into headline/body via {player} */
   playerName?: string;
   /** Full player data for doping_player — enables clickable mention */
   dopingPlayer?: Player;
+  /** For palmares — team name + score injected via {team}/{score} */
+  teamName?: string;
+  score?: string;
 }): PressItem {
   const r = rng(opts.seed + 'communique');
   let headline: string;
@@ -2437,6 +3370,33 @@ export function generateCmfCommunique(opts: {
     [headline, body] = pick(CMF_COMMUNIQUE_CORRUPTION_POINTS, r);
   } else if (opts.type === 'corruption') {
     [headline, body] = pick(CMF_COMMUNIQUE_CORRUPTION, r);
+  } else if (opts.type === 'discipline') {
+    [headline, body] = pick(CMF_COMMUNIQUE_DISCIPLINE, r);
+    const snap = opts.matchSnapshot;
+    const cards = snap?.stats
+      ? snap.stats.yellowCards.home + snap.stats.yellowCards.away + snap.stats.redCards.home + snap.stats.redCards.away
+      : 0;
+    const inject = (s: string) => s
+      .replace(/{cards}/g, String(cards))
+      .replace(/{homeTeam}/g, snap?.homeTeamName ?? 'l\'équipe locale')
+      .replace(/{awayTeam}/g, snap?.awayTeamName ?? 'l\'équipe visiteuse');
+    headline = inject(headline);
+    body = inject(body);
+  } else if (opts.type === 'huis_clos') {
+    [headline, body] = pick(CMF_COMMUNIQUE_HUIS_CLOS, r);
+    const snap = opts.matchSnapshot;
+    const inject = (s: string) => s
+      .replace(/{homeTeam}/g, snap?.homeTeamName ?? 'l\'équipe locale')
+      .replace(/{awayTeam}/g, snap?.awayTeamName ?? 'l\'équipe visiteuse');
+    headline = inject(headline);
+    body = inject(body);
+  } else if (opts.type === 'palmares') {
+    [headline, body] = pick(CMF_COMMUNIQUE_PALMARES, r);
+    const inject = (s: string) => s
+      .replace(/{team}/g, opts.teamName ?? 'l\'équipe')
+      .replace(/{score}/g, opts.score ?? '');
+    headline = inject(headline);
+    body = inject(body);
   } else {
     [headline, body] = pick(CMF_COMMUNIQUE_DRAME, r);
   }
@@ -2548,8 +3508,9 @@ const PHASE_LABEL: Record<string, string> = {
   group: 'Phase de groupes',
   league: 'Phase de championnat',
   lpm_playoff: 'Barrages LPM',
-  R32: 'Huitièmes de finale',
-  R16: 'Seizièmes de finale',
+  R64: 'Trente-deuxièmes de finale',
+  R32: 'Seizièmes de finale',
+  R16: 'Huitièmes de finale',
   QF: 'Quarts de finale',
   SF: 'Demi-finales',
   F: 'Finale',
@@ -2575,7 +3536,7 @@ const CMF_DEBUT_LEAGUE = [
 const CMF_DEBUT_GROUP = [
   {
     headline: (compName: string) => `${compName} — la phase de groupes est officiellement ouverte`,
-    body: (compName: string) => `La phase de poules de la ${compName} débute ce soir. 32 équipes (divisées en groupes) s'affrontent pour décrocher leur qualification. Les pronostics sont lancés, les favoris identifiés.`,
+    body: (compName: string) => `La phase de poules de la ${compName} débute ce soir. {count} équipes réparties en groupes s'affrontent pour décrocher leur qualification. Les pronostics sont lancés, les favoris identifiés.`,
   },
   {
     headline: (compName: string) => `Phase de groupes ${compName} : qui passera la première étape ?`,
@@ -2731,7 +3692,8 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
     if (isGroupPhase) {
       tpl = pick(opts.phase === 'group' ? CMF_DEBUT_GROUP : CMF_DEBUT_LEAGUE, r);
       const h = (tpl as typeof CMF_DEBUT_LEAGUE[0]).headline(opts.competitionName);
-      let b = (tpl as typeof CMF_DEBUT_LEAGUE[0]).body(opts.competitionName);
+      let b = (tpl as typeof CMF_DEBUT_LEAGUE[0]).body(opts.competitionName)
+        .replace(/{count}/g, String(teamIds.length));
       items.push({
         id: crypto.randomUUID(), round: opts.round, teamId: null, category: 'cmf',
         headline: h, body: b, createdAt: new Date().toISOString(),
@@ -2807,12 +3769,14 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
             const awaySnap = opts.teamSnapshot[pair.awayTeamId];
             const homeStr = homeSnap?.globalStrength ?? 50;
             const awayStr = awaySnap?.globalStrength ?? 50;
-            const total = homeStr + awayStr || 1;
+            // % qualification par équipe : P ∝ force² (même modèle que computeMatchCotes)
+            const hSq = homeStr * homeStr;
+            const aSq = awayStr * awayStr;
+            const totalSq = hSq + aSq || 1;
+            const homeQualifyPct = Math.round((hSq / totalSq) * 100);
+            const awayQualifyPct = 100 - homeQualifyPct;
             const favTeamId = homeStr >= awayStr ? pair.homeTeamId : pair.awayTeamId;
             const underdogId = homeStr >= awayStr ? pair.awayTeamId : pair.homeTeamId;
-            const favStr = Math.max(homeStr, awayStr);
-            const prob = favStr / total;
-            const cote = prob > 0 ? Math.max(1.01, Math.round((1 / prob) * 100) / 100) : 1.5;
             return {
               homeTeamId: pair.homeTeamId,
               homeTeamName: homeSnap?.name ?? pair.homeTeamId,
@@ -2822,7 +3786,8 @@ export function generateCmfItems(opts: CmfOpts): PressItem[] {
               favoriteTeamName: opts.teamSnapshot[favTeamId]?.name ?? favTeamId,
               underdogTeamId: underdogId,
               underdogTeamName: opts.teamSnapshot[underdogId]?.name ?? underdogId,
-              cote,
+              homeQualifyPct,
+              awayQualifyPct,
             };
           }),
         },
@@ -2957,6 +3922,7 @@ export const PRESS_CATEGORY_LABEL: Record<PressCategory, string> = {
   revolte: 'Révolte',
   drame: 'Drame',
   cmf: 'CMF',
+  arbitrage: 'Arbitrage',
 };
 
 export const PRESS_CATEGORY_COLOR: Record<PressCategory, string> = {
@@ -2971,4 +3937,5 @@ export const PRESS_CATEGORY_COLOR: Record<PressCategory, string> = {
   revolte: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
   drame: 'text-slate-300 bg-slate-500/10 border-slate-500/30',
   cmf: 'text-sky-400 bg-sky-400/10 border-sky-400/20',
+  arbitrage: 'text-amber-300 bg-amber-400/10 border-amber-400/25',
 };

@@ -3,12 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 
-import { Pitch } from '@/components/match/Pitch';
+import { Pitch, KitLegend } from '@/components/match/Pitch';
+import { resolveKits } from '@/lib/kits';
 import { Scoreboard } from '@/components/match/Scoreboard';
 import { EventFeed } from '@/components/match/EventFeed';
 import { StatsPanel } from '@/components/match/StatsPanel';
 import { SpeedControls } from '@/components/match/SpeedControls';
 import { HalftimeOverlay } from '@/components/match/HalftimeOverlay';
+import { TacticalReportModal } from '@/components/match/TacticalReportModal';
 import { PauseTacticPanel } from '@/components/match/PauseTacticPanel';
 import { GoalCelebration } from '@/components/match/GoalCelebration';
 import { PenaltyShootout } from '@/components/match/PenaltyShootout';
@@ -17,8 +19,9 @@ import { SubstitutionPanel } from '@/components/match/SubstitutionPanel';
 
 import { computeMotm } from '@/lib/competition/statsAccumulator';
 import { isRevealed } from '@/lib/sim/corruption';
-import type { SavedTactic, TacticStyle, Team } from '@/lib/types';
-import { loadLocalSavedTactics } from '@/lib/localTactics';
+import type { SavedTactic, Team } from '@/lib/types';
+import { loadLocalSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
+import { toast } from '@/components/ui/Toast';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { useSession } from '@/stores/session';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
@@ -51,6 +54,7 @@ export default function MatchLive() {
   const [corruptionRevealed, setCorruptionRevealed] = useState(false);
   const [showPenalties, setShowPenalties] = useState(false);
   const [penaltiesDone, setPenaltiesDone] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   const prevScoreRef = useRef({ home: 0, away: 0 });
   const [celebration, setCelebration] = useState<{ team: Team; score: { home: number; away: number }; scorerName?: string; scorerMinute?: number } | null>(null);
@@ -237,15 +241,29 @@ export default function MatchLive() {
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-4">
-          <Pitch
-            state={state}
-            homeFormation={input.home.formation}
-            awayFormation={input.away.formation}
-            homeColor={input.home.team.jerseyColor}
-            awayColor={input.away.team.jerseyColor}
-            homeTokenPositions={input.home.tokenPositions}
-            awayTokenPositions={input.away.tokenPositions}
-          />
+          {(() => {
+            const kits = resolveKits(input.home.team, input.away.team);
+            return (
+              <>
+                <Pitch
+                  state={state}
+                  homeFormation={input.home.formation}
+                  awayFormation={input.away.formation}
+                  homeColor={kits.home}
+                  awayColor={kits.away}
+                  homeTokenPositions={input.home.tokenPositions}
+                  awayTokenPositions={input.away.tokenPositions}
+                />
+                <KitLegend
+                  homeName={input.home.team.name}
+                  awayName={input.away.team.name}
+                  homeColor={kits.home}
+                  awayColor={kits.away}
+                  awayAlternate={kits.awayUsedAlternate}
+                />
+              </>
+            );
+          })()}
           <SpeedControls
             speed={state.speed}
             paused={paused}
@@ -254,6 +272,9 @@ export default function MatchLive() {
             onPause={pause}
             onResume={resume}
           />
+          {finished && (
+            <Button variant="ghost" className="w-full" onClick={() => setShowReport(true)}>Compte-rendu tactique</Button>
+          )}
           {paused && !showHalftime && !finished && (
             <PauseTacticPanel
               home={input.home.team}
@@ -261,15 +282,16 @@ export default function MatchLive() {
               homeSavedTactics={homeSavedTactics}
               awaySavedTactics={awaySavedTactics}
               onTacticChange={(side, tactic) => {
-                updateSideTactic(side, {
-                  formation: tactic.formation,
-                  lineup: tactic.lineup,
-                  bench: tactic.bench,
-                  plannedSubs: tactic.plannedSubs,
-                  tacticStyle: tactic.style as TacticStyle,
-                  positionMap: tactic.positionMap,
-                  tokenPositions: tactic.tokenPositions,
-                });
+                const team = side === 'home' ? input.home.team : input.away.team;
+                updateSideTactic(side, tacticToSidePatch(tactic, team));
+                // Riposte : contre-tactique adverse déclenchée en plein match
+                const opp = side === 'home' ? 'away' as const : 'home' as const;
+                const oppTeam = opp === 'home' ? input.home.team : input.away.team;
+                const counter = findCounterTactic(oppTeam, team.id, tactic.id);
+                if (counter) {
+                  updateSideTactic(opp, tacticToSidePatch(counter, oppTeam));
+                  toast('success', `⚔ ${oppTeam.name} riposte : « ${counter.name} »`);
+                }
               }}
             />
           )}
@@ -310,16 +332,19 @@ export default function MatchLive() {
           away={input.away.team}
           homeSavedTactics={homeSavedTactics}
           awaySavedTactics={awaySavedTactics}
+          homeReportSide={{ ...input.home, savedTactics: homeSavedTactics }}
+          awayReportSide={{ ...input.away, savedTactics: awaySavedTactics }}
           onTacticChange={(side, tactic) => {
-            updateSideTactic(side, {
-              formation: tactic.formation,
-              lineup: tactic.lineup,
-              bench: tactic.bench,
-              plannedSubs: tactic.plannedSubs,
-              tacticStyle: tactic.style as TacticStyle,
-              positionMap: tactic.positionMap,
-              tokenPositions: tactic.tokenPositions,
-            });
+            const team = side === 'home' ? input.home.team : input.away.team;
+            updateSideTactic(side, tacticToSidePatch(tactic, team));
+            // Riposte : contre-tactique adverse déclenchée en plein match
+            const opp = side === 'home' ? 'away' as const : 'home' as const;
+            const oppTeam = opp === 'home' ? input.home.team : input.away.team;
+            const counter = findCounterTactic(oppTeam, team.id, tactic.id);
+            if (counter) {
+              updateSideTactic(opp, tacticToSidePatch(counter, oppTeam));
+              toast('success', `⚔ ${oppTeam.name} riposte : « ${counter.name} »`);
+            }
           }}
           onResume={resume}
         />
@@ -361,6 +386,15 @@ export default function MatchLive() {
           )}
         </div>
       ) : null}
+
+      {showReport && state && (
+        <TacticalReportModal
+          state={state}
+          home={{ ...input.home, savedTactics: homeSavedTactics }}
+          away={{ ...input.away, savedTactics: awaySavedTactics }}
+          onClose={() => setShowReport(false)}
+        />
+      )}
 
       {corruptionRevealed && state.corruption && (
         <div className="rounded-lg border border-danger bg-danger/10 p-5 text-center space-y-2">

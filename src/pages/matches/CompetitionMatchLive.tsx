@@ -4,12 +4,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { toast } from '@/components/ui/Toast';
-import { Pitch } from '@/components/match/Pitch';
+import { Pitch, KitLegend } from '@/components/match/Pitch';
+import { resolveKits } from '@/lib/kits';
 import { Scoreboard } from '@/components/match/Scoreboard';
 import { EventFeed } from '@/components/match/EventFeed';
 import { StatsPanel } from '@/components/match/StatsPanel';
 import { SpeedControls } from '@/components/match/SpeedControls';
 import { HalftimeOverlay } from '@/components/match/HalftimeOverlay';
+import { TacticalReportModal } from '@/components/match/TacticalReportModal';
 import { PauseTacticPanel } from '@/components/match/PauseTacticPanel';
 import { GoalCelebration } from '@/components/match/GoalCelebration';
 import { PenaltyShootout } from '@/components/match/PenaltyShootout';
@@ -28,12 +30,21 @@ import type { StoredMatch } from '@/lib/prapi/matchBackend';
 import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary } from '@/lib/competition/types';
-import { resolveActiveTactic, loadLocalSavedTactics } from '@/lib/localTactics';
+import { resolveMatchTactics, resolveActiveCustomStyle, loadLocalSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
+import { rollWeather, hashSeed } from '@/lib/sim/weather';
+import { pickReferee } from '@/lib/sim/referees';
 import { updateMorale, initMorale, MORALE_DEFAULT } from '@/lib/competition/morale';
-import { generateMatchPressItem, generateMoralePressItem, generatePresidencyReboundItem, generateDrameItem, generateDrameHommageItem, generateCmfItems, generateCmfCommunique, generateCmfEnqueteItem, generateCmfJugementItem, generateFormePressItem, generateCoachScandalItem } from '@/lib/competition/press';
+import { generateMatchPressItem, generateMoralePressItem, generatePresidencyReboundItem, generateDrameItem, generateDrameHommageItem, generateCmfItems, generateCmfCommunique, generateCmfEnqueteItem, generateCmfJugementItem, generateFormePressItem, generateCoachScandalItem, buildMatchFacts, computeMatchCotes, generateRefereePressItem, generateCmfDisciplineItem, generateFixingScandalItem, generateLockerRoomBrawlItem, generateDiscriminationItem } from '@/lib/competition/press';
 import { createMatchInjury, createSuspension, decrementInjuries, decrementSuspensions, unavailableIds } from '@/lib/competition/injuries';
 
-import type { SavedTactic, TacticStyle, Team } from '@/lib/types';
+/** RNG déterministe seedé (même famille que les rng internes de press.ts). */
+function rngFromSeed(seed: string): () => number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) { h = Math.imul(31, h) + seed.charCodeAt(i) | 0; }
+  return () => { h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b); h ^= h >>> 16; return (h >>> 0) / 0xffffffff; };
+}
+
+import type { SavedTactic, Team } from '@/lib/types';
 import type { MatchInput } from '@/lib/sim/types';
 import { accumulateMatchStats, computeAwards, computeMotm, type MotmResult } from '@/lib/competition/statsAccumulator';
 import { isRevealed } from '@/lib/sim/corruption';
@@ -71,6 +82,7 @@ export default function CompetitionMatchLive() {
   const [isFinal, setIsFinal] = useState(false);
   const [_compMatchPhase, setCompMatchPhase] = useState<string | null>(null);
   const [showPenalties, setShowPenalties] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [penaltiesDone, setPenaltiesDone] = useState(false);
   const [homeSavedTactics, setHomeSavedTactics] = useState<SavedTactic[]>([]);
   const [awaySavedTactics, setAwaySavedTactics] = useState<SavedTactic[]>([]);
@@ -138,8 +150,12 @@ export default function CompetitionMatchLive() {
         const selectedHomeTactic = tacticOverride.homeId ? allHomeTactics.find((t) => t.id === tacticOverride.homeId) : undefined;
         const selectedAwayTactic = tacticOverride.awayId ? allAwayTactics.find((t) => t.id === tacticOverride.awayId) : undefined;
 
-        const homeTactics = selectedHomeTactic ?? resolveActiveTactic(homeData.team);
-        const awayTactics = selectedAwayTactic ?? resolveActiveTactic(awayData.team);
+        const resolved = resolveMatchTactics(homeData.team, awayData.team, {
+          home: selectedHomeTactic ?? undefined,
+          away: selectedAwayTactic ?? undefined,
+        });
+        const homeTactics = resolved.home;
+        const awayTactics = resolved.away;
 
         const moraleMap = comp.morale ?? initMorale(comp.teamIds);
         const compInjuries = comp.injuries ?? [];
@@ -178,6 +194,15 @@ export default function CompetitionMatchLive() {
         const countForStatsRaw = sessionStorage.getItem(`footsim.countForStats.${mid}`);
         const countForStats = countForStatsRaw !== null ? JSON.parse(countForStatsRaw) as boolean : true;
         sessionStorage.removeItem(`footsim.countForStats.${mid}`);
+        const homeAdvRaw = sessionStorage.getItem(`footsim.homeAdvantage.${mid}`);
+        const homeAdvantage = homeAdvRaw !== null ? JSON.parse(homeAdvRaw) as boolean : false;
+        sessionStorage.removeItem(`footsim.homeAdvantage.${mid}`);
+
+        // Météo tirée dans la zone climatique de la compétition (déterministe par match)
+        const weather = comp.config.climateZone
+          ? rollWeather(comp.config.climateZone, hashSeed(mid))
+          : undefined;
+        const referee = pickReferee(hashSeed(mid));
 
         const input: MatchInput = {
           matchId: mid,
@@ -188,7 +213,11 @@ export default function CompetitionMatchLive() {
             lineup: homeTactics?.lineup,
             bench: homeTactics?.bench,
             plannedSubs: homeTactics?.plannedSubs,
+            planB: homeTactics?.planB,
+            setPieceTakers: homeTactics?.setPieceTakers,
+            captainId: homeTactics?.captainId,
             tacticStyle: homeTactics?.style,
+            customTacticStyle: resolveActiveCustomStyle(homeTactics, homeData.team),
             morale: moraleMap[compMatch.homeTeamId!] ?? MORALE_DEFAULT,
             unavailablePlayerIds: [...homeUnavail].filter((id) => id !== 'coach'),
             positionMap: homeTactics?.positionMap,
@@ -204,7 +233,11 @@ export default function CompetitionMatchLive() {
             lineup: awayTactics?.lineup,
             bench: awayTactics?.bench,
             plannedSubs: awayTactics?.plannedSubs,
+            planB: awayTactics?.planB,
+            setPieceTakers: awayTactics?.setPieceTakers,
+            captainId: awayTactics?.captainId,
             tacticStyle: awayTactics?.style,
+            customTacticStyle: resolveActiveCustomStyle(awayTactics, awayData.team),
             morale: moraleMap[compMatch.awayTeamId!] ?? MORALE_DEFAULT,
             unavailablePlayerIds: [...awayUnavail].filter((id) => id !== 'coach'),
             hasTactic: !!awayTactics,
@@ -212,7 +245,9 @@ export default function CompetitionMatchLive() {
             tokenPositions: awayTactics?.tokenPositions,
           },
           speed: '1',
-          rules: matchRules,
+          rules: { ...matchRules, homeAdvantage },
+          weather,
+          referee,
           corruption,
           leg1Score,
           countForStats,
@@ -352,7 +387,9 @@ export default function CompetitionMatchLive() {
                 penalties: matchState!.penaltyScore,
               },
               matchSummary,
-              matchFileId: matchState!.matchId,
+              // id sous lequel le StoredMatch est réellement sauvegardé (id brut du match
+              // de compétition) — pas matchState.matchId qui porte le préfixe comp-…
+              matchFileId: matchId,
               simulatedAt: new Date().toISOString(),
             }
           : m,
@@ -505,6 +542,40 @@ export default function CompetitionMatchLive() {
         (tid === matchInput!.away.team.id ? matchInput!.away.team.name : null) ??
         teamSnap[tid]?.name ?? tid;
 
+      // Faits réels du match (buteurs, rouges, arbitre, météo…) + cotes pré-match
+      const matchFacts = buildMatchFacts(
+        matchState!,
+        { teamId: compMatch.homeTeamId ?? '', players: matchInput!.home.players },
+        { teamId: compMatch.awayTeamId ?? '', players: matchInput!.away.players },
+        seed,
+      );
+      const gsOf = (tid: string) => teamSnap[tid]?.globalStrength ?? 50;
+      const matchCotes = computeMatchCotes(gsOf(compMatch.homeTeamId ?? ''), gsOf(compMatch.awayTeamId ?? ''));
+      // Snapshot complet partagé par tous les articles de ce match
+      const pressSnap = {
+        homeTeamId: compMatch.homeTeamId!,
+        awayTeamId: compMatch.awayTeamId!,
+        homeTeamName: nameFor(compMatch.homeTeamId!),
+        awayTeamName: nameFor(compMatch.awayTeamId!),
+        homeScore: matchState!.score.home,
+        awayScore: matchState!.score.away,
+        stats: {
+          shots: matchState!.shots,
+          possession: matchState!.possession,
+          shotsOnTarget: matchState!.shotsOnTarget,
+          corners: matchState!.corners ?? { home: 0, away: 0 },
+          fouls: matchState!.fouls,
+          yellowCards: { home: matchState!.cards.home.yellow.length, away: matchState!.cards.away.yellow.length },
+          redCards: { home: matchState!.cards.home.red.length, away: matchState!.cards.away.red.length },
+        },
+        motm: motmResult ?? undefined,
+        referee: matchFacts.referee,
+        weather: matchFacts.weatherLabel,
+        attendance: matchFacts.attendance,
+        scorers: matchFacts.scorers.map(({ name, teamId, minute, penalty }) => ({ name, teamId, minute, penalty })),
+        penalties: matchFacts.penaltyScore,
+      };
+
       // CMF communiqué corruption (if revealed this match)
       if (corruptionRevealedThisMatch && compMatch.homeTeamId && compMatch.awayTeamId) {
         newPressItems.push(generateCmfCommunique({
@@ -585,7 +656,7 @@ export default function CompetitionMatchLive() {
         const tidStanding = updatedStandings[tid];
         // isEliminated: can't mathematically reach any qualifying position
         // LPM: top 24 direct + 25-40 barrages → 40 teams still alive, only 41+ truly eliminated
-        const isLPMLeague = compMatch.phase === 'league' && totalTeams >= 40;
+        const isLPMLeague = compMatch.phase === 'league' && snap!.format === 'lpm';
         const qualifyCount = isLPMLeague ? 40 : (snap!.config.qualifyPerGroup ?? Math.ceil(totalTeams / 4));
         const justWon = goalsFor > goalsAgainst;
         const maxRemainingPts = (() => {
@@ -617,6 +688,7 @@ export default function CompetitionMatchLive() {
           moraleAfter: updatedMorale[tid] ?? MORALE_DEFAULT,
           seed: seed + tid,
           phase: compMatch.phase,
+          format: snap!.format,
           standing: tidStanding,
           totalTeams,
           rank: tidRank,
@@ -630,24 +702,9 @@ export default function CompetitionMatchLive() {
           corruptionEnabled: cheatingTeamForPress === tid,
           corruptionRevealed: revealed,
           matchId: compMatch.id,
-          matchSnapshot: {
-            homeTeamId: compMatch.homeTeamId!,
-            awayTeamId: compMatch.awayTeamId!,
-            homeTeamName: nameFor(compMatch.homeTeamId!),
-            awayTeamName: nameFor(compMatch.awayTeamId!),
-            homeScore: matchState!.score.home,
-            awayScore: matchState!.score.away,
-            stats: {
-              shots: matchState!.shots,
-              possession: matchState!.possession,
-              shotsOnTarget: matchState!.shotsOnTarget,
-              corners: matchState!.corners ?? { home: 0, away: 0 },
-              fouls: matchState!.fouls,
-              yellowCards: { home: matchState!.cards.home.yellow.length, away: matchState!.cards.away.yellow.length },
-              redCards: { home: matchState!.cards.home.red.length, away: matchState!.cards.away.red.length },
-            },
-            motm: motmResult ?? undefined,
-          },
+          matchSnapshot: pressSnap,
+          facts: matchFacts,
+          cote: tid === compMatch.homeTeamId ? matchCotes.home : matchCotes.away,
         });
         newPressItems.push(item);
         if (item.moraleShock && item.moraleShock < 0) {
@@ -692,44 +749,63 @@ export default function CompetitionMatchLive() {
           }
         }
 
-        // Win streak — basé sur pressItems AVANT ce round (snap!.pressItems uniquement)
+        // Séries — victoires (forme) et défaites (méforme), basées sur pressItems AVANT ce round
         const isWin = goalsFor > goalsAgainst;
-        if (isWin) {
+        const isLoss = goalsFor < goalsAgainst;
+        if (isWin || isLoss) {
           const prevItems = snap!.pressItems ?? [];
           const teamPrevMatchItems = prevItems
-            .filter((p) => p.teamId === tid && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite'].includes(p.category))
+            .filter((p) => p.teamId === tid && p.matchId && ['victoire', 'exploit', 'defaite', 'crise', 'neutralite', 'critique'].includes(p.category))
             .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt));
-          // streak = 1 (ce match) + victoires consécutives passées
+          // streak = 1 (ce match) + résultats identiques consécutifs passés
           let streak = 1;
           for (const p of teamPrevMatchItems) {
-            if (p.category === 'victoire' || p.category === 'exploit') streak++;
+            const wasWin = p.category === 'victoire' || p.category === 'exploit';
+            const wasLoss = p.category === 'defaite' || p.category === 'crise' || p.category === 'critique';
+            if ((isWin && wasWin) || (isLoss && wasLoss)) streak++;
             else break;
           }
-          // Cards : match courant en tête + jusqu'à 2 victoires précédentes
-          const currentSnap: NonNullable<import('@/lib/competition/press').PressItem['matchSnapshot']> = {
-            homeTeamId: compMatch.homeTeamId!,
-            awayTeamId: compMatch.awayTeamId!,
-            homeTeamName: nameFor(compMatch.homeTeamId!),
-            awayTeamName: nameFor(compMatch.awayTeamId!),
-            homeScore: matchState!.score.home,
-            awayScore: matchState!.score.away,
-          };
-          const prevWinSnaps = prevItems
-            .filter((p) => p.teamId === tid && p.matchSnapshot && (p.category === 'victoire' || p.category === 'exploit'))
-            .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt))
-            .slice(0, 2)
-            .map((p) => p.matchSnapshot!);
+          const prevWinSnaps = isWin
+            ? prevItems
+                .filter((p) => p.teamId === tid && p.matchSnapshot && (p.category === 'victoire' || p.category === 'exploit'))
+                .sort((a, b) => b.round - a.round || b.createdAt.localeCompare(a.createdAt))
+                .slice(0, 2)
+                .map((p) => p.matchSnapshot!)
+            : [];
+          // Phase à élimination directe : une défaite = fin de parcours pour le perdant.
+          // (group/league/lpm_playoff continuent ; les deux legs de lpm_playoff ne sont
+          // pas des sorties sèches sur un seul match.)
+          const isKnockoutPhase = compMatch.phase !== 'group'
+            && compMatch.phase !== 'league'
+            && compMatch.phase !== 'lpm_playoff';
+          const competitionOver = isLoss && isKnockoutPhase;
           const formeItem = generateFormePressItem({
             round,
             teamId: tid,
             teamName: tname,
-            winStreak: streak,
+            winStreak: isWin ? streak : 0,
+            lossStreak: isLoss ? streak : undefined,
+            competitionOver,
             seed: seed + tid + round + 'forme',
-            matchSnapshots: [currentSnap, ...prevWinSnaps],
+            matchSnapshots: [pressSnap, ...prevWinSnaps],
             players: teamPlayers,
             coach: teamCoach ?? undefined,
           });
           if (formeItem) newPressItems.push(formeItem);
+        }
+
+        // Communiqué palmarès CMF — record (manita) ou sacre (finale gagnée)
+        {
+          const scoreStr = `${goalsFor}-${goalsAgainst}`;
+          const isSacre = compMatch.phase === 'F' && goalsFor > goalsAgainst;
+          const isManita = goalsFor - goalsAgainst >= 5;
+          const palmRng = rngFromSeed(`${seed}-palm-${tid}-${round}`);
+          if (isSacre || (isManita && palmRng() < 0.6)) {
+            newPressItems.push(generateCmfCommunique({
+              round, seed: `${seed}-cmf-palm-${tid}`, type: 'palmares',
+              teamName: tname, score: scoreStr, matchId: compMatch.id, matchSnapshot: pressSnap,
+            }));
+          }
         }
 
         // Scandale coach (alcoolique / drogué)
@@ -744,6 +820,12 @@ export default function CompetitionMatchLive() {
           if (coachScandal) newPressItems.push(coachScandal);
         }
       }
+
+      // Polémique arbitrale + communiqué discipline CMF — une fois par match
+      const refereeItem = generateRefereePressItem({ round, seed: `${seed}-arb`, facts: matchFacts, matchId: compMatch.id, matchSnapshot: pressSnap });
+      if (refereeItem) newPressItems.push(refereeItem);
+      const disciplineItem = generateCmfDisciplineItem({ round, seed: `${seed}-disc`, facts: matchFacts, matchId: compMatch.id, matchSnapshot: pressSnap });
+      if (disciplineItem) newPressItems.push(disciplineItem);
 
       // CMF enquête — ref dénonce avant le match (refusedByRef)
       if (matchState!.corruption?.refusedByRef && matchState!.corruption.side !== 'both' && compMatch.homeTeamId && compMatch.awayTeamId) {
@@ -828,29 +910,46 @@ export default function CompetitionMatchLive() {
       }
 
       const drameRng = (() => { let h = 0; const s = `${seed}-drame`; for (let i = 0; i < s.length; i++) { h = Math.imul(31, h) + s.charCodeAt(i) | 0; } return () => { h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b); h ^= h >>> 16; return (h >>> 0) / 0xffffffff; }; })();
-      const matchSnap = {
-        homeTeamId: compMatch.homeTeamId!,
-        awayTeamId: compMatch.awayTeamId!,
-        homeTeamName: nameFor(compMatch.homeTeamId!),
-        awayTeamName: nameFor(compMatch.awayTeamId!),
-        homeScore: matchState!.score.home,
-        awayScore: matchState!.score.away,
-        stats: {
-          shots: matchState!.shots,
-          possession: matchState!.possession,
-          shotsOnTarget: matchState!.shotsOnTarget,
-          corners: matchState!.corners ?? { home: 0, away: 0 },
-          fouls: matchState!.fouls,
-          yellowCards: { home: matchState!.cards.home.yellow.length, away: matchState!.cards.away.yellow.length },
-          redCards: { home: matchState!.cards.home.red.length, away: matchState!.cards.away.red.length },
-        },
-        motm: motmResult ?? undefined,
-      };
+      const matchSnap = pressSnap;
       if (drameRng() < 0.002) {
         const drameItem = generateDrameItem({ round, seed: `${seed}-drame-evt`, matchId: compMatch.id, matchSnapshot: matchSnap });
         newPressItems.push(drameItem);
         newPressItems.push(generateCmfCommunique({ round, seed: `${seed}-cmf-drame`, type: 'drame', matchId: compMatch.id, matchSnapshot: matchSnap }));
         updatedPendingDrameHommage = { ...updatedPendingDrameHommage, [compMatch.id]: round + 1 };
+      } else {
+        // ── Événements rares (déterministes, drame prioritaire) ──────────────
+        const rareRng = rngFromSeed(`${seed}-rare-${compMatch.id}`);
+        type RarePlayers = NonNullable<typeof matchInput>['home']['players'];
+        const pickTeamForRare = (): { tid: string; players: RarePlayers } | null => {
+          const roll = rareRng();
+          if (homeTeamId && awayTeamId) return roll < 0.5 ? { tid: homeTeamId, players: matchInput!.home.players } : { tid: awayTeamId, players: matchInput!.away.players };
+          if (homeTeamId) return { tid: homeTeamId, players: matchInput!.home.players };
+          if (awayTeamId) return { tid: awayTeamId, players: matchInput!.away.players };
+          return null;
+        };
+        const rarePlayer = (players: RarePlayers) => players.filter((p) => p.position !== 'GK')[Math.floor(rareRng() * Math.max(1, players.filter((p) => p.position !== 'GK').length))] ?? players[0];
+        // C1 — paris truqués (~0.3 %)
+        if (rareRng() < 0.003) {
+          const t = pickTeamForRare();
+          if (t && t.players.length > 0) {
+            const p = rarePlayer(t.players);
+            newPressItems.push(generateFixingScandalItem({ round, seed: `${seed}-fixing-${compMatch.id}`, teamId: t.tid, teamName: nameFor(t.tid), player: p, matchId: compMatch.id, matchSnapshot: matchSnap }));
+            newPressItems.push(generateCmfEnqueteItem({ round, seed: `${seed}-fixing-enq-${compMatch.id}`, teamId: t.tid, teamName: nameFor(t.tid), matchId: compMatch.id, matchSnapshot: matchSnap }));
+          }
+        }
+        // C2 — bagarre vestiaire (~0.5 %)
+        else if (rareRng() < 0.005) {
+          const t = pickTeamForRare();
+          if (t && t.players.length > 0) {
+            const p = rarePlayer(t.players);
+            newPressItems.push(generateLockerRoomBrawlItem({ round, seed: `${seed}-brawl-${compMatch.id}`, teamId: t.tid, teamName: nameFor(t.tid), player: p, matchId: compMatch.id, matchSnapshot: matchSnap }));
+          }
+        }
+        // C3 — incident discriminatoire (~0.3 %) → communiqué CMF huis clos
+        else if (rareRng() < 0.003 && homeTeamId && awayTeamId) {
+          newPressItems.push(generateDiscriminationItem({ round, seed: `${seed}-discrim-${compMatch.id}`, matchId: compMatch.id, matchSnapshot: matchSnap }));
+          newPressItems.push(generateCmfCommunique({ round, seed: `${seed}-cmf-huis-${compMatch.id}`, type: 'huis_clos', matchId: compMatch.id, matchSnapshot: matchSnap }));
+        }
       }
 
       // ── CMF — détection changement de phase et fin de compétition ─────────
@@ -974,6 +1073,8 @@ export default function CompetitionMatchLive() {
               scoreAgainst,
               opponentStrength: oppStrength,
               compKind: snap!.kind,
+              competitionId: snap!.id,
+              competitionName: snap!.name,
               compScope: snap!.scope,
               compImportance: snap!.importance,
               participantCount,
@@ -1121,15 +1222,29 @@ export default function CompetitionMatchLive() {
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-4">
-          <Pitch
-            state={matchState}
-            homeFormation={matchInput.home.formation}
-            awayFormation={matchInput.away.formation}
-            homeColor={matchInput.home.team.jerseyColor}
-            awayColor={matchInput.away.team.jerseyColor}
-            homeTokenPositions={matchInput.home.tokenPositions}
-            awayTokenPositions={matchInput.away.tokenPositions}
-          />
+          {(() => {
+            const kits = resolveKits(matchInput.home.team, matchInput.away.team);
+            return (
+              <>
+                <Pitch
+                  state={matchState}
+                  homeFormation={matchInput.home.formation}
+                  awayFormation={matchInput.away.formation}
+                  homeColor={kits.home}
+                  awayColor={kits.away}
+                  homeTokenPositions={matchInput.home.tokenPositions}
+                  awayTokenPositions={matchInput.away.tokenPositions}
+                />
+                <KitLegend
+                  homeName={matchInput.home.team.name}
+                  awayName={matchInput.away.team.name}
+                  homeColor={kits.home}
+                  awayColor={kits.away}
+                  awayAlternate={kits.awayUsedAlternate}
+                />
+              </>
+            );
+          })()}
           <SpeedControls
             speed={matchState.speed}
             paused={paused}
@@ -1138,6 +1253,9 @@ export default function CompetitionMatchLive() {
             onPause={pause}
             onResume={resume}
           />
+          {finished && (
+            <Button variant="ghost" className="w-full" onClick={() => setShowReport(true)}>Compte-rendu tactique</Button>
+          )}
           {paused && !showHalftime && !finished && (
             <PauseTacticPanel
               home={matchInput.home.team}
@@ -1145,15 +1263,16 @@ export default function CompetitionMatchLive() {
               homeSavedTactics={homeSavedTactics}
               awaySavedTactics={awaySavedTactics}
               onTacticChange={(side, tactic) => {
-                updateSideTactic(side, {
-                  formation: tactic.formation,
-                  lineup: tactic.lineup,
-                  bench: tactic.bench,
-                  plannedSubs: tactic.plannedSubs,
-                  tacticStyle: tactic.style as TacticStyle,
-                  positionMap: tactic.positionMap,
-                  tokenPositions: tactic.tokenPositions,
-                });
+                const team = side === 'home' ? matchInput.home.team : matchInput.away.team;
+                updateSideTactic(side, tacticToSidePatch(tactic, team));
+                // Riposte : contre-tactique adverse déclenchée en plein match
+                const opp = side === 'home' ? 'away' as const : 'home' as const;
+                const oppTeam = opp === 'home' ? matchInput.home.team : matchInput.away.team;
+                const counter = findCounterTactic(oppTeam, team.id, tactic.id);
+                if (counter) {
+                  updateSideTactic(opp, tacticToSidePatch(counter, oppTeam));
+                  toast('success', `⚔ ${oppTeam.name} riposte : « ${counter.name} »`);
+                }
               }}
             />
           )}
@@ -1171,16 +1290,19 @@ export default function CompetitionMatchLive() {
           away={matchInput.away.team}
           homeSavedTactics={homeSavedTactics}
           awaySavedTactics={awaySavedTactics}
+          homeReportSide={{ ...matchInput.home, savedTactics: homeSavedTactics }}
+          awayReportSide={{ ...matchInput.away, savedTactics: awaySavedTactics }}
           onTacticChange={(side, tactic) => {
-            updateSideTactic(side, {
-              formation: tactic.formation,
-              lineup: tactic.lineup,
-              bench: tactic.bench,
-              plannedSubs: tactic.plannedSubs,
-              tacticStyle: tactic.style as TacticStyle,
-              positionMap: tactic.positionMap,
-              tokenPositions: tactic.tokenPositions,
-            });
+            const team = side === 'home' ? matchInput.home.team : matchInput.away.team;
+            updateSideTactic(side, tacticToSidePatch(tactic, team));
+            // Riposte : contre-tactique adverse déclenchée en plein match
+            const opp = side === 'home' ? 'away' as const : 'home' as const;
+            const oppTeam = opp === 'home' ? matchInput.home.team : matchInput.away.team;
+            const counter = findCounterTactic(oppTeam, team.id, tactic.id);
+            if (counter) {
+              updateSideTactic(opp, tacticToSidePatch(counter, oppTeam));
+              toast('success', `⚔ ${oppTeam.name} riposte : « ${counter.name} »`);
+            }
           }}
           onResume={resume}
         />
@@ -1285,6 +1407,15 @@ export default function CompetitionMatchLive() {
             </div>
           )}
         </div>
+      )}
+
+      {showReport && matchState && matchInput && (
+        <TacticalReportModal
+          state={matchState}
+          home={{ ...matchInput.home, savedTactics: homeSavedTactics }}
+          away={{ ...matchInput.away, savedTactics: awaySavedTactics }}
+          onClose={() => setShowReport(false)}
+        />
       )}
 
       {corruptionRevealed && matchState?.corruption && (

@@ -1,11 +1,17 @@
 import { useState } from 'react';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION, POSITIVE_TRAITS, NEGATIVE_TRAITS } from '@/lib/gen/coach';
 import { POSITIONS, POSITION_LABEL, POSITION_FULL } from '@/lib/types';
+import { REFEREES, refereeTemperament } from '@/lib/sim/referees';
+import { CLIMATE_ZONES, CLIMATE_ZONE_LABEL, CLIMATE_ZONE_DESC } from '@/lib/sim/weather';
 
-type Tab = 'moteur' | 'entraineurs' | 'moral' | 'notes' | 'presse' | 'postes' | 'statistiques' | 'matchups';
+type Tab = 'moteur' | 'situationnel' | 'meteo' | 'arbitres' | 'consignes' | 'entraineurs' | 'moral' | 'notes' | 'presse' | 'postes' | 'statistiques' | 'matchups';
 
 const TAB_LABEL: Record<Tab, string> = {
   moteur: 'Moteur de jeu',
+  situationnel: 'Fatigue & momentum',
+  meteo: 'Météo',
+  arbitres: 'Arbitres',
+  consignes: 'Consignes',
   entraineurs: 'Entraîneurs',
   moral: 'Moral',
   notes: 'Notes joueurs',
@@ -26,7 +32,7 @@ export default function Simulation() {
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-border">
-        {(['moteur', 'entraineurs', 'moral', 'notes', 'presse', 'postes', 'statistiques', 'matchups'] as Tab[]).map((t) => (
+        {(['moteur', 'situationnel', 'meteo', 'arbitres', 'consignes', 'matchups', 'entraineurs', 'moral', 'notes', 'presse', 'postes', 'statistiques'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -38,6 +44,10 @@ export default function Simulation() {
       </div>
 
       {tab === 'moteur' && <MoteurTab />}
+      {tab === 'situationnel' && <SituationnelTab />}
+      {tab === 'meteo' && <MeteoTab />}
+      {tab === 'arbitres' && <ArbitresTab />}
+      {tab === 'consignes' && <ConsignesTab />}
       {tab === 'entraineurs' && <EntraineurTab />}
       {tab === 'moral' && <MoralTab />}
       {tab === 'notes' && <NotesTab />}
@@ -45,6 +55,268 @@ export default function Simulation() {
       {tab === 'postes' && <PostesTab />}
       {tab === 'statistiques' && <StatistiquesTab />}
       {tab === 'matchups' && <MatchupsTab />}
+    </div>
+  );
+}
+
+function SituationnelTab() {
+  return (
+    <div className="space-y-10">
+      <Section title="Multiplicateurs situationnels">
+        <p>
+          En plus des ratings pré-calculés, chaque minute applique des multiplicateurs qui évoluent
+          avec le contexte du match. Ils se cumulent : rouges × terrain × fatigue × fin de match × momentum.
+        </p>
+      </Section>
+
+      <Section title="1. Fatigue (dès la 60ᵉ minute)">
+        <p className="text-sm text-muted">
+          À partir de la 60ᵉ, les jambes lâchent. La pénalité dépend de l'<strong>intensité du style</strong> :
+          pressing, gegenpressing et chaos brûlent l'énergie ; possession et bloc bas économisent.
+        </p>
+        <Table
+          headers={['Facteur', 'Effet']}
+          rows={[
+            ['Intensité du style', 'Dérivée des mods milieu/fautes/tirs — gegenpressing ~15 % de perte à la 90ᵉ, possession ~7 %'],
+            ['Endurance des joueurs', 'La stat stamina moyenne des joueurs de champ réduit la pénalité (jusqu\'à −30 %)'],
+            ['Remplacements', 'Chaque changement effectué réduit la pénalité de 12 % (jambes fraîches)'],
+            ['Prolongations', 'La pénalité continue de croître : double à la 120ᵉ (plancher −30 %)'],
+            ['Défense', 'Ne subit que la moitié de la pénalité (bloc reculé = moins de courses)'],
+            ['Canicule', 'Multiplie la pénalité de fatigue par 1,4 (voir onglet Météo)'],
+          ]}
+        />
+      </Section>
+
+      <Section title="2. Fin de match (dès la 75ᵉ)">
+        <Table
+          headers={['Situation', 'Attaque', 'Milieu', 'Défense']}
+          rows={[
+            ['Équipe menée', '+12 %', '+4 %', '−12 % (tout devant, espaces derrière)'],
+            ['Équipe qui mène', '−6 %', '−2 %', '+6 % (gestion du résultat)'],
+            ['Match nul', '=', '=', '='],
+          ]}
+        />
+      </Section>
+
+      <Section title="3. Momentum (après un but)">
+        <p className="text-sm text-muted">
+          Pendant les 6 minutes qui suivent un but, le buteur surfe sur la vague : +5 % sur tous ses
+          secteurs. Un <strong>capitaine adverse</strong> sur le terrain réduit cet effet de moitié (résilience).
+        </p>
+      </Section>
+
+      <Section title="4. Avantage du terrain (opt-in)">
+        <p className="text-sm text-muted">
+          Désactivé par défaut. Activable avant chaque match (case à cocher dans le pré-match,
+          le multiplex ou les règles d'un amical) : l'équipe à domicile gagne +4 % attaque,
+          +5 % milieu, +2 % défense.
+        </p>
+      </Section>
+
+      <Section title="5. Gardien expulsé ou blessé">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-muted">
+          <li>Rouge du gardien → le <strong>gardien remplaçant entre obligatoirement</strong>, en sacrifiant le joueur de champ le plus faible (compte comme un changement).</li>
+          <li>Gardien blessé → remplacé en priorité par le gardien du banc.</li>
+          <li>Pas de gardien disponible (plus de changements, banc vide) → un joueur de champ prend les gants : sa valeur de gardien tombe à 35 — encaisser devient très probable.</li>
+        </ul>
+      </Section>
+    </div>
+  );
+}
+
+function MeteoTab() {
+  return (
+    <div className="space-y-10">
+      <Section title="Principe">
+        <p>
+          Chaque match peut se jouer sous une météo tirée aléatoirement selon le <strong>climat de la
+          zone géographique</strong> du pays hôte. En compétition, la zone se choisit à la création ;
+          en amical, dans les règles du match (ou automatiquement selon le continent de l'équipe à domicile).
+          Le tirage est déterministe : même match = même météo.
+        </p>
+      </Section>
+
+      <Section title="Zones climatiques (14)">
+        <Table
+          headers={['Zone', 'Pays englobés']}
+          rows={CLIMATE_ZONES.map((z) => [CLIMATE_ZONE_LABEL[z], CLIMATE_ZONE_DESC[z]])}
+        />
+        <p className="mt-3 text-sm text-muted">
+          Chaque zone a sa plage de températures et ses probabilités : il ne neige jamais au Sahara,
+          pas de canicule en Europe du Nord, la pluie et les orages dominent les zones tropicales.
+        </p>
+      </Section>
+
+      <Section title="Effets en jeu">
+        <Table
+          headers={['Météo', 'Effets']}
+          rows={[
+            ['Ciel dégagé / Couvert', 'Aucun effet'],
+            ['Pluie', 'Passes clés −8 %, dribbles −10 %, fautes +10 %, précision des tirs −3 pts, fatigue +5 %'],
+            ['Orage', 'Passes clés −12 %, dribbles −15 %, fautes +18 %, précision −5 pts, coups de pied arrêtés −3 pts, fatigue +10 %'],
+            ['Neige', 'Passes clés −15 %, dribbles −18 %, tirs −10 %, précision −6 pts, coups de pied arrêtés −5 pts, fatigue +15 %'],
+            ['Vent fort', 'Coups de pied arrêtés −8 pts (centres et coups francs faussés), précision −4 pts, tirs −5 %'],
+            ['Brouillard', 'Précision −5 pts, passes clés −8 %, fautes +5 %'],
+            ['Canicule', 'Fatigue × 1,4 — presser sous 40 °C coûte très cher en fin de match'],
+            ['Température ≥ 32 °C', 'Fatigue +15 % (même hors canicule)'],
+            ['Température ≤ 0 °C', 'Fatigue +10 %, dribbles −5 %'],
+          ]}
+        />
+        <p className="mt-3 text-sm text-muted">
+          La météo est affichée sous le score pendant le match et dans les replays, avec pluie/neige/brouillard
+          visibles sur le terrain.
+        </p>
+      </Section>
+    </div>
+  );
+}
+
+function ArbitresTab() {
+  return (
+    <div className="space-y-10">
+      <Section title="Corps arbitral de la CMF">
+        <p>
+          Chaque match est dirigé par l'un des <strong>{REFEREES.length} arbitres approuvés par la CMF</strong>.
+          Chacun a son tempérament : certains laissent jouer, d'autres sifflent tout et dégainent vite.
+          L'arbitre est attribué de façon déterministe par match ; en <strong>multiplex</strong>, chaque
+          match de la journée a obligatoirement un arbitre différent.
+        </p>
+        <Table
+          headers={['Trait', 'Plage', 'Effet']}
+          rows={[
+            ['Coups de sifflet', '× 0,85 – 1,25', 'Fréquence des fautes sifflées'],
+            ['Sévérité jaunes', '× 0,70 – 1,50', 'Probabilité de carton jaune sur faute'],
+            ['Rouge direct', '× 0,60 – 1,80', 'Probabilité d\'expulsion directe'],
+            ['Tendance penalty', '× 0,70 – 1,40', 'Probabilité qu\'une faute donne penalty'],
+            ['Temps additionnel', '−1 à +2 min', 'Ajouté aux deux mi-temps'],
+          ]}
+        />
+        <p className="text-sm text-muted">
+          L'arbitre et son tempérament sont affichés sous le score. Il se cumule avec la corruption :
+          un arbitre acheté garde son caractère naturel en plus du biais.
+        </p>
+      </Section>
+
+      <Section title={`Liste des ${REFEREES.length} arbitres approuvés CMF`}>
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-widest text-muted">#</th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-widest text-muted">Arbitre</th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-widest text-muted">Tempérament</th>
+                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-widest text-muted">Sifflets</th>
+                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-widest text-muted">Jaunes</th>
+                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-widest text-muted">Rouges</th>
+                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-widest text-muted">Penalties</th>
+                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-widest text-muted">Tps add.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {REFEREES.map((r, i) => {
+                const temper = refereeTemperament(r);
+                const temperColor = temper === 'très sévère' ? 'text-danger' : temper === 'strict' ? 'text-warning' : temper === 'laxiste' ? 'text-green-400' : 'text-muted';
+                return (
+                  <tr key={r.id} className={i % 2 === 0 ? '' : 'bg-surface/50'}>
+                    <td className="px-3 py-1.5 text-muted tabular-nums">{r.id + 1}</td>
+                    <td className="px-3 py-1.5 font-medium">{r.name}</td>
+                    <td className={`px-3 py-1.5 ${temperColor}`}>{temper}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-muted">×{r.foulStrictness.toFixed(2)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-muted">×{r.cardStrictness.toFixed(2)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-muted">×{r.redTendency.toFixed(2)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-muted">×{r.penaltyTendency.toFixed(2)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-muted">{r.addedTimeBias > 0 ? `+${r.addedTimeBias}` : r.addedTimeBias}'</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function ConsignesTab() {
+  return (
+    <div className="space-y-10">
+      <Section title="Consignes tactiques (onglet Consignes de la tactique)">
+        <p>
+          En plus de la formation et du style, chaque tactique peut définir un capitaine, des tireurs
+          désignés et jusqu'à trois plans B conditionnels.
+        </p>
+      </Section>
+
+      <Section title="Capitaine">
+        <Table
+          headers={['Effet', 'Valeur', 'Condition']}
+          rows={[
+            ['Fautes commises par l\'équipe', '−7 %', 'Capitaine sur le terrain'],
+            ['Cartons jaunes de l\'équipe', '−10 %', 'Capitaine sur le terrain'],
+            ['Momentum adverse après un but encaissé', 'Réduit de moitié (+2,5 % au lieu de +5 %)', 'Capitaine sur le terrain'],
+          ]}
+        />
+        <p className="text-sm text-muted">
+          S'il sort (remplacement, rouge, blessure), les effets disparaissent immédiatement.
+        </p>
+      </Section>
+
+      <Section title="Tireurs désignés">
+        <Table
+          headers={['Coup de pied arrêté', 'Sélection auto (sans désigné)', 'Impact du désigné']}
+          rows={[
+            ['Penalty', 'Meilleur finition + sang-froid', 'Prioritaire s\'il est sur le terrain — sa finition/sang-froid font le pBut'],
+            ['Coup franc', 'Meilleure frappe de loin', 'Prioritaire — sa frappe de loin influence la probabilité de tir cadré'],
+            ['Corner', 'Meilleur profil coups de pied arrêtés', 'Sa qualité de centre améliore la conversion des têtes (jusqu\'à ±7 pts)'],
+          ]}
+        />
+      </Section>
+
+      <Section title="Plans B conditionnels (max 3)">
+        <p className="text-sm text-muted">
+          Une règle = un déclencheur + une minute + une <strong>tactique sauvegardée</strong> cible
+          (parmi les autres tactiques de l'équipe ; à défaut, un style). Dès que la condition est vraie
+          à partir de la minute choisie, l'équipe bascule automatiquement sur le style de la tactique
+          prévue (une seule fois par règle). Le changement apparaît dans le fil du match (📋).
+        </p>
+        <Table
+          headers={['Déclencheur', 'Exemple']}
+          rows={[
+            ['Si mené au score', '« Si mené à la 70ᵉ → Tactique offensive » — tout jeter devant'],
+            ['Si mène au score', '« Si mène à la 80ᵉ → Tactique verrou » — sécuriser le résultat'],
+            ['Si match nul', '« Si nul à la 85ᵉ → Tactique directe » — forcer la décision'],
+            ['Si carton rouge reçu', '« Si rouge → Tactique compacte » — se réorganiser à 10'],
+          ]}
+        />
+        <p className="text-sm text-muted">
+          Chaque règle peut en plus porter une <strong>condition adversaire</strong> :
+          « Seulement contre… » (la règle ne s'applique que face à cette équipe) ou
+          « Sauf contre… » (la règle est annulée face à cette équipe).
+        </p>
+        <div className="mt-3 rounded-lg border border-warning/20 bg-warning/5 px-4 py-3 text-sm text-warning">
+          Le déclenchement applique le style/mods de la tactique cible et corrige les ratings au prorata —
+          la formation et le XI restent ceux du coup d'envoi, et le matchup initial
+          (formation/style vs adversaire) reste celui calculé au début du match.
+        </div>
+      </Section>
+
+      <Section title="Contre-tactiques (⚔ menu dédié sous les tactiques)">
+        <p className="text-sm text-muted">
+          « Si telle équipe aligne telle tactique, activer la mienne. » Résolu au coup d'envoi
+          d'après la tactique réelle de l'adversaire (son choix manuel compris), dans tous les modes —
+          amical, compétition, multiplex.
+        </p>
+        <Table
+          headers={['Règle', 'Détail']}
+          rows={[
+            ['Priorité', 'Contre-tactique > tactique active > tactique legacy'],
+            ['Unicité', 'Une tactique adverse donnée ne déclenche qu\'une seule contre-tactique'],
+            ['Choix manuel', 'Ton propre choix manuel avant le match n\'est jamais écrasé — mais l\'adversaire peut le contrer'],
+            ['En plein match', 'Si l\'adversaire change de tactique à la mi-temps ou en pause, ta contre-tactique riposte automatiquement (⚔ toast)'],
+            ['Plans B', 'Indépendants — vérifiés à chaque minute par le moteur, et une règle déjà déclenchée ne se réarme pas après un changement tactique'],
+          ]}
+        />
+      </Section>
     </div>
   );
 }
@@ -177,6 +449,9 @@ function MoteurTab() {
             ['Tiki-taka',      '−18 %', '=',     '+20 %', '=',     '+20 %', '−5 %',  '+5 %',  '−10 %'],
             ['Long ball',      '+15 %', '+12 %', '−20 %', '+15 %', '−20 %', '+15 %', '−5 %',  '+5 %'],
             ['Chaos',          '+30 %', '+24 %', '−5 %',  '+10 %', '−5 %',  '+10 %', '−10 %', '+35 %'],
+            ['Jeu sur les ailes', '+10 %', '+8 %', '−10 %', '+12 %', '−10 %', '+12 %', '=',   '−5 %'],
+            ['Bloc médian',    '−10 %', '=',     '+5 %',  '=',     '+5 %',  '−8 %',  '+12 %', '+12 %'],
+            ['Football total', '+5 %',  '+4 %',  '+10 %', '+8 %',  '+10 %', '+8 %',  '−8 %',  '−5 %'],
           ]}
         />
         <p className="mt-3 text-sm text-muted">
@@ -725,12 +1000,18 @@ function MatchupsTab() {
         <Table
           headers={['Profil', 'Formations concernées', 'Caractéristique']}
           rows={[
-            ['Pressing haut', '4-3-3 · 3-4-3 · 4-2-3-1', 'Ligne haute, récupération immédiate — espaces derrière défense'],
-            ['Milieu chargé', '3-5-2 · 4-3-2-1 · 3-6-1 · 4-1-4-1', 'Domination du milieu, circuits courts — lent à verticaliser'],
+            ['Pressing haut', '4-3-3 · 4-2-3-1 · 3-4-2-1', 'Ligne haute, récupération immédiate — espaces derrière défense'],
+            ['Attaque par les ailes', '3-4-3 · 4-2-4', 'Largeur maximale, débordements et centres — l\'axe est concédé'],
+            ['Milieu chargé', '3-5-2 · 4-3-2-1 · 3-6-1 · 4-1-4-1 · 4-1-2-1-2 · 4-2-2-2', 'Domination du milieu, circuits courts — lent à verticaliser'],
             ['Bloc défensif', '5-3-2 · 5-4-1 · 4-5-1 · 3-4-1-2', 'Organisation basse, contre-attaque sur espaces laissés'],
             ['Équilibré', '4-4-2 · 4-4-1-1', 'Ni avantage ni désavantage structurel fort'],
           ]}
         />
+        <p className="mt-3 text-sm text-muted">
+          L'attaque par les ailes bat l'équilibré et le milieu chargé (couloirs sans protection),
+          mais perd contre le bloc défensif (3 centraux + pistons absorbent les centres) et cède
+          légèrement face au pressing haut (récupération avant le renversement).
+        </p>
         <p className="mt-3 text-sm text-muted mb-2">Matrice des avantages :</p>
         <Table
           headers={['Mon profil', 'Contre Pressing haut', 'Contre Milieu chargé', 'Contre Bloc défensif', 'Contre Équilibré']}
@@ -753,10 +1034,11 @@ function MatchupsTab() {
         <Table
           headers={['Profil de jeu', 'Styles concernés']}
           rows={[
-            ['Construction-possession', 'Possession · Tiki-taka'],
+            ['Construction-possession', 'Possession · Tiki-taka · Football total'],
             ['Attaque directe', 'Contre-attaque · Jeu direct · Long ball'],
             ['Haute intensité', 'Pressing · Gegenpressing'],
-            ['Défensif', 'Ultra-défensif'],
+            ['Défensif', 'Ultra-défensif · Bloc médian'],
+            ['Jeu de côtés', 'Jeu sur les ailes'],
             ['Chaos', 'Chaos'],
           ]}
         />
@@ -779,6 +1061,10 @@ function MatchupsTab() {
             { from: 'Chaos', beats: 'Attaque directe', why: 'Transitions anarchiques dans les deux sens — récupère autant de ballons qu\'il en perd' },
             { from: 'Chaos', loses: 'Haute intensité', why: 'Le pressing organisé structure ce que le chaos ne peut pas gérer' },
             { from: 'Chaos', loses: 'Construction-possession', why: 'La patience et l\'organisation surmontent l\'anarchie sur la durée' },
+            { from: 'Jeu de côtés', beats: 'Haute intensité', why: 'Les renversements d\'aile à aile sautent par-dessus le bloc de pressing — le piège se referme sur du vide' },
+            { from: 'Jeu de côtés', beats: 'Chaos', why: 'La largeur structure le jeu là où le chaos s\'éparpille' },
+            { from: 'Jeu de côtés', loses: 'Construction-possession', why: 'Perd la bataille de l\'axe et court après le ballon' },
+            { from: 'Jeu de côtés', loses: 'Défensif', why: 'Les centres meurent dans une surface surpeuplée — dégagés en série' },
           ].map((r, i) => (
             <div key={i} className={`flex gap-3 rounded-lg border px-4 py-2 text-sm ${r.beats ? 'border-green-500/20 bg-green-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
               <span className={`shrink-0 font-semibold ${r.beats ? 'text-green-400' : 'text-danger'}`}>
@@ -804,11 +1090,12 @@ function MatchupsTab() {
         <Table
           headers={['Condition (par ordre de priorité)', 'Profil dérivé']}
           rows={[
-            ['defenseMult ≥ 1,12', 'Défensif'],
-            ['foulRateMult ≥ 1,15 ET midfieldMult ≥ 1,10', 'Haute intensité'],
-            ['midfieldMult ≥ 1,12', 'Construction-possession'],
-            ['shotFreqMult ≥ 1,15 OU attackMult ≥ 1,10', 'Attaque directe'],
-            ['foulRateMult ≥ 1,25 OU shotFreqMult ≥ 1,25', 'Chaos'],
+            ['foulRateMult ≥ 1,25 ET shotFreqMult ≥ 1,20', 'Chaos'],
+            ['defenseMult ≥ 1,10', 'Défensif'],
+            ['foulRateMult ≥ 1,12 ET midfieldMult ≥ 1,08', 'Haute intensité'],
+            ['midfieldMult ≥ 1,10', 'Construction-possession'],
+            ['attackMult ≥ 1,08 ET midfieldMult ≤ 0,94 ET foulRateMult < 1,00', 'Jeu de côtés'],
+            ['shotFreqMult ≥ 1,12 OU attackMult ≥ 1,08', 'Attaque directe'],
             ['Aucune condition atteinte', 'Neutre — pas de matchup style appliqué'],
           ]}
         />

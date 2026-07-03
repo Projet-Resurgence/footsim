@@ -244,6 +244,14 @@ export function eventText(
         `Le match s'achève ici !`,
       ]);
 
+    case 'tacticChange':
+      // p = label du style appliqué (transmis via le paramètre playerName)
+      return pick([
+        `📋 ${minute}' — Plan B activé ! ${team} passe en « ${p} ».`,
+        `📋 ${minute}' — Changement tactique de ${team} : place au « ${p} ».`,
+        `📋 ${minute}' — Le banc de ${team} réagit — consigne « ${p} » appliquée.`,
+      ]);
+
     case 'coachRed':
       return pick([
         `🟥 ${minute}' — L'entraîneur de ${team} est expulsé ! Il sera suspendu au prochain match.`,

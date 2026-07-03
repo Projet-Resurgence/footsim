@@ -8,7 +8,7 @@ function isDefensive(pos: Position): boolean {
   return ['GK', 'CB', 'LB', 'RB', 'DM'].includes(pos);
 }
 
-function computeMatchRating(
+export function computeMatchRating(
   player: Player,
   side: 'home' | 'away',
   state: MatchState,

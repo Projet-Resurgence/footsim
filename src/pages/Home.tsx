@@ -457,14 +457,14 @@ export default function Home() {
             initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }} transition={{ duration: 0.5 }}>
             <SectionLabel>Formations</SectionLabel>
-            <h2 className="font-display text-4xl">13 schémas tactiques + éditeur libre</h2>
+            <h2 className="font-display text-4xl">17 schémas tactiques + éditeur libre</h2>
             <p className="text-muted max-w-xl mx-auto">
               Choisissez parmi les formations prédéfinies ou placez vos 11 joueurs librement sur le terrain.
             </p>
           </motion.div>
 
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
-            {['4-3-3','4-4-2','3-5-2','4-2-3-1','5-3-2','4-1-4-1','3-4-3','4-3-2-1','4-5-1','4-4-1-1','3-4-1-2','5-4-1','3-6-1'].map((f, i) => (
+            {['4-3-3','4-4-2','3-5-2','4-2-3-1','5-3-2','4-1-4-1','3-4-3','4-3-2-1','4-5-1','4-4-1-1','3-4-1-2','5-4-1','3-6-1','4-1-2-1-2','3-4-2-1','4-2-2-2','4-2-4'].map((f, i) => (
               <motion.div key={f}
                 className="rounded-lg border border-border bg-surface px-3 py-3 text-center font-display font-bold text-sm hover:border-accent/50 hover:text-accent transition-colors cursor-default"
                 initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }}

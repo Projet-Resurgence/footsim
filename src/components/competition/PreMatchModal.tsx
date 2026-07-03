@@ -4,13 +4,14 @@ import { Button } from '@/components/ui/Button';
 import { CorruptionPanel } from '@/components/match/CorruptionPanel';
 import type { CorruptionDeal } from '@/lib/sim/types';
 import type { SavedTactic, Team } from '@/lib/types';
+import { resolveMatchTactics } from '@/lib/localTactics';
 
 type Props = {
   home: Team;
   away: Team;
   defaultCountForStats?: boolean;
   fetchBothTeams?: (slugs: string[]) => Promise<{ team: Team; players: unknown[] }[]>;
-  onConfirm: (corruption: CorruptionDeal | null, tactics?: { homeId?: string; awayId?: string }, countForStats?: boolean) => void;
+  onConfirm: (corruption: CorruptionDeal | null, tactics?: { homeId?: string; awayId?: string }, countForStats?: boolean, homeAdvantage?: boolean) => void;
   onCancel: () => void;
 };
 
@@ -21,15 +22,29 @@ export function PreMatchModal({ home, away, defaultCountForStats = true, fetchBo
   const [homeTacticId, setHomeTacticId] = useState<string>('');
   const [awayTacticId, setAwayTacticId] = useState<string>('');
   const [countForStats, setCountForStats] = useState(defaultCountForStats);
+  const [homeAdvantage, setHomeAdvantage] = useState(false);
+
+  // Présélectionne la tactique qui sera réellement jouée (contre-tactique incluse)
+  function preselect(hTactics: SavedTactic[], aTactics: SavedTactic[]) {
+    const r = resolveMatchTactics({ ...home, savedTactics: hTactics }, { ...away, savedTactics: aTactics });
+    const hId = (r.home as SavedTactic | undefined)?.id;
+    const aId = (r.away as SavedTactic | undefined)?.id;
+    if (hId && hTactics.some((t) => t.id === hId)) setHomeTacticId((prev) => prev || hId);
+    if (aId && aTactics.some((t) => t.id === aId)) setAwayTacticId((prev) => prev || aId);
+  }
 
   useEffect(() => {
-    if (!fetchBothTeams) return;
+    if (!fetchBothTeams) { preselect(home.savedTactics ?? [], away.savedTactics ?? []); return; }
     fetchBothTeams([home.slug, away.slug]).then((results) => {
       const h = results.find((r) => r.team.slug === home.slug);
       const a = results.find((r) => r.team.slug === away.slug);
-      if (h) setHomeTactics(h.team.savedTactics ?? []);
-      if (a) setAwayTactics(a.team.savedTactics ?? []);
-    }).catch(() => {});
+      const hT = h?.team.savedTactics ?? home.savedTactics ?? [];
+      const aT = a?.team.savedTactics ?? away.savedTactics ?? [];
+      if (h) setHomeTactics(hT);
+      if (a) setAwayTactics(aT);
+      preselect(hT, aT);
+    }).catch(() => preselect(home.savedTactics ?? [], away.savedTactics ?? []));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [home.id, away.id]);
 
   return (
@@ -93,13 +108,23 @@ export function PreMatchModal({ home, away, defaultCountForStats = true, fetchBo
             Compter dans l'historique et le classement CMF
           </label>
 
+          <label className="flex items-center gap-3 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={homeAdvantage}
+              onChange={(e) => setHomeAdvantage(e.target.checked)}
+              className="h-4 w-4 rounded border-border"
+            />
+            Avantage du terrain pour {home.name}
+          </label>
+
           <div className="flex gap-3">
             <Button
               size="sm"
               onClick={() => onConfirm(corruption, {
                 homeId: homeTacticId || undefined,
                 awayId: awayTacticId || undefined,
-              }, countForStats)}
+              }, countForStats, homeAdvantage)}
             >
               Lancer le match
             </Button>

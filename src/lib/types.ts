@@ -167,11 +167,13 @@ export const POSITION_FULL: Record<Position, string> = {
 
 export type Formation =
   | '4-3-3' | '4-4-2' | '3-5-2' | '4-2-3-1' | '5-3-2' | '4-1-4-1' | '3-4-3' | '4-3-2-1'
-  | '4-5-1' | '4-4-1-1' | '3-4-1-2' | '5-4-1' | '3-6-1';
+  | '4-5-1' | '4-4-1-1' | '3-4-1-2' | '5-4-1' | '3-6-1'
+  | '4-1-2-1-2' | '3-4-2-1' | '4-2-2-2' | '4-2-4';
 
 export type TacticStyle =
   | 'possession' | 'contre-attaque' | 'direct' | 'pressing'
-  | 'ultra-defensif' | 'gegenpressing' | 'tiki-taka' | 'long-ball' | 'chaos';
+  | 'ultra-defensif' | 'gegenpressing' | 'tiki-taka' | 'long-ball' | 'chaos'
+  | 'ailes' | 'bloc-median' | 'football-total';
 
 export const TACTIC_STYLE_LABEL: Record<TacticStyle, string> = {
   possession: 'Possession',
@@ -183,6 +185,9 @@ export const TACTIC_STYLE_LABEL: Record<TacticStyle, string> = {
   'tiki-taka': 'Tiki-taka',
   'long-ball': 'Long ball',
   chaos: 'Chaos',
+  ailes: 'Jeu sur les ailes',
+  'bloc-median': 'Bloc médian',
+  'football-total': 'Football total',
 };
 
 export type TechnicalStats = {
@@ -237,6 +242,41 @@ export type PlannedSub = {
   minute?: number;
 };
 
+/** Déclencheur d'un plan B conditionnel */
+export type PlanBTrigger = 'losing' | 'winning' | 'drawing' | 'redCard';
+
+export const PLAN_B_TRIGGER_LABEL: Record<PlanBTrigger, string> = {
+  losing: 'Si mené au score',
+  winning: 'Si mène au score',
+  drawing: 'Si match nul',
+  redCard: 'Si carton rouge reçu',
+};
+
+/** Plan B conditionnel : bascule automatique de tactique/style en cours de match */
+export type PlanBRule = {
+  id: string;
+  trigger: PlanBTrigger;
+  /** minute à partir de laquelle la règle peut se déclencher */
+  fromMinute: number;
+  /** style appliqué au déclenchement (legacy / fallback quand aucune autre tactique n'existe) */
+  style?: TacticStyle;
+  /** tactique sauvegardée appliquée au déclenchement (son style/mods) — prioritaire sur style */
+  tacticId?: string;
+  /** nom de la tactique ciblée — affichage sans lookup */
+  tacticName?: string;
+  /** condition adversaire : restreint (only) ou annule (except) la règle contre cette équipe */
+  vsMode?: 'only' | 'except';
+  vsTeamId?: string;
+  vsTeamName?: string;
+};
+
+/** Tireurs désignés pour les coups de pied arrêtés (player ids) */
+export type SetPieceTakers = {
+  penalty?: string;
+  freeKick?: string;
+  corner?: string;
+};
+
 export type TeamTactics = {
   style: TacticStyle;
   formation: Formation;
@@ -255,12 +295,26 @@ export type TeamTactics = {
   customStyles?: CustomTacticStyle[];
   /** id of active custom style; if set, overrides style */
   activeCustomStyleId?: string;
+  /** plans B conditionnels (max 3) — bascule de style automatique en match */
+  planB?: PlanBRule[];
+  /** tireurs désignés pour penalties / coups francs / corners */
+  setPieceTakers?: SetPieceTakers;
+  /** capitaine — discipline et résilience quand il est sur le terrain */
+  captainId?: string;
 };
 
 /** A named saved tactic — superset of TeamTactics */
 export type SavedTactic = TeamTactics & {
   id: string;
   name: string;
+  /** équipes ciblées : la tactique est chargée automatiquement contre chacune (prioritaire sur la tactique active) */
+  vsTeams?: { id: string; name: string }[];
+  /** contre-tactiques : cette tactique s'active si l'adversaire joue la tactique désignée (prioritaire sur vsTeams) */
+  counterTactics?: { teamId: string; teamName: string; tacticId: string; tacticName: string }[];
+  /** @deprecated ancien ciblage mono-équipe — lu en fallback, écrit nulle part */
+  vsTeamId?: string;
+  /** @deprecated voir vsTeams */
+  vsTeamName?: string;
 };
 
 export type TeamKind = 'national' | 'club';
@@ -304,6 +358,8 @@ export type Team = {
   customStyles?: CustomTacticStyle[];
   /** Primary jersey color as CSS hex (e.g. "#e63c3c") */
   jerseyColor?: string;
+  /** Away jersey color as CSS hex — worn when both primary kits clash */
+  jerseyAwayColor?: string;
   /** Action sur le Foot: funding (M€, capped 250) → strength bonus 0–5 */
   actionFoot?: { rating: number; funding: number };
   /** Competition history — populated when a competition is saved to GitHub */

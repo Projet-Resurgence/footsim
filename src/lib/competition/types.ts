@@ -146,6 +146,8 @@ export type CompetitionConfig = {
   matchRules: MatchRules;
   /** Knockout-phase rules for groups_knockout (if absent, falls back to matchRules) */
   knockoutRules?: MatchRules;
+  /** Zone climatique du pays hôte — la météo de chaque match est tirée dedans */
+  climateZone?: import('@/lib/sim/weather').ClimateZone;
 };
 
 export type PlayerCompStats = {

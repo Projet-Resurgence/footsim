@@ -120,13 +120,9 @@ export function PenaltyShootout({ state, home, away, onDone }: Props) {
 
         {/* Ball animation */}
         {!done && revealed < kicks.length && (
-          <motion.div
-            animate={{ x: [0, -8, 8, -4, 4, 0] }}
-            transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut' }}
-            className="text-3xl"
-          >
+          <div className="text-3xl fs-wiggle">
             ⚽
-          </motion.div>
+          </div>
         )}
 
         {done && (

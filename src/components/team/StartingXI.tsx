@@ -16,11 +16,13 @@ type Props = {
   onSaveAutoXI?: (lineupIds: string[]) => Promise<void>;
   /** Click on a player row to view their stats */
   onPlayerClick?: (player: Player) => void;
+  /** Affiche un ✏️ à côté de chaque nom pour renommer le joueur */
+  onRenamePlayer?: (player: Player) => void;
 };
 
 const PAGE_SIZE = 50;
 
-export function StartingXI({ players, formation, lineup, positionMap, onSaveAutoXI, onPlayerClick }: Props) {
+export function StartingXI({ players, formation, lineup, positionMap, onSaveAutoXI, onPlayerClick, onRenamePlayer }: Props) {
   const [saving, setSaving] = useState(false);
   const [restPage, setRestPage] = useState(1);
   const hasCustom = !!(lineup && lineup.length === 11);
@@ -101,9 +103,9 @@ export function StartingXI({ players, formation, lineup, positionMap, onSaveAuto
     <div className="space-y-4">
       {/* Source indicator + save button */}
       <div className="flex items-center gap-2">
-        <span className="text-xs text-muted">
-          {hasCustom && !isAuto ? '📋 XI tactique défini' : '⚡ Meilleur XI auto (par poste)'}
-        </span>
+        {(!hasCustom || isAuto) && (
+          <span className="text-xs text-muted">⚡ Meilleur XI auto (par poste)</span>
+        )}
         {isAuto && onSaveAutoXI && (
           <button
             disabled={saving}
@@ -145,7 +147,13 @@ export function StartingXI({ players, formation, lineup, positionMap, onSaveAuto
                     {POSITION_LABEL[positionMap?.[p.id] ?? p.position]}
                   </span>
                 </td>
-                <td className="px-3 py-2 font-medium">{p.firstName} {p.lastName}</td>
+                <td className="px-3 py-2 font-medium">{p.firstName} {p.lastName}{onRenamePlayer && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onRenamePlayer(p); }}
+                        className="ml-1.5 text-muted/50 hover:text-accent transition-colors"
+                        title="Renommer ce joueur"
+                      >✏️</button>
+                    )}</td>
                 <td className={colCell}>{p.age}</td>
                 <td className={colCell}>{FOOT[p.preferredFoot] ?? 'D'}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-bold text-accent">{p.overall}</td>
@@ -179,7 +187,13 @@ export function StartingXI({ players, formation, lineup, positionMap, onSaveAuto
                       {POSITION_LABEL[p.position]}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-text/80">{p.firstName} {p.lastName}</td>
+                  <td className="px-3 py-2 text-text/80">{p.firstName} {p.lastName}{onRenamePlayer && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onRenamePlayer(p); }}
+                        className="ml-1.5 text-muted/50 hover:text-accent transition-colors"
+                        title="Renommer ce joueur"
+                      >✏️</button>
+                    )}</td>
                   <td className={colCell}>{p.age}</td>
                   <td className={colCell}>{FOOT[p.preferredFoot] ?? 'D'}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">{p.overall}</td>
@@ -215,7 +229,13 @@ export function StartingXI({ players, formation, lineup, positionMap, onSaveAuto
                       {POSITION_LABEL[p.position]}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-text/80">{p.firstName} {p.lastName}</td>
+                  <td className="px-3 py-2 text-text/80">{p.firstName} {p.lastName}{onRenamePlayer && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onRenamePlayer(p); }}
+                        className="ml-1.5 text-muted/50 hover:text-accent transition-colors"
+                        title="Renommer ce joueur"
+                      >✏️</button>
+                    )}</td>
                   <td className={colCell}>{p.age}</td>
                   <td className={colCell}>{FOOT[p.preferredFoot] ?? 'D'}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">{p.overall}</td>
