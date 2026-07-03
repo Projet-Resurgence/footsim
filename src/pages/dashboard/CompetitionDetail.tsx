@@ -31,7 +31,7 @@ import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
 import type { StoredMatch } from '@/lib/prapi/matchBackend';
 import { TacticalReportModal } from '@/components/match/TacticalReportModal';
-import { loadLocalSavedTactics } from '@/lib/localTactics';
+import { mergedSavedTactics } from '@/lib/localTactics';
 import type { Injury, Suspension } from '@/lib/competition/injuries';
 import { SEVERITY_COLOR, CAUSE_LABEL } from '@/lib/competition/injuries';
 import type { CompHistoryEntry } from '@/lib/competition/types';
@@ -1174,8 +1174,7 @@ function RoundsView({
 }
 
 function resolveSavedTactics(team: Team) {
-  const local = loadLocalSavedTactics(team.id);
-  return local.savedTactics.length > 0 ? local.savedTactics : (team.savedTactics ?? []);
+  return mergedSavedTactics(team);
 }
 
 function RoundMatchRow({

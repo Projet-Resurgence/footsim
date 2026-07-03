@@ -7,6 +7,8 @@ type State = {
   input: MatchInput | null;
   paused: boolean;
   finished: boolean;
+  /** vitesse courante — mise à jour optimiste, sans attendre le prochain tick du worker */
+  speed: Speed;
   start: (input: MatchInput) => void;
   setSpeed: (speed: Speed) => void;
   pause: () => void;
@@ -25,6 +27,7 @@ export const useMatch = create<State>((set, get) => ({
   input: null,
   paused: false,
   finished: false,
+  speed: '1',
   start(input) {
     get().stop();
     const worker = new Worker(new URL('@/lib/sim/worker.ts', import.meta.url), { type: 'module' });
@@ -36,12 +39,13 @@ export const useMatch = create<State>((set, get) => ({
       if (msg.type === 'state') set({ state: msg.state });
       else if (msg.type === 'finished') set({ state: msg.state, finished: true });
     };
-    set({ worker, input, finished: false, paused: false, state: null });
+    set({ worker, input, finished: false, paused: false, state: null, speed: input.speed });
     worker.postMessage({ type: 'start', input });
   },
   setSpeed(speed) {
     const w = get().worker;
     if (!w) return;
+    set({ speed });
     w.postMessage({ type: 'speed', speed });
   },
   pause() {

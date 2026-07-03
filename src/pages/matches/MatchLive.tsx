@@ -20,7 +20,7 @@ import { SubstitutionPanel } from '@/components/match/SubstitutionPanel';
 import { computeMotm } from '@/lib/competition/statsAccumulator';
 import { isRevealed } from '@/lib/sim/corruption';
 import type { SavedTactic, Team } from '@/lib/types';
-import { loadLocalSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
+import { mergedSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
 import { toast } from '@/components/ui/Toast';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { useSession } from '@/stores/session';
@@ -40,6 +40,7 @@ export default function MatchLive() {
   const input = useMatch((s) => s.input);
   const paused = useMatch((s) => s.paused);
   const finished = useMatch((s) => s.finished);
+  const speed = useMatch((s) => s.speed);
   const setSpeed = useMatch((s) => s.setSpeed);
   const pause = useMatch((s) => s.pause);
   const resume = useMatch((s) => s.resume);
@@ -184,10 +185,8 @@ export default function MatchLive() {
   // Load saved tactics for halftime tactic switcher
   useEffect(() => {
     if (!input) return;
-    const hLocal = loadLocalSavedTactics(input.home.team.id);
-    setHomeSavedTactics(hLocal.savedTactics.length > 0 ? hLocal.savedTactics : (input.home.team.savedTactics ?? []));
-    const aLocal = loadLocalSavedTactics(input.away.team.id);
-    setAwaySavedTactics(aLocal.savedTactics.length > 0 ? aLocal.savedTactics : (input.away.team.savedTactics ?? []));
+    setHomeSavedTactics(mergedSavedTactics(input.home.team));
+    setAwaySavedTactics(mergedSavedTactics(input.away.team));
   }, [input?.home.team.id, input?.away.team.id]);
 
   // Cleanup on unmount
@@ -213,7 +212,7 @@ export default function MatchLive() {
   const isET = state.status === 'extraTimeFirst' || state.status === 'extraTimeHalfTime' || state.status === 'extraTimeSecond';
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8 space-y-6">
+    <main className="mx-auto max-w-6xl px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
       <GoalCelebration
         visible={celebration !== null}
         scoringTeam={celebration?.team ?? null}
@@ -265,7 +264,7 @@ export default function MatchLive() {
             );
           })()}
           <SpeedControls
-            speed={state.speed}
+            speed={speed}
             paused={paused}
             finished={finished}
             onSpeed={setSpeed}

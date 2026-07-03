@@ -17,7 +17,7 @@ import { extractGoalsAndCards } from '@/lib/github/matches';
 import { CorruptionPanel } from '@/components/match/CorruptionPanel';
 import { TacticalReportModal } from '@/components/match/TacticalReportModal';
 import { isRevealed } from '@/lib/sim/corruption';
-import { resolveMatchTactics, resolveActiveCustomStyle, loadLocalSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
+import { resolveMatchTactics, resolveActiveCustomStyle, mergedSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
 import { rollWeather, hashSeed } from '@/lib/sim/weather';
 import { pickDistinctReferees } from '@/lib/sim/referees';
 import { updateMorale, initMorale, MORALE_DEFAULT } from '@/lib/competition/morale';
@@ -1108,7 +1108,7 @@ export default function MultiplexLive() {
 
   if (pendingInputs) {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-8 space-y-6">
+      <main className="mx-auto max-w-3xl px-3 sm:px-6 py-4 sm:py-8 space-y-6">
         <div>
           <Link to={`/dashboard/competitions/${competitionId}`} className="text-sm text-muted hover:text-text">
             ← {current?.name ?? 'Compétition'}
@@ -1284,7 +1284,7 @@ export default function MultiplexLive() {
         </button>
       </div>
       {pauseTacticOpen && (
-        <div className="border-t border-border/40 px-4 py-2 grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 max-h-52 overflow-y-auto">
+        <div className="border-t border-border/40 px-4 py-2 grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 max-h-52 overflow-y-auto">
           {activeSlots.map((slot) => (
             <HalftimeTacticRow
               key={slot.compMatchId}
@@ -1327,7 +1327,7 @@ export default function MultiplexLive() {
         </div>
       </div>
       {halftimeTacticOpen && (
-        <div className="border-t border-border/40 px-4 py-2 grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 max-h-52 overflow-y-auto">
+        <div className="border-t border-border/40 px-4 py-2 grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 max-h-52 overflow-y-auto">
           {halftimeSlots.map((slot) => (
             <HalftimeTacticRow
               key={slot.compMatchId}
@@ -1422,7 +1422,7 @@ export default function MultiplexLive() {
   const normalCols = slots.length <= 2 ? 'md:grid-cols-2' : slots.length <= 4 ? 'md:grid-cols-2 lg:grid-cols-2' : 'md:grid-cols-2 lg:grid-cols-3';
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
+    <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <Link to={`/dashboard/competitions/${competitionId}`} className="text-sm text-muted hover:text-text">
@@ -1481,14 +1481,8 @@ function HalftimeTacticRow({ slot, onTacticChange }: {
   slot: import('@/stores/multiplex').MultiplexSlot;
   onTacticChange: (side: 'home' | 'away', tactic: SavedTactic) => void;
 }) {
-  const [homeTactics] = useState<SavedTactic[]>(() => {
-    const local = loadLocalSavedTactics(slot.home.id);
-    return local.savedTactics.length > 0 ? local.savedTactics : (slot.home.savedTactics ?? []);
-  });
-  const [awayTactics] = useState<SavedTactic[]>(() => {
-    const local = loadLocalSavedTactics(slot.away.id);
-    return local.savedTactics.length > 0 ? local.savedTactics : (slot.away.savedTactics ?? []);
-  });
+  const [homeTactics] = useState<SavedTactic[]>(() => mergedSavedTactics(slot.home));
+  const [awayTactics] = useState<SavedTactic[]>(() => mergedSavedTactics(slot.away));
   const [homeTacticId, setHomeTacticId] = useState('');
   const [awayTacticId, setAwayTacticId] = useState('');
 
@@ -1540,8 +1534,7 @@ function HalftimeTacticRow({ slot, onTacticChange }: {
 }
 
 function resolveSavedTactics(team: Team): SavedTactic[] {
-  const local = loadLocalSavedTactics(team.id);
-  return local.savedTactics.length > 0 ? local.savedTactics : (team.savedTactics ?? []);
+  return mergedSavedTactics(team);
 }
 
 function MatchCard({ slot, density = 'normal' }: { slot: import('@/stores/multiplex').MultiplexSlot; density?: 'normal' | 'small' | 'tiny' }) {

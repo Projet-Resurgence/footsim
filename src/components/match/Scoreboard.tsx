@@ -31,7 +31,7 @@ export function Scoreboard({ state, home, away, homeFormation, awayFormation, le
   const aggAway = leg1Score ? leg1Score.away + state.score.away : null;
 
   return (
-    <div className="flex items-center justify-between gap-6 rounded-lg border border-border bg-surface p-5 shadow-subtle-sm">
+    <div className="flex items-center justify-between gap-3 sm:gap-6 rounded-lg border border-border bg-surface p-3 sm:p-5 shadow-subtle-sm">
       <Side team={home} score={state.score.home} side="left" formation={homeFormation} />
       <div className="flex flex-col items-center">
         <AnimatePresence mode="popLayout">
@@ -40,7 +40,7 @@ export function Scoreboard({ state, home, away, homeFormation, awayFormation, le
             initial={{ scale: 0.85, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.85, opacity: 0 }}
-            className="font-display text-4xl tabular-nums md:text-5xl"
+            className="font-display text-3xl tabular-nums sm:text-4xl md:text-5xl"
           >
             {state.score.home} – {state.score.away}
           </motion.div>
@@ -81,14 +81,14 @@ function Side({ team, score, side, formation }: { team: Team; score: number; sid
   return (
     <div className={`flex min-w-0 items-center gap-3 ${side === 'right' ? 'flex-row-reverse text-right' : ''}`}>
       {team.flag ? (
-        <img src={team.flag} alt="" className="h-12 w-12 object-cover" />
+        <img src={team.flag} alt="" className="h-9 w-9 sm:h-12 sm:w-12 object-cover shrink-0" />
       ) : (
-        <div className="h-12 w-12 rounded-md bg-border" />
+        <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-md bg-border shrink-0" />
       )}
       <div className="min-w-0">
-        <div className="truncate font-display text-lg">{team.name}</div>
-        {formation && <div className="text-xs font-mono text-accent">{formation}</div>}
-        <div className="text-xs text-muted">Score : {score}</div>
+        <div className="truncate font-display text-sm sm:text-lg">{team.name}</div>
+        {formation && <div className="text-[10px] sm:text-xs font-mono text-accent">{formation}</div>}
+        <div className="hidden sm:block text-xs text-muted">Score : {score}</div>
       </div>
     </div>
   );

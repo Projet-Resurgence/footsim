@@ -38,12 +38,12 @@ export function HalftimeOverlay({ state, home, away, homeSavedTactics = [], away
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm p-3"
     >
       <motion.div
         initial={{ y: 16, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="w-[min(92vw,560px)] space-y-6 rounded-lg border border-border bg-surface p-8 shadow-subtle-md"
+        className="w-[min(94vw,560px)] max-h-[92vh] overflow-y-auto space-y-5 sm:space-y-6 rounded-lg border border-border bg-surface p-4 sm:p-8 shadow-subtle-md"
       >
         <div className="text-center">
           <div className="text-xs uppercase tracking-widest text-muted">
@@ -71,7 +71,7 @@ export function HalftimeOverlay({ state, home, away, homeSavedTactics = [], away
 
         {/* Tactic selectors */}
         {(homeSavedTactics.length > 0 || awaySavedTactics.length > 0) && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {homeSavedTactics.length > 0 && (
               <div>
                 <div className="mb-1 text-xs text-muted">{home.name} — Tactique</div>

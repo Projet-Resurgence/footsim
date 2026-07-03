@@ -101,3 +101,11 @@ main > *,
 }
 .fs-wiggle { animation: fs-wiggle 1.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .fs-wiggle { animation: none; } }
+
+/* Entrée des lignes du flux d'événements — pur CSS, une seule fois par ligne */
+@keyframes fs-event-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.fs-event-in { animation: fs-event-in 0.22s ease-out; }
+@media (prefers-reduced-motion: reduce) { .fs-event-in { animation: none; } }

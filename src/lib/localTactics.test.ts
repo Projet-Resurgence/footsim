@@ -1,10 +1,45 @@
 import { describe, expect, it } from 'vitest';
 import type { SavedTactic } from '@/lib/types';
-import { resolveActiveTactic, resolveMatchTactics, findCounterTactic } from './localTactics';
+import { resolveActiveTactic, resolveMatchTactics, findCounterTactic, mergedSavedTactics, saveLocalSavedTactics } from './localTactics';
 
 function tactic(id: string, name: string, extra: Partial<SavedTactic> = {}): SavedTactic {
   return { id, name, style: 'possession', formation: '4-3-3', lineup: [], ...extra };
 }
+
+// jsdom du setup n'expose pas un localStorage fonctionnel — mini-stub mémoire
+const lsStore = new Map<string, string>();
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (k: string) => lsStore.get(k) ?? null,
+    setItem: (k: string, v: string) => { lsStore.set(k, String(v)); },
+    removeItem: (k: string) => { lsStore.delete(k); },
+    clear: () => lsStore.clear(),
+  },
+});
+
+describe('mergedSavedTactics', () => {
+  it('un cache local partiel ne masque pas les tactiques serveur', () => {
+    const server = [tactic('t1', 'Base'), tactic('t2', 'Bloc bas'), tactic('t3', 'Pressing')];
+    const localEdit = tactic('t2', 'Bloc bas (édité)');
+    saveLocalSavedTactics('team-merge', [localEdit]);
+    const merged = mergedSavedTactics({ id: 'team-merge', savedTactics: server });
+    expect(merged).toHaveLength(3);
+    expect(merged.find((t) => t.id === 't2')?.name).toBe('Bloc bas (édité)'); // version locale prioritaire
+    expect(merged.map((t) => t.id).sort()).toEqual(['t1', 't2', 't3']);
+  });
+
+  it('les tactiques locales inédites s\'ajoutent au serveur', () => {
+    saveLocalSavedTactics('team-merge2', [tactic('l1', 'Locale')]);
+    const merged = mergedSavedTactics({ id: 'team-merge2', savedTactics: [tactic('t1', 'Base')] });
+    expect(merged.map((t) => t.id).sort()).toEqual(['l1', 't1']);
+  });
+
+  it('sans cache local, retourne la liste serveur telle quelle', () => {
+    const server = [tactic('t1', 'Base')];
+    expect(mergedSavedTactics({ id: 'team-no-local', savedTactics: server })).toEqual(server);
+  });
+});
 
 describe('resolveActiveTactic', () => {
   it('retourne la tactique active parmi les sauvegardées', () => {

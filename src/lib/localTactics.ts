@@ -44,9 +44,24 @@ export function resolveActiveCustomStyle(
 
 type TeamLike = { id: string; tactics?: TeamTactics; savedTactics?: SavedTactic[]; activeTacticId?: string };
 
+/**
+ * Liste complète des tactiques d'une équipe : base = serveur, les versions
+ * locales (cache navigateur) remplacent par id, les tactiques locales inédites
+ * s'ajoutent. Un cache local partiel/périmé ne doit JAMAIS masquer les autres
+ * tactiques serveur (bug : « une seule tactique proposée en plein match »).
+ */
+export function mergedSavedTactics(team: { id: string; savedTactics?: SavedTactic[] }): SavedTactic[] {
+  const local = loadLocalSavedTactics(team.id).savedTactics;
+  const server = team.savedTactics ?? [];
+  if (local.length === 0) return server;
+  if (server.length === 0) return local;
+  const byId = new Map(server.map((t) => [t.id, t] as const));
+  for (const t of local) byId.set(t.id, t);
+  return [...byId.values()];
+}
+
 function savedTacticsOf(team: TeamLike): SavedTactic[] {
-  const local = loadLocalSavedTactics(team.id);
-  return local.savedTactics.length > 0 ? local.savedTactics : (team.savedTactics ?? []);
+  return mergedSavedTactics(team);
 }
 
 /**
@@ -115,7 +130,7 @@ export function resolveActiveTactic(
   team: { id: string; tactics?: TeamTactics; savedTactics?: SavedTactic[]; activeTacticId?: string },
 ): TeamTactics | undefined {
   const local = loadLocalSavedTactics(team.id);
-  const savedTactics = local.savedTactics.length > 0 ? local.savedTactics : (team.savedTactics ?? []);
+  const savedTactics = mergedSavedTactics(team);
   const activeTacticId = local.activeTacticId ?? team.activeTacticId;
   if (activeTacticId && savedTactics.length > 0) {
     const found = savedTactics.find((t) => t.id === activeTacticId);

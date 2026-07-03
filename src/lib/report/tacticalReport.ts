@@ -7,8 +7,11 @@ import {
   computeMatchupAdjustment,
   formationProfile,
   styleProfile,
+  customStyleProfile,
   FORMATION_MATCHUP,
   STYLE_MATCHUP,
+  FORMATION_PROFILE_LABEL,
+  STYLE_PROFILE_LABEL,
 } from '@/lib/sim/matchup';
 import type { FormationProfile, StyleProfile } from '@/lib/sim/matchup';
 
@@ -43,6 +46,16 @@ export type TacticalReport = {
   worstOppPlayers: PlayerReportEntry[];
   verdict: { worked: boolean | null; text: string };
   improvements: string[];
+  /** Analyse du dispositif adverse — style précis + famille tactique */
+  opponent: {
+    formation: Formation;
+    /** famille de la formation (ex : « Pressing haut ») */
+    formationFamily: string;
+    /** style précis : nom du style perso, ou label du style nommé */
+    styleName: string;
+    /** famille du style (ex : « Jeu de possession ») — null si inclassable */
+    styleFamily: string | null;
+  };
   counterTactic: {
     formation: Formation;
     style: TacticStyle;
@@ -51,6 +64,8 @@ export type TacticalReport = {
     savedTactic: { id: string; name: string } | null;
     /** fine-tuned custom mods, derived from `style`'s base values and sharpened against this specific opponent */
     customMods: TacticMods;
+    /** avantage estimé de la proposition vs la tactique actuelle (points de matchup, ~%) */
+    edge: { attack: number; defense: number };
   } | null;
 };
 
@@ -130,18 +145,27 @@ function snapToCustomStyleGrid(mods: TacticMods): TacticMods {
   return out;
 }
 
+/** Famille de style d'un camp — même classement que le moteur de matchup. */
 function resolveStyleProfileFor(side: ReportSide): StyleProfile | null {
-  if (side.customTacticStyle) {
-    const m = side.customTacticStyle.mods;
-    if (m.defenseMult >= 1.12) return 'defensive';
-    if (m.foulRateMult >= 1.15 && m.midfieldMult >= 1.10) return 'high-intensity';
-    if (m.midfieldMult >= 1.12) return 'possession-build';
-    if (m.shotFreqMult >= 1.15 || m.attackMult >= 1.10) return 'direct-attack';
-    if (m.foulRateMult >= 1.25 || m.shotFreqMult >= 1.25) return 'chaos';
-    return null;
-  }
+  if (side.customTacticStyle) return customStyleProfile(side.customTacticStyle.mods);
   if (side.tacticStyle) return styleProfile(side.tacticStyle);
   return null;
+}
+
+/** Nom lisible du style joué : style perso nommé > style nommé > inconnu. */
+function styleNameOf(side: ReportSide): string {
+  if (side.customTacticStyle) return `${side.customTacticStyle.name} (style perso)`;
+  if (side.tacticStyle) return TACTIC_STYLE_LABEL[side.tacticStyle];
+  return 'Aucun style défini';
+}
+
+/** Famille de style d'une tactique sauvegardée (style perso actif inclus). */
+function savedTacticProfile(t: SavedTactic): StyleProfile | null {
+  if (t.activeCustomStyleId) {
+    const custom = (t.customStyles ?? []).find((s) => s.id === t.activeCustomStyleId);
+    if (custom) return customStyleProfile(custom.mods);
+  }
+  return t.style ? styleProfile(t.style) : null;
 }
 
 function participatedIds(state: MatchState, side: 'home' | 'away'): Set<string> {
@@ -336,79 +360,110 @@ export function generateTacticalReport(
   const oppFP = formationProfile(oppSide.formation);
   const oppSP = resolveStyleProfileFor(oppSide);
 
+  // ── Fiche adversaire : style précis + familles ──────────────────────────
+  const opponent: TacticalReport['opponent'] = {
+    formation: oppSide.formation,
+    formationFamily: FORMATION_PROFILE_LABEL[oppFP],
+    styleName: styleNameOf(oppSide),
+    styleFamily: oppSP ? STYLE_PROFILE_LABEL[oppSP] : null,
+  };
+  /** « Gegenpressing (famille : Intensité haute) » — libellé réutilisé partout */
+  const oppLabel = opponent.styleFamily
+    ? `${opponent.styleName} (famille : ${opponent.styleFamily})`
+    : `${opponent.styleName} (famille inclassable)`;
+
+  // Score de matchup d'une paire (profil de style, profil de formation) contre l'adversaire.
+  // Style ignoré quand le style adverse est inclassable — la formation reste comparable.
+  const matchupScore = (sp: StyleProfile | null, fp: FormationProfile): { score: number; att: number; def: number } => {
+    const [fAtt, fDef] = FORMATION_MATCHUP[fp][oppFP];
+    let att = fAtt;
+    let def = fDef;
+    if (oppSP && sp) {
+      const [sAtt, sDef] = STYLE_MATCHUP[sp][oppSP];
+      att += sAtt;
+      def += sDef;
+    }
+    return { score: att - def, att, def };
+  };
+
+  // Meilleure réponse générique : famille de style + famille de formation
+  const profiles: StyleProfile[] = ['possession-build', 'direct-attack', 'high-intensity', 'defensive', 'wide-play', 'chaos'];
+  const formProfiles: FormationProfile[] = ['high-press', 'balanced', 'midfield-heavy', 'defensive-block', 'wide-attack'];
+  let bestProfile: StyleProfile = profiles[0];
+  let bestFormProfile: FormationProfile = formProfiles[0];
+  let bestGeneric = -Infinity;
+  for (const sp of profiles) {
+    for (const fp of formProfiles) {
+      const { score } = matchupScore(sp, fp);
+      // Un miroir (même profil que l'adversaire) score 0 par définition — jamais un vrai
+      // contre : à score égal, un profil distinct gagne.
+      const better = score > bestGeneric
+        || (score === bestGeneric && sp !== oppSP && bestProfile === oppSP);
+      if (better) { bestGeneric = score; bestProfile = sp; bestFormProfile = fp; }
+    }
+  }
+  const style = STYLE_LABEL_BY_PROFILE[bestProfile];
+  const formation = FORMATION_LABEL_BY_PROFILE[bestFormProfile];
+  const generic = matchupScore(bestProfile, bestFormProfile);
+  const customMods = sharpenModsForMatchup(style, oppSP ? STYLE_MATCHUP[bestProfile][oppSP][0] - STYLE_MATCHUP[bestProfile][oppSP][1] : 0);
+
+  // Score de la tactique réellement jouée — la barre à franchir pour proposer autre chose.
+  const myFP = formationProfile(me.formation);
+  const mySP = resolveStyleProfileFor(me);
+  const current = matchupScore(mySP, myFP);
+
+  // Tactiques sauvegardées : la meilleure qui BAT la tactique actuelle contre CET adversaire.
+  const savedTactics = me.savedTactics ?? me.team.savedTactics ?? [];
+  let savedMatch: SavedTactic | null = null;
+  let savedEval = current;
+  for (const t of savedTactics) {
+    const tSP = savedTacticProfile(t);
+    const tFP = formationProfile(t.formation);
+    // ignorer la tactique identique à celle jouée (même familles = même comportement moteur)
+    if (tSP === mySP && tFP === myFP) continue;
+    const ev = matchupScore(tSP, tFP);
+    if (ev.score > savedEval.score) { savedEval = ev; savedMatch = t; }
+  }
+
+  const pct = (v: number) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`;
+  const edgeOf = (ev: { att: number; def: number }) => ({
+    attack: Math.round((ev.att - current.att) * 100) / 100,
+    defense: Math.round((ev.def - current.def) * 100) / 100,
+  });
+  const edgeText = (ev: { att: number; def: number }) =>
+    `avantage estimé vs tactique actuelle : ${pct(ev.att - current.att)} attaque, ${pct(-(ev.def - current.def))} défense`;
+
   let counterTactic: TacticalReport['counterTactic'] = null;
-  if (oppSP) {
-    // Find the style profile that scores best (attack minus defense taken) against oppSP.
-    // Tie-break: prefer a profile different from the opponent's own — a mirrored matchup
-    // (e.g. direct-attack vs direct-attack) scores 0 by definition and is never a real
-    // counter, just a coin flip, so it should lose ties to any distinct profile.
-    const profiles: StyleProfile[] = ['possession-build', 'direct-attack', 'high-intensity', 'defensive', 'chaos'];
-    let bestProfile: StyleProfile = profiles[0];
-    let bestScore = -Infinity;
-    for (const p of profiles) {
-      const [att, def] = STYLE_MATCHUP[p][oppSP];
-      const score = att - def; // maximize attack, minimize defense multiplier taken
-      const better = score > bestScore
-        || (score === bestScore && p !== oppSP && bestProfile === oppSP);
-      if (better) { bestScore = score; bestProfile = p; }
-    }
-    // matching formation profile: best attack/defense combo vs opponent's formation profile
-    const formProfiles: FormationProfile[] = ['high-press', 'balanced', 'midfield-heavy', 'defensive-block'];
-    let bestFormProfile: FormationProfile = formProfiles[0];
-    let bestFormScore = -Infinity;
-    for (const p of formProfiles) {
-      const [att, def] = FORMATION_MATCHUP[p][oppFP];
-      const score = att - def;
-      const better = score > bestFormScore
-        || (score === bestFormScore && p !== oppFP && bestFormProfile === oppFP);
-      if (better) { bestFormScore = score; bestFormProfile = p; }
-    }
-    const style = STYLE_LABEL_BY_PROFILE[bestProfile];
-    const formation = FORMATION_LABEL_BY_PROFILE[bestFormProfile];
-    const [recAtt, recDef] = STYLE_MATCHUP[bestProfile][oppSP];
-    const customMods = sharpenModsForMatchup(style, recAtt - recDef);
-
-    // Score of the tactic actually in use this match — the bar a saved tactic must clear
-    // to be worth recommending. Without this, the "best of a bad bunch" saved tactic could
-    // get recommended even when it's no better (or is literally) the one already played.
-    const myFP = formationProfile(me.formation);
-    const mySPForCompare = resolveStyleProfileFor(me);
-    const currentScore = mySPForCompare
-      ? (STYLE_MATCHUP[mySPForCompare][oppSP][0] - STYLE_MATCHUP[mySPForCompare][oppSP][1])
-        + (FORMATION_MATCHUP[myFP][oppFP][0] - FORMATION_MATCHUP[myFP][oppFP][1])
-      : (FORMATION_MATCHUP[myFP][oppFP][0] - FORMATION_MATCHUP[myFP][oppFP][1]);
-
-    // Look for a tactic already saved by this team that beats the current one against this opponent.
-    const savedTactics = me.savedTactics ?? me.team.savedTactics ?? [];
-    let savedMatch: SavedTactic | null = null;
-    let savedMatchScore = currentScore;
-    let savedMatchEdge = 0;
-    for (const t of savedTactics) {
-      const isCurrent = t.formation === me.formation && t.style === (me.tacticStyle ?? t.style);
-      if (isCurrent) continue;
-      const tFP = formationProfile(t.formation);
-      const tSP = styleProfile(t.style);
-      const [tAtt, tDef] = STYLE_MATCHUP[tSP][oppSP];
-      const [tfAtt, tfDef] = FORMATION_MATCHUP[tFP][oppFP];
-      const score = (tAtt - tDef) + (tfAtt - tfDef);
-      if (score > savedMatchScore) { savedMatchScore = score; savedMatch = t; savedMatchEdge = tAtt - tDef; }
-    }
-
-    const text = savedMatch
-      ? `Face à un profil "${TACTIC_STYLE_LABEL[oppSide.tacticStyle ?? 'possession']}", la tactique sauvegardée "${savedMatch.name}" (${savedMatch.formationLabel ?? savedMatch.formation} · ${TACTIC_STYLE_LABEL[savedMatch.style]}) ferait mieux que la tactique actuelle face à ce profil. Réglages suggérés ci-dessous pour l'affiner davantage.`
-      : favorable
-        ? `Le matchup était déjà favorable avec la tactique actuelle — aucune tactique sauvegardée ne fait mieux face à un profil "${TACTIC_STYLE_LABEL[oppSide.tacticStyle ?? 'possession']}".`
-        : `Face à un profil "${TACTIC_STYLE_LABEL[oppSide.tacticStyle ?? 'possession']}", privilégier ${formation} en ${TACTIC_STYLE_LABEL[style]} pour maximiser l'avantage tactique. Aucune tactique sauvegardée ne fait mieux que l'actuelle — envisager d'en créer une, ou ajuster manuellement avec les réglages ci-dessous.`;
-
-    counterTactic = (savedMatch || !favorable)
-      ? {
-          formation: savedMatch?.formation ?? formation,
-          style: savedMatch?.style ?? style,
-          text,
-          savedTactic: savedMatch ? { id: savedMatch.id, name: savedMatch.name } : null,
-          customMods: savedMatch ? sharpenModsForMatchup(savedMatch.style, savedMatchEdge) : customMods,
-        }
-      : null;
+  if (savedMatch) {
+    const tSP = savedTacticProfile(savedMatch);
+    counterTactic = {
+      formation: savedMatch.formation,
+      style: savedMatch.style,
+      text: `Face à ${oppLabel} en ${oppSide.formation} (${opponent.formationFamily}), ta tactique sauvegardée « ${savedMatch.name} » (${savedMatch.formationLabel ?? savedMatch.formation} · ${tSP ? STYLE_PROFILE_LABEL[tSP] : TACTIC_STYLE_LABEL[savedMatch.style]}) est une meilleure réponse — ${edgeText(savedEval)}. Réglages suggérés ci-dessous pour l'affiner.`,
+      savedTactic: { id: savedMatch.id, name: savedMatch.name },
+      customMods: sharpenModsForMatchup(savedMatch.style, oppSP && savedTacticProfile(savedMatch) ? STYLE_MATCHUP[savedTacticProfile(savedMatch)!][oppSP][0] - STYLE_MATCHUP[savedTacticProfile(savedMatch)!][oppSP][1] : 0),
+      edge: edgeOf(savedEval),
+    };
+  } else if (generic.score > current.score + 0.001) {
+    // Aucune sauvegardée ne fait mieux, mais une réponse générique existe
+    counterTactic = {
+      formation,
+      style,
+      text: `Face à ${oppLabel} en ${oppSide.formation} (${opponent.formationFamily}), privilégier un profil « ${STYLE_PROFILE_LABEL[bestProfile]} » — par ex. ${formation} en ${TACTIC_STYLE_LABEL[style]} (${edgeText(generic)}). Aucune de tes tactiques sauvegardées ne fait mieux que l'actuelle contre ce profil : envisage d'en créer une avec les réglages ci-dessous.`,
+      savedTactic: null,
+      customMods,
+      edge: edgeOf(generic),
+    };
+  } else {
+    // La tactique actuelle est déjà la meilleure réponse connue — le dire clairement.
+    counterTactic = {
+      formation: me.formation,
+      style: me.tacticStyle ?? style,
+      text: `Face à ${oppLabel} en ${oppSide.formation} (${opponent.formationFamily}), ta tactique actuelle est déjà la meilleure réponse parmi tes tactiques sauvegardées et les profils génériques — aucun changement recommandé.`,
+      savedTactic: null,
+      customMods: snapToCustomStyleGrid(getTacticMods(me.tacticStyle ?? 'possession')),
+      edge: { attack: 0, defense: 0 },
+    };
   }
 
   return {
@@ -424,6 +479,7 @@ export function generateTacticalReport(
     worstOppPlayers,
     verdict: { worked: verdictWorked, text: verdictText },
     improvements,
+    opponent,
     counterTactic,
   };
 }

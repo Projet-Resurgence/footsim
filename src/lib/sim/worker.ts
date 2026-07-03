@@ -159,7 +159,12 @@ self.onmessage = (ev: MessageEvent<Inbound>) => {
         startLoop();
       }
     } else if (msg.type === 'speed') {
-      if (state) state.speed = msg.speed;
+      if (state) {
+        state.speed = msg.speed;
+        // Sync immédiat : l'UI (Pitch, contrôles) cale ses animations sur state.speed
+        // sans attendre le prochain tick — le changement de vitesse est instantané.
+        send({ type: 'state', state });
+      }
       startLoop();
     } else if (msg.type === 'instant') {
       if (state) state.speed = 'instant';

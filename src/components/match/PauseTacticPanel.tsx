@@ -27,7 +27,7 @@ export function PauseTacticPanel({ home, away, homeSavedTactics = [], awaySavedT
   return (
     <div className="rounded-lg border border-border bg-surface p-3 shadow-subtle-sm">
       <div className="mb-2 text-xs uppercase tracking-widest text-muted">Tactique (pause)</div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {homeSavedTactics.length > 0 && (
           <div>
             <div className="mb-1 text-xs text-muted">{home.name}</div>

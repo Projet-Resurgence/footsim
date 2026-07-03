@@ -30,7 +30,7 @@ import type { StoredMatch } from '@/lib/prapi/matchBackend';
 import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary } from '@/lib/competition/types';
-import { resolveMatchTactics, resolveActiveCustomStyle, loadLocalSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
+import { resolveMatchTactics, resolveActiveCustomStyle, mergedSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
 import { rollWeather, hashSeed } from '@/lib/sim/weather';
 import { pickReferee } from '@/lib/sim/referees';
 import { updateMorale, initMorale, MORALE_DEFAULT } from '@/lib/competition/morale';
@@ -65,6 +65,7 @@ export default function CompetitionMatchLive() {
   const matchInput = useMatch((s) => s.input);
   const paused = useMatch((s) => s.paused);
   const finished = useMatch((s) => s.finished);
+  const speed = useMatch((s) => s.speed);
   const setSpeed = useMatch((s) => s.setSpeed);
   const pause = useMatch((s) => s.pause);
   const resume = useMatch((s) => s.resume);
@@ -143,10 +144,8 @@ export default function CompetitionMatchLive() {
         sessionStorage.removeItem(`footsim.tactics.${matchId}`);
 
         // Resolve pre-match tactic override (selected in PreMatchModal)
-        const homeLocalTactics = loadLocalSavedTactics(homeData.team.id);
-        const awayLocalTactics = loadLocalSavedTactics(awayData.team.id);
-        const allHomeTactics = homeLocalTactics.savedTactics.length > 0 ? homeLocalTactics.savedTactics : (homeData.team.savedTactics ?? []);
-        const allAwayTactics = awayLocalTactics.savedTactics.length > 0 ? awayLocalTactics.savedTactics : (awayData.team.savedTactics ?? []);
+        const allHomeTactics = mergedSavedTactics(homeData.team);
+        const allAwayTactics = mergedSavedTactics(awayData.team);
         const selectedHomeTactic = tacticOverride.homeId ? allHomeTactics.find((t) => t.id === tacticOverride.homeId) : undefined;
         const selectedAwayTactic = tacticOverride.awayId ? allAwayTactics.find((t) => t.id === tacticOverride.awayId) : undefined;
 
@@ -300,10 +299,8 @@ export default function CompetitionMatchLive() {
   // Load saved tactics for halftime tactic switcher
   useEffect(() => {
     if (!matchInput) return;
-    const hLocal = loadLocalSavedTactics(matchInput.home.team.id);
-    setHomeSavedTactics(hLocal.savedTactics.length > 0 ? hLocal.savedTactics : (matchInput.home.team.savedTactics ?? []));
-    const aLocal = loadLocalSavedTactics(matchInput.away.team.id);
-    setAwaySavedTactics(aLocal.savedTactics.length > 0 ? aLocal.savedTactics : (matchInput.away.team.savedTactics ?? []));
+    setHomeSavedTactics(mergedSavedTactics(matchInput.home.team));
+    setAwaySavedTactics(mergedSavedTactics(matchInput.away.team));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchInput?.home.team.id, matchInput?.away.team.id]);
 
@@ -1189,7 +1186,7 @@ export default function CompetitionMatchLive() {
   const isET = matchState.status === 'extraTimeFirst' || matchState.status === 'extraTimeHalfTime' || matchState.status === 'extraTimeSecond';
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8 space-y-6">
+    <main className="mx-auto max-w-6xl px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
       <GoalCelebration
         visible={celebration !== null}
         scoringTeam={celebration?.team ?? null}
@@ -1246,7 +1243,7 @@ export default function CompetitionMatchLive() {
             );
           })()}
           <SpeedControls
-            speed={matchState.speed}
+            speed={speed}
             paused={paused}
             finished={finished}
             onSpeed={setSpeed}

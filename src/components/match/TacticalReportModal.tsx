@@ -70,8 +70,29 @@ export function TacticalReportModal({ state, home, away, onClose }: Props) {
           </div>
         )}
 
-        <div className="p-5 space-y-5">
+        <div className="p-4 sm:p-5 space-y-5">
           <Verdict report={report} />
+
+          <Section title="Dispositif adverse" subtitle={report.oppName} icon={<IconTarget />}>
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              <div className="rounded-md border border-border bg-bg px-3 py-2">
+                <div className="text-[9px] uppercase tracking-widest text-muted">Style de jeu</div>
+                <div className="text-sm font-medium">
+                  {report.opponent.styleName}
+                  <span className="text-muted font-normal">
+                    {' '}({report.opponent.styleFamily ? `famille : ${report.opponent.styleFamily}` : 'famille inclassable'})
+                  </span>
+                </div>
+              </div>
+              <div className="rounded-md border border-border bg-bg px-3 py-2">
+                <div className="text-[9px] uppercase tracking-widest text-muted">Formation</div>
+                <div className="text-sm font-medium">
+                  {report.opponent.formation}
+                  <span className="text-muted font-normal"> ({report.opponent.formationFamily})</span>
+                </div>
+              </div>
+            </div>
+          </Section>
 
           <Section title="Points forts" icon={<IconCheck />}>
             <List items={report.strengths} tone="pos" />
@@ -119,6 +140,16 @@ export function TacticalReportModal({ state, home, away, onClose }: Props) {
                   </div>
                   <div className="text-muted">{report.counterTactic.text}</div>
                 </div>
+                {(report.counterTactic.edge.attack !== 0 || report.counterTactic.edge.defense !== 0) && (
+                  <div className="flex gap-1.5">
+                    <span className={`rounded border px-2 py-0.5 text-xs tabular-nums font-medium ${report.counterTactic.edge.attack > 0 ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border text-muted'}`}>
+                      Attaque {report.counterTactic.edge.attack >= 0 ? '+' : ''}{Math.round(report.counterTactic.edge.attack * 100)}%
+                    </span>
+                    <span className={`rounded border px-2 py-0.5 text-xs tabular-nums font-medium ${report.counterTactic.edge.defense < 0 ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border text-muted'}`}>
+                      Défense subie {report.counterTactic.edge.defense >= 0 ? '+' : ''}{Math.round(report.counterTactic.edge.defense * 100)}%
+                    </span>
+                  </div>
+                )}
                 <ModsGrid mods={report.counterTactic.customMods} />
               </div>
             </Section>

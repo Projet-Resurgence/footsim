@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { memo } from 'react';
 import type { MatchEvent } from '@/lib/sim/types';
 
 const IMPORTANT_TYPES = new Set<MatchEvent['type']>(['goal', 'yellow', 'red', 'penalty', 'penalty_saved', 'penalty_miss']);
@@ -25,27 +25,24 @@ const BG_BY_TYPE: Partial<Record<MatchEvent['type'], string>> = {
   injury:  'bg-warning/5',
 };
 
-function EventRow({ ev }: { ev: MatchEvent }) {
+// Ligne memoïsée + entrée animée en pur CSS (fs-event-in, globals.css) :
+// l'ancien framer `layout` re-mesurait TOUTES les lignes à chaque tick (FLIP)
+// et faisait saccader le direct — surtout au moment d'un but (ligne épinglée).
+const EventRow = memo(function EventRow({ ev }: { ev: MatchEvent }) {
   const border = BORDER_BY_TYPE[ev.type] ?? 'border-l-border';
   const bg = BG_BY_TYPE[ev.type] ?? '';
   const isImportant = IMPORTANT_TYPES.has(ev.type);
 
   return (
-    <motion.div
-      key={ev.id}
-      layout
-      initial={{ opacity: 0, x: 14, scale: 0.97 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-      transition={{ duration: 0.22, ease: 'easeOut' }}
-      className={`border-l-2 ${border} ${bg} pl-3 py-1 rounded-r text-sm leading-snug ${isImportant ? 'font-medium' : 'text-muted/90'}`}
+    <div
+      className={`fs-event-in border-l-2 ${border} ${bg} pl-3 py-1 rounded-r text-sm leading-snug ${isImportant ? 'font-medium' : 'text-muted/90'}`}
     >
       {ev.text}
-    </motion.div>
+    </div>
   );
-}
+});
 
-export function EventFeed({ events, full = false }: { events: MatchEvent[]; full?: boolean }) {
+function EventFeedInner({ events, full = false }: { events: MatchEvent[]; full?: boolean }) {
   const pinned = [...events].filter((ev) => IMPORTANT_TYPES.has(ev.type)).reverse();
   const others = [...events].filter((ev) => !IMPORTANT_TYPES.has(ev.type));
   // Mode complet (replay) : tout l'historique sans coupe ni limite de hauteur
@@ -59,9 +56,7 @@ export function EventFeed({ events, full = false }: { events: MatchEvent[]; full
       {pinned.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <span className="text-[10px] uppercase tracking-widest text-muted/60">Moments clés</span>
-          <AnimatePresence initial={false}>
-            {pinned.map((ev) => <EventRow key={ev.id} ev={ev} />)}
-          </AnimatePresence>
+          {pinned.map((ev) => <EventRow key={ev.id} ev={ev} />)}
         </div>
       )}
 
@@ -72,10 +67,15 @@ export function EventFeed({ events, full = false }: { events: MatchEvent[]; full
 
       {/* Flux normal — limité en live, intégral en replay */}
       <div className={`${full ? '' : 'max-h-64 overflow-y-auto'} flex flex-col gap-1.5`}>
-        <AnimatePresence initial={false}>
-          {recent.map((ev) => <EventRow key={ev.id} ev={ev} />)}
-        </AnimatePresence>
+        {recent.map((ev) => <EventRow key={ev.id} ev={ev} />)}
       </div>
     </div>
   );
 }
+
+// Re-render seulement quand un événement est ajouté (le flux est append-only).
+export const EventFeed = memo(EventFeedInner, (prev, next) =>
+  prev.full === next.full
+  && prev.events.length === next.events.length
+  && prev.events[prev.events.length - 1]?.id === next.events[next.events.length - 1]?.id,
+);
