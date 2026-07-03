@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { AccountMenu } from './AccountMenu';
+import { MobileTabBar } from './MobileTabBar';
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -23,9 +24,10 @@ export function DashboardLayout() {
           <div className="hidden md:block" />
           <AccountMenu />
         </header>
-        <main className="flex-1 px-4 md:px-10 py-6 md:py-8">
+        <main className="flex-1 px-3 sm:px-4 md:px-10 py-4 sm:py-6 md:py-8 pb-20 md:pb-8">
           <Outlet />
         </main>
+        <MobileTabBar />
       </div>
     </div>
   );

@@ -2,8 +2,8 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { useSession } from '@/stores/session';
 
-type NavItem = { to: string; label: string; end?: boolean; adminOnly?: boolean; nonAdminOnly?: boolean };
-const items: NavItem[] = [
+export type NavItem = { to: string; label: string; end?: boolean; adminOnly?: boolean; nonAdminOnly?: boolean };
+export const navItems: NavItem[] = [
   { to: '/my-team', label: 'Mon équipe', end: true },
   { to: '/dashboard', label: "Vue d'ensemble", end: true, adminOnly: true },
   { to: '/dashboard/teams', label: 'Équipes', adminOnly: true },
@@ -22,7 +22,7 @@ type SidebarProps = {
 
 export function Sidebar({ open, onClose }: SidebarProps) {
   const isAdmin = useSession((s) => s.isAdmin());
-  const filtered = items.filter((item) => (!item.adminOnly || isAdmin) && (!item.nonAdminOnly || !isAdmin));
+  const filtered = navItems.filter((item) => (!item.adminOnly || isAdmin) && (!item.nonAdminOnly || !isAdmin));
 
   const nav = (
     <>

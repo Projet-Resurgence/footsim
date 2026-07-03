@@ -43,7 +43,7 @@ export function RosterTable({ players, onSelect }: RosterProps) {
         <span className="text-sm text-muted">{rows.length} joueurs</span>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
         <table className="w-full text-sm">
           <thead className="bg-bg text-left text-muted">
             <tr>

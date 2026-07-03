@@ -4,7 +4,7 @@ export default function Postes() {
   return (
     <div className="space-y-6 max-w-sm">
       <h1 className="font-display text-3xl">Postes</h1>
-      <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
         <table className="w-full text-sm">
           <thead className="bg-bg text-left text-muted">
             <tr>

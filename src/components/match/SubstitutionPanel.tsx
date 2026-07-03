@@ -43,8 +43,13 @@ function SideSubs({
   const [showAll, setShowAll] = useState(false);
 
   const playerMap = new Map(players.map((p) => [p.id, p]));
-  const pitchPlayers = onPitch.map((id) => playerMap.get(id)).filter(Boolean) as Player[];
-  const benchPlayers = bench.map((id) => playerMap.get(id)).filter(Boolean) as Player[];
+  // dédoublonnage défensif + un joueur déjà sur le terrain ne peut pas être « entrant »
+  const pitchIds = [...new Set(onPitch)];
+  const pitchPlayers = pitchIds.map((id) => playerMap.get(id)).filter(Boolean) as Player[];
+  const benchPlayers = [...new Set(bench)]
+    .filter((id) => !pitchIds.includes(id))
+    .map((id) => playerMap.get(id))
+    .filter(Boolean) as Player[];
 
   const subsLeft = maxSubs - subsUsed;
   const outPlayer = outId ? playerMap.get(outId) : null;

@@ -280,3 +280,69 @@ describe('getTacticMods regression', () => {
     }
   });
 });
+
+describe('remplacements programmés (plannedSubs)', () => {
+  function makePlannedCtx(plannedSubs: { outId: string; inId: string; minute?: number }[]) {
+    const homePlayers = makeRoster(20, 10);
+    // banc trié par overall desc — rendre le joueur réservé le MEILLEUR du banc
+    // pour vérifier que les auto-subs de la mi-temps ne le consomment pas
+    const home = precomputeSide(homePlayers, '4-3-3', undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, plannedSubs);
+    const awayPlayers = makeRoster(20, 10).map((p) => ({ ...p, id: `a-${p.id}` }));
+    const away = precomputeSide(awayPlayers, '4-3-3');
+    const ctx: EngineCtx = {
+      home: { team: { name: 'Home' } as EngineCtx['home']['team'], players: new Map(homePlayers.map((p) => [p.id, p])), ratings: home },
+      away: { team: { name: 'Away' } as EngineCtx['away']['team'], players: new Map(awayPlayers.map((p) => [p.id, p])), ratings: away },
+      eventCounter: { v: 0 },
+    };
+    const state = initialState('m-planned', 'instant', { ...DEFAULT_RULES });
+    state.homeOnPitch = [...home.lineup];
+    state.awayOnPitch = [...away.lineup];
+    state.homeBench = [...home.bench];
+    state.awayBench = [...away.bench];
+    state.homeAvailableBench = [...home.bench];
+    state.awayAvailableBench = [...away.bench];
+    return { ctx, state };
+  }
+
+  it('un remplacement programmé à la 60e survit aux auto-subs de la mi-temps', () => {
+    // préparer: outId = un titulaire, inId = un joueur du banc (boosté meilleur overall)
+    const probe = makePlannedCtx([]);
+    const outId = probe.ctx.home.ratings.lineup.find((id) => probe.ctx.home.players.get(id)?.position !== 'GK')!;
+    const inId = probe.ctx.home.ratings.bench[0];
+    const { ctx, state } = makePlannedCtx([{ outId, inId, minute: 60 }]);
+    // booster l'entrant pour qu'il soit la cible n°1 des auto-subs
+    ctx.home.players.get(inId)!.overall = 99;
+
+    // jouer jusqu'à la fin
+    while (state.status !== 'fulltime') {
+      tick(state, ctx);
+      if (state.status === 'halftime' || state.status === 'extraTimeHalfTime') tick(state, ctx);
+    }
+
+    // le remplacement programmé a bien eu lieu : l'entrant est sur le terrain (ou a été
+    // remplacé plus tard), et l'échange out→in figure dans les événements
+    const subEvents = state.events.filter((e) => e.type === 'substitution' && e.side === 'home');
+    expect(subEvents.some((e) => e.playerId === inId && e.replacedId === outId)).toBe(true);
+    const plan = ctx.home.ratings.plannedSubs[0];
+    expect(plan.done).toBe(true);
+  });
+
+  it('les remplacements mi-temps (sans minute) utilisent tout le budget restant', () => {
+    const probe = makePlannedCtx([]);
+    const starters = probe.ctx.home.ratings.lineup.filter((id) => probe.ctx.home.players.get(id)?.position !== 'GK');
+    const bench = probe.ctx.home.ratings.bench;
+    const plans = [0, 1, 2].map((i) => ({ outId: starters[i], inId: bench[i] }));
+    const { ctx, state } = makePlannedCtx(plans);
+
+    while (state.status !== 'fulltime') {
+      tick(state, ctx);
+      if (state.status === 'halftime' || state.status === 'extraTimeHalfTime') tick(state, ctx);
+    }
+    // les 3 plans mi-temps exécutés (budget 5 > quota auto de 2)
+    expect(ctx.home.ratings.plannedSubs.every((p) => p.done)).toBe(true);
+    const subEvents = state.events.filter((e) => e.type === 'substitution' && e.side === 'home');
+    for (const p of plans) {
+      expect(subEvents.some((e) => e.playerId === p.inId && e.replacedId === p.outId)).toBe(true);
+    }
+  });
+});

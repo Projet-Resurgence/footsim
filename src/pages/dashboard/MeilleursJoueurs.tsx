@@ -82,7 +82,7 @@ export default function MeilleursJoueurs() {
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
         <table className="w-full text-sm">
           <thead className="bg-bg text-left text-xs text-muted uppercase tracking-wide">
             <tr>

@@ -122,12 +122,12 @@ export function StartingXI({ players, formation, lineup, positionMap, onSaveAuto
       </div>
 
       {/* XI titulaires */}
-      <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
         <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted flex items-center justify-between">
           <span>XI titulaires · {formation}</span>
           <span className="text-accent font-mono">{starters.length}/11</span>
         </div>
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[430px] text-sm">
           <thead className="bg-bg text-left text-muted text-xs border-t border-border">
             <tr>
               <th className="w-8 px-3 py-1.5"></th>
@@ -165,11 +165,11 @@ export function StartingXI({ players, formation, lineup, positionMap, onSaveAuto
 
       {/* Banc */}
       {bench.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
           <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">
             Banc ({bench.length})
           </div>
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[430px] text-sm">
             <thead className="bg-bg text-left text-muted text-xs border-t border-border">
               <tr>
                 <th className="px-3 py-1.5 font-medium">Poste</th>
@@ -206,12 +206,12 @@ export function StartingXI({ players, formation, lineup, positionMap, onSaveAuto
 
       {/* Reste de l'effectif */}
       {rest.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
           <div className="bg-bg px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted flex items-center justify-between">
             <span>Reste de l'effectif ({rest.length})</span>
             <span className="text-muted/60">{Math.min(restPage * PAGE_SIZE, rest.length)}/{rest.length}</span>
           </div>
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[430px] text-sm">
             <thead className="bg-bg text-left text-muted text-xs border-t border-border">
               <tr>
                 <th className="px-3 py-1.5 font-medium">Poste</th>

@@ -597,48 +597,58 @@ function performAutoSubs(state: MatchState, ctx: EngineCtx, side: 'home' | 'away
   const subsUsed = side === 'home' ? state.homeSubs : state.awaySubs;
   if (subsUsed >= state.rules.maxSubs) return;
 
-  const numToMake = Math.min(2, state.rules.maxSubs - subsUsed);
   const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
   const players = side === 'home' ? ctx.home.players : ctx.away.players;
   const benchIds = side === 'home' ? ctx.home.ratings.bench : ctx.away.ratings.bench;
   const plannedSubs = side === 'home' ? ctx.home.ratings.plannedSubs : ctx.away.ratings.plannedSubs;
 
-  // Apply planned halftime subs first (those without a specific minute)
+  const budget = state.rules.maxSubs - subsUsed;
+
+  // Apply planned halftime subs first (those without a specific minute) — they use
+  // the full remaining budget, not just the auto-sub quota of 2.
   const halftimePlanned = plannedSubs.filter((s) => !s.done && s.minute === undefined);
   let made = 0;
   for (const plan of halftimePlanned) {
-    if (made >= numToMake || subsUsed + made >= state.rules.maxSubs) break;
+    if (made >= budget) break;
     if (executeSub(state, ctx, side, plan.outId, plan.inId)) {
       plan.done = true;
       made++;
     }
   }
 
-  // Fill remaining slots with automatic subs (lowest overall non-GK)
-  if (made < numToMake) {
-    const remaining = numToMake - made;
+  // Automatic filler subs must NOT sabotage the coach's plan:
+  //  - keep sub slots in reserve for minute-based planned subs still to come,
+  //  - never bring on a player reserved as the `inId` of a pending planned sub
+  //    (he must still be on the bench when his minute arrives).
+  const pendingMinutePlanned = plannedSubs.filter((s) => !s.done && s.minute !== undefined).length;
+  const autoCap = Math.min(2 - Math.min(made, 2), budget - made - pendingMinutePlanned);
+  if (autoCap > 0) {
+    const reservedIns = new Set(
+      plannedSubs.filter((s) => !s.done).map((s) => s.inId),
+    );
     const availBench = benchIds
+      .filter((id) => !reservedIns.has(id))
       .map((id) => players.get(id))
       .filter((p): p is Player => !!p)
       .sort((a, b) => b.overall - a.overall);
-    if (!availBench.length) { if (side === 'home') state.homeSubs += made; else state.awaySubs += made; return; }
 
     const starters = onPitch
       .map((id) => players.get(id))
       .filter((p): p is Player => !!p && p.position !== 'GK')
       .sort((a, b) => a.overall - b.overall);
 
+    let autoMade = 0;
     for (const out of starters) {
-      if (made >= numToMake || !availBench.length) break;
+      if (autoMade >= autoCap || !availBench.length) break;
       // Skip if this player has a planned sub (different minute) — don't replace them automatically
       const hasPlanned = plannedSubs.some((s) => !s.done && s.outId === out.id);
       if (hasPlanned) continue;
       const family = posFamily(out.position);
       const compatIdx = availBench.findIndex((p) => family.includes(p.position));
       const sub = compatIdx >= 0 ? availBench.splice(compatIdx, 1)[0] : availBench.shift()!;
-      if (executeSub(state, ctx, side, out.id, sub.id)) made++;
+      if (executeSub(state, ctx, side, out.id, sub.id)) autoMade++;
     }
-    void remaining;
+    made += autoMade;
   }
 
   if (side === 'home') state.homeSubs += made;
@@ -649,6 +659,8 @@ function applyPlannedSubsByMinute(state: MatchState, ctx: EngineCtx, side: 'home
   const subsUsed = side === 'home' ? state.homeSubs : state.awaySubs;
   if (subsUsed >= state.rules.maxSubs) return;
   const plannedSubs = side === 'home' ? ctx.home.ratings.plannedSubs : ctx.away.ratings.plannedSubs;
+  const onPitch = side === 'home' ? state.homeOnPitch : state.awayOnPitch;
+  const benchIds = side === 'home' ? ctx.home.ratings.bench : ctx.away.ratings.bench;
   const pending = plannedSubs.filter((s) => !s.done && s.minute !== undefined && s.minute <= state.minute);
   let made = 0;
   for (const plan of pending) {
@@ -656,6 +668,10 @@ function applyPlannedSubsByMinute(state: MatchState, ctx: EngineCtx, side: 'home
     if (executeSub(state, ctx, side, plan.outId, plan.inId)) {
       plan.done = true;
       made++;
+    } else if (!onPitch.includes(plan.outId) || !benchIds.includes(plan.inId)) {
+      // Devenu impossible (sortant expulsé/blessé/déjà remplacé, entrant consommé) —
+      // consommer la règle pour ne pas réserver un slot de remplacement à l'infini.
+      plan.done = true;
     }
   }
   if (side === 'home') state.homeSubs += made;
@@ -1055,6 +1071,11 @@ function applyInjury(state: MatchState, ctx: EngineCtx, side: 'home' | 'away', p
       state.awayAvailableBench = state.awayAvailableBench.filter((id) => id !== sub.id);
       state.awaySubs++;
     }
+    // Retirer AUSSI l'entrant du banc moteur — sinon un remplacement ultérieur
+    // (auto/programmé/manuel) peut le faire entrer une 2ᵉ fois : joueur en double
+    // sur le terrain et dans le panneau de remplacements.
+    const bIdx = benchIds.indexOf(sub.id);
+    if (bIdx !== -1) benchIds.splice(bIdx, 1);
     pushEvent(state, ctx, { type: 'substitution', side, playerId: sub.id, ballPos: ZONE.centre },
       teamName, `${sub.firstName} ${sub.lastName} ↔ ${player.firstName} ${player.lastName} (blessure)`);
   } else {
