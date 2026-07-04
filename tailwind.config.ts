@@ -8,10 +8,12 @@ export default {
       colors: {
         bg: 'var(--bg)',
         surface: 'var(--surface)',
+        surface2: 'var(--surface-2)',
         text: 'var(--text)',
         muted: 'var(--muted)',
         border: 'var(--border)',
         accent: 'rgb(var(--accent-rgb) / <alpha-value>)',
+        gold: 'rgb(var(--gold-rgb) / <alpha-value>)',
         danger: 'rgb(var(--danger-rgb) / <alpha-value>)',
         warning: 'rgb(var(--warning-rgb) / <alpha-value>)',
       },

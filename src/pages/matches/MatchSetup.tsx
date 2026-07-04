@@ -171,7 +171,7 @@ export default function MatchSetup() {
         </Button>
       </div>
       <div>
-        <h1 className="font-display text-4xl">Lancer un match</h1>
+        <h1 className="font-display text-3xl sm:text-4xl">Lancer un match</h1>
         <p className="text-muted">Choisis les deux équipes et leur tactique.</p>
       </div>
 

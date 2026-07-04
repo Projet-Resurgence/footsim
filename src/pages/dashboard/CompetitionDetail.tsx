@@ -587,7 +587,7 @@ export default function CompetitionDetail() {
             ? <Link to={backTo} className="text-sm text-muted hover:text-text">{backLabel}</Link>
             : <button onClick={() => setRoundDraw(null)} className="text-sm text-muted hover:text-text">← Retour</button>
           }
-          <h1 className="mt-2 font-display text-4xl">
+          <h1 className="mt-2 font-display text-3xl sm:text-4xl">
             {roundDraw.isScheduleDraw ? 'Tirage du calendrier LPM' : `Tirage — Journée ${roundDraw.round}`}
           </h1>
           <p className="text-muted text-sm mt-1">
@@ -629,7 +629,7 @@ export default function CompetitionDetail() {
       <div className="max-w-4xl space-y-6">
         <div>
           <Link to={backTo} className="text-sm text-muted hover:text-text">{backLabel}</Link>
-          <h1 className="mt-2 font-display text-4xl">Tirage — Barrages A/R</h1>
+          <h1 className="mt-2 font-display text-3xl sm:text-4xl">Tirage — Barrages A/R</h1>
           <p className="text-muted text-sm mt-1">{current.name}</p>
         </div>
         <LPMDrawCeremony
@@ -680,7 +680,7 @@ export default function CompetitionDetail() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link to={backTo} className="text-sm text-muted hover:text-text">{backLabel}</Link>
-          <h1 className="mt-2 font-display text-4xl">{current.name}</h1>
+          <h1 className="mt-2 font-display text-3xl sm:text-4xl">{current.name}</h1>
           <p className="text-muted text-sm mt-1 flex items-center gap-2 flex-wrap">
             <span>
               {current.format === 'league' ? 'Championnat'

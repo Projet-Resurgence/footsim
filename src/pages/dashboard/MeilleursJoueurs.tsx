@@ -62,7 +62,7 @@ export default function MeilleursJoueurs() {
   return (
     <div className="max-w-5xl space-y-6">
       <div>
-        <h1 className="font-display text-4xl">Meilleurs joueurs</h1>
+        <h1 className="font-display text-3xl sm:text-4xl">Meilleurs joueurs</h1>
         <p className="mt-1 text-muted text-sm">{entries.length} joueurs chargés depuis toutes les équipes.</p>
       </div>
 

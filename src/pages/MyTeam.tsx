@@ -319,7 +319,7 @@ export default function MyTeam() {
       {/* Tactique */}
       {tab === 'tactique' && (
         <div className="rounded-lg border border-border bg-surface p-5 space-y-5">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted">Tactiques sauvegardées en base de données.</p>
             <div className="flex gap-2">
               <Button size="sm" variant="ghost" onClick={exportTactics}>↑ Exporter</Button>

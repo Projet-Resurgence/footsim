@@ -20,7 +20,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="mb-2 font-display text-4xl">Vue d'ensemble</h1>
+        <h1 className="mb-2 font-display text-3xl sm:text-4xl">Vue d'ensemble</h1>
         <p className="text-muted">Bienvenue dans FootSim.</p>
       </div>
 

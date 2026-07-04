@@ -441,10 +441,10 @@ async function applyNewStrength(strength: number) {
         ← Équipes
       </button>
       {/* Header */}
-      <div className="flex items-start gap-6">
-        <img src={team.flag} alt="" className="h-24 w-24 object-cover" />
+      <div className="flex flex-col sm:flex-row items-start gap-4 sm:gap-6">
+        <img src={team.flag} alt="" className="h-20 w-20 sm:h-24 sm:w-24 object-cover" />
         <div className="flex-1 space-y-2">
-          <h1 className="font-display text-4xl">{team.name}</h1>
+          <h1 className="font-display text-3xl sm:text-4xl">{team.name}</h1>
           <p className="text-sm text-muted">
             {team.cultures && team.cultures.length > 1
               ? team.cultures.map((cw) => CULTURE_LABEL[cw.culture]).join(', ')
@@ -506,20 +506,20 @@ async function applyNewStrength(strength: number) {
 
 
       {/* Tab bar */}
-      <div className="flex items-center gap-1 border-b border-border">
+      <div className="flex items-center gap-1 border-b border-border overflow-x-auto">
         {(['roster', 'tactique', 'entraineur', 'palmares', 'historique', 'stats'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${tab === t ? 'border-b-2 border-accent text-accent' : 'text-muted hover:text-text'}`}
+            className={`shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 text-sm font-medium transition-colors ${tab === t ? 'border-b-2 border-accent text-accent' : 'text-muted hover:text-text'}`}
           >
             {t === 'roster' ? 'Roster' : t === 'tactique' ? 'Tactique' : t === 'entraineur' ? 'Entraîneur' : t === 'palmares' ? 'Palmarès' : t === 'historique' ? 'Historique' : 'Statistiques individuelles'}
           </button>
         ))}
-        <div className="ml-auto">
+        <div className="ml-auto shrink-0">
           <button
             onClick={openInfos}
-            className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${tab === 'infos' ? 'text-accent' : 'text-muted hover:text-text'}`}
+            className={`flex items-center gap-1.5 whitespace-nowrap px-3 py-2 text-sm transition-colors ${tab === 'infos' ? 'text-accent' : 'text-muted hover:text-text'}`}
             title="Paramètres de l'équipe"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

@@ -15,7 +15,7 @@ export function StandingsTable({ standings, teams, highlightCount, softHighlight
   const sorted = sortStandings(standings);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+    <div className="overflow-x-auto rounded-lg border border-border bg-surface">
       {title && (
         <div className="border-b border-border px-4 py-2 text-sm font-semibold">{title}</div>
       )}

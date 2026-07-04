@@ -141,7 +141,7 @@ export default function Competitions() {
     return (
       <div className="space-y-8">
         <div>
-          <h1 className="mb-1 font-display text-4xl">Compétitions</h1>
+          <h1 className="mb-1 font-display text-3xl sm:text-4xl">Compétitions</h1>
           <p className="text-muted">Ligues, coupes, tournois administrés par l'organisateur.</p>
         </div>
         {loading ? (
@@ -164,9 +164,9 @@ export default function Competitions() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="mb-1 font-display text-4xl">Compétitions</h1>
+          <h1 className="mb-1 font-display text-3xl sm:text-4xl">Compétitions</h1>
           <p className="text-muted">Ligues, coupes, tournois à groupes.</p>
         </div>
         <Link to="/dashboard/competitions/new">

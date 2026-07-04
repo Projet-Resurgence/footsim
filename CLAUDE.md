@@ -317,6 +317,10 @@ Triggered at halftime transition (`status: halftime → secondHalf`). Per side: 
 
 `btoa` is Latin-1 only. Names with accents and event emojis (⚽🟨🟥🧤) blow up. `lib/github/api.ts` exposes `utf8ToBase64` / `base64ToUtf8` using `TextEncoder`/`TextDecoder`. **Use only those for content payloads** — never raw `btoa`/`atob` for user data.
 
+## Design system
+
+Full spec in `docs/DESIGN_SYSTEM.md` — tokens (« stade en nocturne » : vert pelouse + or trophée), typo Fraunces/Inter, variantes Button, patterns responsive/mobile (MobileTabBar FAB Match, onglets scrollables, cibles 44px, `overflow-x-clip` sur main), règles d'animation (pas de boucle framer infinie). À respecter pour toute nouvelle vue.
+
 ## Theme
 
 `html.dark` toggled by `lib/theme.ts` based on user local hour (`6h-19h` day, else night). CSS vars defined in `src/styles/globals.css` for `bg, surface, text, muted, border, accent, danger, warning, pitch, pitch-line`. Pitch SVG uses `var(--pitch)`/`var(--pitch-line)`.

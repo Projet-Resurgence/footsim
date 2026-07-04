@@ -16,7 +16,7 @@ export default function Settings() {
   return (
     <div className="max-w-2xl space-y-10">
       <div>
-        <h1 className="mb-6 font-display text-4xl">Réglages</h1>
+        <h1 className="mb-6 font-display text-3xl sm:text-4xl">Réglages</h1>
       </div>
 
       {/* Profil Discord */}

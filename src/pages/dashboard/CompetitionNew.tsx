@@ -409,7 +409,7 @@ export default function CompetitionNew() {
   return (
     <div className="max-w-2xl space-y-8">
       <div>
-        <h1 className="mb-1 font-display text-4xl">Nouvelle compétition</h1>
+        <h1 className="mb-1 font-display text-3xl sm:text-4xl">Nouvelle compétition</h1>
         <p className="text-muted">Configure le format et les équipes participantes.</p>
       </div>
 

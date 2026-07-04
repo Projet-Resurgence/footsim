@@ -27,7 +27,7 @@ export default function Simulation() {
   return (
     <div className="max-w-3xl space-y-8">
       <div>
-        <h1 className="font-display text-4xl">Comment fonctionne la simulation</h1>
+        <h1 className="font-display text-3xl sm:text-4xl">Comment fonctionne la simulation</h1>
         <p className="mt-2 text-muted">Documentation du moteur probabiliste et du système d'entraîneurs.</p>
       </div>
 

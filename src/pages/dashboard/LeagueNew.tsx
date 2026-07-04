@@ -65,7 +65,7 @@ export default function LeagueNew() {
 
   return (
     <div className="max-w-lg space-y-8">
-      <h1 className="font-display text-4xl">Nouveau championnat</h1>
+      <h1 className="font-display text-3xl sm:text-4xl">Nouveau championnat</h1>
 
       <section className="space-y-5 rounded-lg border border-border bg-surface p-6">
         <label className="block text-sm">

@@ -1,7 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 
-type Variant = 'primary' | 'ghost' | 'danger';
+type Variant = 'primary' | 'ghost' | 'danger' | 'outline' | 'soft' | 'gold';
 type Size = 'sm' | 'md' | 'lg';
 
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -10,12 +10,16 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const base =
-  'inline-flex items-center justify-center font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+  'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-150 ' +
+  'active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 select-none';
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-accent text-white hover:bg-accent/90',
+  primary: 'bg-accent text-white hover:bg-accent/90 shadow-sm shadow-accent/25',
   ghost: 'bg-transparent text-text hover:bg-border/60',
-  danger: 'bg-danger text-white hover:bg-danger/90',
+  danger: 'bg-danger text-white hover:bg-danger/90 shadow-sm shadow-danger/20',
+  outline: 'bg-transparent border border-border text-text hover:border-accent/60 hover:text-accent',
+  soft: 'bg-accent/10 text-accent hover:bg-accent/20',
+  gold: 'bg-gold text-white hover:bg-gold/90 shadow-sm shadow-gold/25',
 };
 
 const sizes: Record<Size, string> = {

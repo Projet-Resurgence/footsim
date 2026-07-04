@@ -174,7 +174,7 @@ export default function PlaySetup() {
         </Button>
       </div>
       <div>
-        <h1 className="font-display text-4xl">Jouer un match</h1>
+        <h1 className="font-display text-3xl sm:text-4xl">Jouer un match</h1>
         <p className="text-muted">Choisis ton adversaire et lance la simulation.</p>
       </div>
 

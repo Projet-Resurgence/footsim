@@ -331,7 +331,7 @@ export default function ClassementsCMF({ embedded }: { embedded?: boolean }) {
       {!embedded && (
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="font-display text-4xl">Classements CMF</h1>
+            <h1 className="font-display text-3xl sm:text-4xl">Classements CMF</h1>
             <p className="mt-1 text-muted text-sm">
               Classements officiels de la Confédération Mondiale du Football.
             </p>

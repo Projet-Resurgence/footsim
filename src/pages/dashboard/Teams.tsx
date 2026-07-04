@@ -20,7 +20,7 @@ export default function Teams() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-4xl">Équipes</h1>
+        <h1 className="font-display text-3xl sm:text-4xl">Équipes</h1>
         <Link to="/dashboard/teams/new">
           <Button>+ Nouvelle équipe</Button>
         </Link>

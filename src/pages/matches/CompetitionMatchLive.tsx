@@ -1354,7 +1354,7 @@ export default function CompetitionMatchLive() {
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.6 }}
-                className="font-display text-4xl text-white"
+                className="font-display text-3xl sm:text-4xl text-white"
               >
                 {winnerTeamId === matchInput.home.team.id ? matchInput.home.team.name : matchInput.away.team.name}
               </motion.div>

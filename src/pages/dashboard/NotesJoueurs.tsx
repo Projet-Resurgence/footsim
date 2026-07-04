@@ -2,7 +2,7 @@ export default function NotesJoueurs() {
   return (
     <div className="max-w-3xl space-y-10">
       <div>
-        <h1 className="font-display text-4xl">Calcul des notes joueurs</h1>
+        <h1 className="font-display text-3xl sm:text-4xl">Calcul des notes joueurs</h1>
         <p className="mt-2 text-muted">
           Chaque joueur a une note globale (<strong>Overall</strong>) entre 1 et 100, calculée depuis ses statistiques individuelles selon son poste.
         </p>

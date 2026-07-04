@@ -3,35 +3,43 @@
 @tailwind utilities;
 
 :root {
-  --bg: #FAFAF8;
+  --bg: #F7F7F3;
   --surface: #FFFFFF;
-  --text: #1A1A1A;
-  --muted: #8A8A85;
-  --border: #E8E6E1;
-  --accent: #1F8B4C;
-  --accent-rgb: 31 139 76;
+  --surface-2: #F1F1EB;
+  --text: #17181A;
+  --muted: #7D7F7A;
+  --border: #E5E3DC;
+  --accent: #157A43;
+  --accent-rgb: 21 122 67;
+  --gold: #B8860B;
+  --gold-rgb: 184 134 11;
   --danger: #C73E3E;
   --danger-rgb: 199 62 62;
   --warning: #D9A93C;
   --warning-rgb: 217 169 60;
   --pitch: #1F8B4C;
   --pitch-line: rgba(255,255,255,0.7);
+  --header-blur: rgba(247,247,243,0.82);
 }
 
 html.dark {
-  --bg: #0E1014;
-  --surface: #15181F;
+  --bg: #0C0F13;
+  --surface: #141820;
+  --surface-2: #1B202B;
   --text: #F2F2EE;
   --muted: #8A8E97;
-  --border: #232730;
+  --border: #242936;
   --accent: #2FAE65;
   --accent-rgb: 47 174 101;
+  --gold: #E0B85A;
+  --gold-rgb: 224 184 90;
   --danger: #E26A6A;
   --danger-rgb: 226 106 106;
   --warning: #E0B85A;
   --warning-rgb: 224 184 90;
   --pitch: #154d2c;
   --pitch-line: rgba(255,255,255,0.45);
+  --header-blur: rgba(12,15,19,0.78);
 }
 
 html, body { transition: background-color 400ms ease, color 400ms ease; }
@@ -51,6 +59,49 @@ body {
 button:focus-visible, a:focus-visible, input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ── Scrollbars discrets ── */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Carte standard (surface + bord + élévation douce) ── */
+.fs-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.fs-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.07); }
+
+/* ── Tableaux : défilement horizontal contenu sur mobile ── */
+.fs-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 12px;
+}
+
+/* ── Mobile : cibles tactiles confortables (≥ 44 px) ── */
+@media (pointer: coarse) {
+  button, [role="button"], a.fs-touch, input, select, textarea {
+    min-height: 44px;
+  }
+  input[type="checkbox"], input[type="radio"], input[type="range"], input[type="color"] {
+    min-height: 0;
+    min-width: 18px;
+  }
+  button.fs-compact, .fs-compact button, .fs-compact input, .fs-compact select {
+    min-height: 0;
+  }
+}
+
+/* ── Mobile : tables plus denses, titres recalibrés ── */
+@media (max-width: 640px) {
+  table { font-size: 0.8125rem; }
+  th, td { padding-left: 0.5rem; padding-right: 0.5rem; }
 }
 
 /* Apparition douce du contenu — évite les « pops » brutaux au chargement.
@@ -101,6 +152,17 @@ main > *,
 }
 .fs-wiggle { animation: fs-wiggle 1.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .fs-wiggle { animation: none; } }
+
+/* Flottement doux des points-joueurs de la page d'accueil — CSS pur (pas de rAF JS) */
+@keyframes fs-float {
+  0%   { transform: translate(0, 0) scale(1); }
+  25%  { transform: translate(2px, -6px) scale(1.12); }
+  50%  { transform: translate(-2px, 2px) scale(0.94); }
+  75%  { transform: translate(1px, -3px) scale(1.05); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+.fs-float { animation: fs-float 5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .fs-float { animation: none; } }
 
 /* Entrée des lignes du flux d'événements — pur CSS, une seule fois par ligne */
 @keyframes fs-event-in {

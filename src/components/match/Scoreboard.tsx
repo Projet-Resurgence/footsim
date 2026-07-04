@@ -31,62 +31,72 @@ export function Scoreboard({ state, home, away, homeFormation, awayFormation, le
   const aggAway = leg1Score ? leg1Score.away + state.score.away : null;
 
   return (
-    <div className="flex items-center justify-between gap-3 sm:gap-6 rounded-lg border border-border bg-surface p-3 sm:p-5 shadow-subtle-sm">
-      <Side team={home} score={state.score.home} side="left" formation={homeFormation} />
-      <div className="flex flex-col items-center">
-        <AnimatePresence mode="popLayout">
-          <motion.div
-            key={state.score.home + '-' + state.score.away}
-            initial={{ scale: 0.85, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.85, opacity: 0 }}
-            className="font-display text-3xl tabular-nums sm:text-4xl md:text-5xl"
-          >
-            {state.score.home} – {state.score.away}
-          </motion.div>
-        </AnimatePresence>
-        <div className="mt-1 text-xs uppercase tracking-widest text-muted">
-          {minuteLabel(state)}{periodLabel(state)}
+    <div className="rounded-lg border border-border bg-surface shadow-subtle-sm">
+      <div className="flex items-start sm:items-center justify-between gap-2 sm:gap-6 p-3 sm:p-5">
+        <Side team={home} score={state.score.home} side="left" formation={homeFormation} />
+        <div className="flex flex-col items-center shrink-0 pt-1 sm:pt-0">
+          <AnimatePresence mode="popLayout">
+            <motion.div
+              key={state.score.home + '-' + state.score.away}
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.85, opacity: 0 }}
+              className="font-display text-3xl tabular-nums sm:text-4xl md:text-5xl whitespace-nowrap"
+            >
+              {state.score.home} – {state.score.away}
+            </motion.div>
+          </AnimatePresence>
+          <div className="mt-1 text-[11px] sm:text-xs uppercase tracking-widest text-muted whitespace-nowrap">
+            {minuteLabel(state)}{periodLabel(state)}
+          </div>
+          {leg1Score && (
+            <div className="mt-2 flex flex-col items-center gap-0.5">
+              <div className="text-xs text-muted">
+                Aller : {leg1Score.home} – {leg1Score.away}
+              </div>
+              <div className="text-xs font-medium text-accent">
+                Cumul : {aggHome} – {aggAway}
+              </div>
+            </div>
+          )}
         </div>
-        {state.weather && (
-          <div className="mt-1 text-[11px] text-muted">
-            {WEATHER_LABEL[state.weather.kind]} · {state.weather.tempC}°C
-          </div>
-        )}
-        {state.referee && (
-          <div
-            className="mt-0.5 text-[10px] text-muted/80"
-            title={`Fautes ×${state.referee.foulStrictness} · Jaunes ×${state.referee.cardStrictness} · Rouges ×${state.referee.redTendency} · Penalties ×${state.referee.penaltyTendency}`}
-          >
-            Arbitre : {state.referee.name} ({refereeTemperament(state.referee)})
-          </div>
-        )}
-        {leg1Score && (
-          <div className="mt-2 flex flex-col items-center gap-0.5">
-            <div className="text-xs text-muted">
-              Aller : {leg1Score.home} – {leg1Score.away}
-            </div>
-            <div className="text-xs font-medium text-accent">
-              Cumul : {aggHome} – {aggAway}
-            </div>
-          </div>
-        )}
+        <Side team={away} score={state.score.away} side="right" formation={awayFormation} />
       </div>
-      <Side team={away} score={state.score.away} side="right" formation={awayFormation} />
+      {/* Ligne méta pleine largeur : météo + arbitre ne compressent plus les noms d'équipes */}
+      {(state.weather || state.referee) && (
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-0.5 border-t border-border/60 px-3 py-1.5 text-center text-[11px] text-muted">
+          {state.weather && (
+            <span className="whitespace-nowrap">
+              {WEATHER_LABEL[state.weather.kind]} · {state.weather.tempC}°C
+            </span>
+          )}
+          {state.referee && (
+            <span
+              title={`Fautes ×${state.referee.foulStrictness} · Jaunes ×${state.referee.cardStrictness} · Rouges ×${state.referee.redTendency} · Penalties ×${state.referee.penaltyTendency}`}
+            >
+              Arbitre : {state.referee.name} ({refereeTemperament(state.referee)})
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function Side({ team, score, side, formation }: { team: Team; score: number; side: 'left' | 'right'; formation?: string }) {
   return (
-    <div className={`flex min-w-0 items-center gap-3 ${side === 'right' ? 'flex-row-reverse text-right' : ''}`}>
+    <div
+      className={`flex min-w-0 flex-1 flex-col items-center gap-1 text-center sm:flex-none sm:flex-row sm:gap-3 ${
+        side === 'right' ? 'sm:flex-row-reverse sm:text-right' : 'sm:text-left'
+      }`}
+    >
       {team.flag ? (
         <img src={team.flag} alt="" className="h-9 w-9 sm:h-12 sm:w-12 object-cover shrink-0" />
       ) : (
         <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-md bg-border shrink-0" />
       )}
-      <div className="min-w-0">
-        <div className="truncate font-display text-sm sm:text-lg">{team.name}</div>
+      <div className="min-w-0 w-full sm:w-auto">
+        <div className="break-words font-display text-xs leading-tight line-clamp-2 sm:truncate sm:text-lg">{team.name}</div>
         {formation && <div className="text-[10px] sm:text-xs font-mono text-accent">{formation}</div>}
         <div className="hidden sm:block text-xs text-muted">Score : {score}</div>
       </div>

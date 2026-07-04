@@ -188,7 +188,7 @@ export default function LeagueDetail() {
             </Link>
             {' '}/ Championnats
           </div>
-          <h1 className="font-display text-4xl">{league.name}</h1>
+          <h1 className="font-display text-3xl sm:text-4xl">{league.name}</h1>
           <p className="mt-1 text-sm text-muted">
             {league.divisions.length} division{league.divisions.length > 1 ? 's' : ''} · {league.divisions.reduce((s, d) => s + d.clubs.length, 0)} clubs
             {league.season ? ` · Saison ${league.season.status}` : ''}
@@ -219,7 +219,7 @@ export default function LeagueDetail() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
+      <div className="flex gap-1 border-b border-border overflow-x-auto">
         {(['clubs', 'saison', 'params'] as const).map((t) => (
           <button
             key={t}
