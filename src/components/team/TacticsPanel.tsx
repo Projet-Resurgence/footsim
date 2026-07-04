@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CustomTacticStyle, Formation, PlanBRule, PlanBTrigger, PlannedSub, Player, Position, SavedTactic, SetPieceTakers, TacticStyle, Team, TeamTactics } from '@/lib/types';
-import { PLAN_B_TRIGGER_LABEL, POSITION_LABEL, TACTIC_STYLE_LABEL } from '@/lib/types';
+import { PLAN_B_TRIGGER_LABEL, POSITION_LABEL, TACTIC_STYLE_LABEL, shortPlayerName } from '@/lib/types';
 import { useTeams } from '@/stores/teams';
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 
@@ -642,7 +642,7 @@ export function TacticsPanel({ team, players, onSave, onSaveStyles }: Props) {
                       {filled ? (POSITION_LABEL[displayPos] ?? displayPos) : '+'}
                     </div>
                     <span className="max-w-[56px] truncate rounded bg-black/40 px-0.5 text-center text-[9px] leading-tight text-white/90">
-                      {filled ? player.lastName : POSITION_LABEL[displayPos] ?? slot.pos}
+                      {filled ? shortPlayerName(player) : POSITION_LABEL[displayPos] ?? slot.pos}
                     </span>
                   </button>
                 );

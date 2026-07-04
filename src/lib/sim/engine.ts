@@ -336,7 +336,7 @@ function injectGoal(state: MatchState, ctx: EngineCtx, side: 'home' | 'away'): v
   const fin = scorer?.stats.technical.finishing ?? 10;
   const com = scorer?.stats.mental.composure ?? 10;
   const gkVal = oppGk?.overall ?? 35; // pas de gardien = joueur de champ improvisé dans les buts
-  const xg = clamp(sigmoid((fin + com - gkVal * 0.5) / 8), 0.04, 0.75);
+  const xg = clamp(sigmoid((fin + com - 2 * (gkVal / 5)) / 8 - 1.0) * 0.38, 0.03, 0.60);
   state.xg[side] = Math.round((state.xg[side] + xg) * 100) / 100;
 
   if (effectiveAssist?.id) {
@@ -475,10 +475,17 @@ function resolveShot(
   const fin = shooter?.stats.technical.finishing ?? 10;
   const com = shooter?.stats.mental.composure ?? 10;
   const gkVal = oppGk?.overall ?? 35; // pas de gardien = joueur de champ improvisé dans les buts
-  const pGoal = clamp(sigmoid((fin + com - gkVal * 0.5) / 8) * pGoalMult, 0.04, 0.75);
-  state.xg[possessing] = Math.round((state.xg[possessing] + pGoal) * 100) / 100;
+  // gk ramené à l'échelle 1-20 des stats joueurs — le niveau du gardien pèse
+  // réellement (avant : échelle 1-100 mélangée, GK quasi sans effet relatif)
+  const gk20 = gkVal / 5;
+  const pGoal = clamp(sigmoid((fin + com - 2 * gk20) / 8 - 1.0) * pGoalMult, 0.03, 0.60);
   const ballZone = zone ?? (possessing === 'home' ? ZONE.awayBox : ZONE.homeBox);
-  const onTarget = chance(0.55 + weatherFx(state.weather).onTargetDelta);
+  // ~38% des tirs cadrés (réel ~35%) — la météo module
+  const pOnTarget = clamp(0.38 + weatherFx(state.weather).onTargetDelta, 0.15, 0.75);
+  // xG = probabilité RÉELLE de but de ce tir (cadrage inclus) — avant, le pGoal
+  // complet était compté même pour un tir non cadré → xG ~2.6× trop haut
+  state.xg[possessing] = Math.round((state.xg[possessing] + pOnTarget * pGoal) * 100) / 100;
+  const onTarget = chance(pOnTarget);
   if (onTarget) {
     state.shotsOnTarget[possessing]++;
     if (chance(pGoal)) {
@@ -543,11 +550,14 @@ function tryPenaltyShot(
   const fin = shooter?.stats.technical.finishing ?? 10;
   const com = shooter?.stats.mental.composure ?? 10;
   const gkVal = oppGk?.overall ?? 35; // pas de gardien = joueur de champ improvisé dans les buts
-  const pGoal = clamp(sigmoid((fin + com - gkVal * 0.5) / 8) * 1.8, 0.04, 0.75);
-  state.xg[possessing] = Math.round((state.xg[possessing] + pGoal) * 100) / 100;
+  const gk20 = gkVal / 5;
+  // Conversion péno réelle ~76% (avant : 0.55 cadré × 0.75 ≈ 41%, irréel)
+  const pGoal = clamp(sigmoid((fin + com - 2 * gk20) / 6 + 1.1), 0.55, 0.90);
+  const pOnTarget = 0.94; // un péno hors cadre reste rare
+  state.xg[possessing] = Math.round((state.xg[possessing] + pOnTarget * pGoal) * 100) / 100;
   const ballZone = possessing === 'home' ? ZONE.awayBox : ZONE.homeBox;
   state.shots[possessing]++;
-  const onTarget = chance(0.55);
+  const onTarget = chance(pOnTarget);
   if (onTarget) {
     state.shotsOnTarget[possessing]++;
     if (chance(pGoal)) {
@@ -613,6 +623,9 @@ function performAutoSubs(state: MatchState, ctx: EngineCtx, side: 'home' | 'away
     if (executeSub(state, ctx, side, plan.outId, plan.inId)) {
       plan.done = true;
       made++;
+    } else if (!onPitch.includes(plan.outId) || !benchIds.includes(plan.inId)) {
+      // sortant expulsé/blessé ou entrant déjà consommé — plan caduc
+      plan.done = true;
     }
   }
 
@@ -623,6 +636,17 @@ function performAutoSubs(state: MatchState, ctx: EngineCtx, side: 'home' | 'away
   const pendingMinutePlanned = plannedSubs.filter((s) => !s.done && s.minute !== undefined).length;
   const autoCap = Math.min(2 - Math.min(made, 2), budget - made - pendingMinutePlanned);
   if (autoCap > 0) {
+    // Effet de la stat GESTION de l'entraîneur sur les remplacements automatiques :
+    // un bon gestionnaire n'effectue un changement que s'il apporte un gain réel
+    // (le remplaçant doit être meilleur d'au moins `minGain` points), un mauvais
+    // gestionnaire accepte des échanges neutres voire dégradants. gestion 20 → seuil
+    // +2 (jamais de sub contre-productif) ; gestion 1 → seuil −3 (peut se tirer une balle
+    // dans le pied). Coach suspendu / absent → seuil 0 (comportement neutre historique).
+    const coach = side === 'home' ? ctx.home.team.coach : ctx.away.team.coach;
+    const coachSuspended = side === 'home' ? ctx.home.team.coachSuspended : ctx.away.team.coachSuspended;
+    const gestion = (coach && !coachSuspended) ? coach.stats.gestion : 10;
+    const minGain = (gestion - 10) * 0.5; // gestion 10 = seuil 0 (neutre)
+
     const reservedIns = new Set(
       plannedSubs.filter((s) => !s.done).map((s) => s.inId),
     );
@@ -645,7 +669,11 @@ function performAutoSubs(state: MatchState, ctx: EngineCtx, side: 'home' | 'away
       if (hasPlanned) continue;
       const family = posFamily(out.position);
       const compatIdx = availBench.findIndex((p) => family.includes(p.position));
-      const sub = compatIdx >= 0 ? availBench.splice(compatIdx, 1)[0] : availBench.shift()!;
+      const subIdx = compatIdx >= 0 ? compatIdx : 0;
+      const sub = availBench[subIdx];
+      // Bon gestionnaire : n'échange que si le banc apporte un vrai plus.
+      if (sub.overall - out.overall < minGain) continue;
+      availBench.splice(subIdx, 1);
       if (executeSub(state, ctx, side, out.id, sub.id)) autoMade++;
     }
     made += autoMade;
@@ -733,7 +761,7 @@ function simulatePenalties(state: MatchState, ctx: EngineCtx): void {
     const teamName = side === 'home' ? ctx.home.team.name : ctx.away.team.name;
     const shooter = pickAttacker(side, ctx, state);
     const gk = gkOf(opp, ctx, state);
-    const pGoal = clamp(sigmoid(((shooter?.stats.technical.finishing ?? 10) + (shooter?.stats.mental.composure ?? 10) - (gk?.overall ?? 35) * 0.5) / 8) * 1.5, 0.50, 0.86);
+    const pGoal = clamp(sigmoid(((shooter?.stats.technical.finishing ?? 10) + (shooter?.stats.mental.composure ?? 10) - 2 * ((gk?.overall ?? 35) / 5)) / 6 + 1.1), 0.55, 0.90);
     const scored = chance(pGoal);
     if (scored) penScore[side]++;
     state.events.push({
@@ -894,7 +922,10 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   const teamName = possessing === 'home' ? ctx.home.team.name : ctx.away.team.name;
   const myAttack = effRating(state, ctx, possessing, 'attack');
   const oppDefense = effRating(state, ctx, opp, 'defense');
-  const pAttack = myAttack / (myAttack + oppDefense);
+  // Compression légère vers 0.5 : les gros écarts d'effectif dominent un peu moins
+  // le volume d'occasions — le foot réel garde ~10% d'accidents même à +20 d'overall
+  const pAttackRaw = myAttack / (myAttack + oppDefense);
+  const pAttack = 0.5 + (pAttackRaw - 0.5) * 0.82;
   const myMods = possessing === 'home' ? ctx.home.ratings.tacticMods : ctx.away.ratings.tacticMods;
   const oppMods = possessing === 'home' ? ctx.away.ratings.tacticMods : ctx.home.ratings.tacticMods;
 
@@ -902,11 +933,11 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
   const ref = state.referee;
   const wShot     = 0.08 * (0.6 + pAttack) * myMods.shotFreqMult * wfx.shotFreqMult;
   // Capitaine du côté défenseur sur le terrain = discipline (fautes réduites)
-  const wFoul     = 0.08 * oppMods.foulRateMult * wfx.foulMult * (ref?.foulStrictness ?? 1)
+  const wFoul     = 0.24 * oppMods.foulRateMult * wfx.foulMult * (ref?.foulStrictness ?? 1)
     * (captainOnPitch(state, ctx, opp) ? 0.93 : 1);
   // direct/long-ball styles generate more set-piece situations → more corners
-  const wCorner   = 0.04 * (myMods.shotFreqMult > 1 ? 1 + (myMods.shotFreqMult - 1) * 0.8 : 1.0);
-  const wOffside  = state.rules.noOffside ? 0 : 0.03;
+  const wCorner   = 0.11 * (myMods.shotFreqMult > 1 ? 1 + (myMods.shotFreqMult - 1) * 0.8 : 1.0);
+  const wOffside  = state.rules.noOffside ? 0 : 0.045;
   // possession/tiki-taka/pressing styles create more key passes
   const wKeyPass  = 0.18 * myMods.midfieldMult * wfx.keyPassMult;
   const wFreeKick = 0.03;
@@ -934,7 +965,7 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
     state.fouls[victimSide]++;
     const fouler = pickFouler(victimSide, ctx, state);
     // single-side corruption increases penalty chance for briber; referee tendency applies on top
-    const penChance = ((corrActive && !corrBoth && corr!.side === possessing) ? 0.18 : 0.08) * (ref?.penaltyTendency ?? 1);
+    const penChance = ((corrActive && !corrBoth && corr!.side === possessing) ? 0.035 : 0.013) * (ref?.penaltyTendency ?? 1);
     if (chance(penChance) && fouler) {
       const pz = possessing === 'home' ? ZONE.awayBox : ZONE.homeBox;
       const penTaker = designatedTaker(state, ctx, possessing, 'penalty') ?? pickAttacker(possessing, ctx, state);
@@ -945,7 +976,8 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
       const victimName = victimSide === 'home' ? ctx.home.team.name : ctx.away.team.name;
       // 3% chance: the fouled player (attacker from possessing side) gets injured
       const fouledPlayer = pickAttacker(possessing, ctx, state);
-      if (fouledPlayer && chance(0.03)) {
+      // 1.2% par faute — les fautes ont été ×3, garde ~0.25 blessé/match comme avant
+      if (fouledPlayer && chance(0.012)) {
         applyInjury(state, ctx, possessing, fouledPlayer);
       }
       pushEvent(state, ctx, { type: 'foul', side: victimSide, playerId: fouler?.id, ballPos: ZONE.centre },
@@ -954,9 +986,11 @@ export function tick(state: MatchState, ctx: EngineCtx): MatchState {
         const ag = fouler.stats.mental.aggression / 20;
         // 'both' deal: ref inflates cards on both sides (chaotic match). Single: biases against victim.
         const cardMult = corrBoth ? 1.8 : (corrActive && victimSide !== corr!.side) ? 2.0 : 1.0;
-        if (chance((0.005 + 0.005 * ag) * cardMult * (ref?.redTendency ?? 1))) {
+        // un joueur déjà averti joue prudent : risque de 2e jaune fortement réduit
+        const bookedRestraint = state.cards[victimSide].yellow.includes(fouler.id) ? 0.18 : 1;
+        if (chance((0.0025 + 0.0025 * ag) * cardMult * (ref?.redTendency ?? 1))) {
           applyRed(state, ctx, victimSide, fouler);
-        } else if (chance((0.13 + 0.06 * ag) * cardMult * (ref?.cardStrictness ?? 1) * (captainOnPitch(state, ctx, victimSide) ? 0.90 : 1))) {
+        } else if (chance((0.15 + 0.06 * ag) * bookedRestraint * cardMult * (ref?.cardStrictness ?? 1) * (captainOnPitch(state, ctx, victimSide) ? 0.90 : 1))) {
           if (state.cards[victimSide].yellow.includes(fouler.id)) {
             applyRed(state, ctx, victimSide, fouler);
           } else {

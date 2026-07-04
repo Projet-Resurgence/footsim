@@ -524,7 +524,7 @@ function EntraineurTab() {
             ['Offensive (1–20)', '+0 à +8 % attaque, +0 à +4 % fréquence tirs'],
             ['Défensif (1–20)', '+0 à +8 % défense'],
             ['Mentalité (1–20)', '−0 à −10 % fautes commises'],
-            ['Gestion (1–20)', 'Contribue à l\'overall — impacte les remplacements'],
+            ['Gestion (1–20)', 'Qualité des remplacements auto : un bon gestionnaire (≥14) évite les changements contre-productifs, un mauvais (≤6) peut dégrader l\'équipe. Compte aussi dans l\'overall.'],
           ]}
         />
         <p className="text-sm text-muted">

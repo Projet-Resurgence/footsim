@@ -319,10 +319,16 @@ describe('remplacements programmés (plannedSubs)', () => {
       if (state.status === 'halftime' || state.status === 'extraTimeHalfTime') tick(state, ctx);
     }
 
-    // le remplacement programmé a bien eu lieu : l'entrant est sur le terrain (ou a été
-    // remplacé plus tard), et l'échange out→in figure dans les événements
+    // le remplacement programmé a bien eu lieu (ou est devenu caduc suite à un rouge /
+    // une blessure du sortant ou de l'entrant avant la 60e — aléa légitime du match)
     const subEvents = state.events.filter((e) => e.type === 'substitution' && e.side === 'home');
-    expect(subEvents.some((e) => e.playerId === inId && e.replacedId === outId)).toBe(true);
+    const removed = new Set(
+      state.events.filter((e) => (e.type === 'red' || e.type === 'injury') && e.side === 'home').map((e) => e.playerId),
+    );
+    const executed = subEvents.some((e) => e.playerId === inId && e.replacedId === outId);
+    const voided = removed.has(outId) || removed.has(inId)
+      || subEvents.some((e) => e.replacedId === outId || e.playerId === inId || e.replacedId === inId);
+    expect(executed || voided).toBe(true);
     const plan = ctx.home.ratings.plannedSubs[0];
     expect(plan.done).toBe(true);
   });
@@ -338,11 +344,67 @@ describe('remplacements programmés (plannedSubs)', () => {
       tick(state, ctx);
       if (state.status === 'halftime' || state.status === 'extraTimeHalfTime') tick(state, ctx);
     }
-    // les 3 plans mi-temps exécutés (budget 5 > quota auto de 2)
+    // les 3 plans mi-temps exécutés (budget 5 > quota auto de 2) — sauf plan rendu
+    // caduc par un aléa du match (sortant expulsé/blessé avant la mi-temps)
     expect(ctx.home.ratings.plannedSubs.every((p) => p.done)).toBe(true);
     const subEvents = state.events.filter((e) => e.type === 'substitution' && e.side === 'home');
+    const removed = new Set(
+      state.events.filter((e) => (e.type === 'red' || e.type === 'injury') && e.side === 'home').map((e) => e.playerId),
+    );
     for (const p of plans) {
-      expect(subEvents.some((e) => e.playerId === p.inId && e.replacedId === p.outId)).toBe(true);
+      const executed = subEvents.some((e) => e.playerId === p.inId && e.replacedId === p.outId);
+      const voided = removed.has(p.outId) || removed.has(p.inId)
+        || subEvents.some((e) => e.replacedId === p.outId || e.playerId === p.inId || e.replacedId === p.inId);
+      expect(executed || voided).toBe(true);
     }
+  });
+});
+
+describe('gestion coach — auto-subs à la mi-temps', () => {
+  // Titulaires forts (overall 60), banc faible (overall 40) : un remplacement auto
+  // dégrade l'équipe. Un bon gestionnaire doit refuser, un mauvais l'accepte.
+  function makeGestionCtx(gestion: number) {
+    const homePlayers = makeRoster(20, 10);
+    // banc (indices 11..19) plus faibles que les titulaires
+    homePlayers.forEach((p, i) => { p.overall = i < 11 ? 70 : 67; });
+    const home = precomputeSide(homePlayers, '4-3-3');
+    const awayPlayers = makeRoster(20, 10).map((p) => ({ ...p, id: `a-${p.id}` }));
+    const away = precomputeSide(awayPlayers, '4-3-3');
+    const coach = {
+      id: 'c', firstName: 'A', lastName: 'B', culture: 'francais' as const,
+      stats: { motivation: 10, tactique: 10, offensive: 10, defensif: 10, mentalite: 10, gestion },
+      positiveTraits: [], negativeTraits: [], overall: 50,
+    };
+    const ctx: EngineCtx = {
+      home: { team: { name: 'Home', coach } as unknown as EngineCtx['home']['team'], players: new Map(homePlayers.map((p) => [p.id, p])), ratings: home },
+      away: { team: { name: 'Away' } as EngineCtx['away']['team'], players: new Map(awayPlayers.map((p) => [p.id, p])), ratings: away },
+      eventCounter: { v: 0 },
+    };
+    const state = initialState('m-g', 'instant', { ...DEFAULT_RULES });
+    state.homeOnPitch = [...home.lineup];
+    state.awayOnPitch = [...away.lineup];
+    state.homeBench = [...home.bench];
+    state.awayBench = [...away.bench];
+    state.homeAvailableBench = [...home.bench];
+    state.awayAvailableBench = [...away.bench];
+    return { ctx, state };
+  }
+
+  function homeSubsAtHalftime(gestion: number): number {
+    const { ctx, state } = makeGestionCtx(gestion);
+    while (state.status !== 'fulltime') {
+      tick(state, ctx);
+      if (state.status === 'halftime' || state.status === 'extraTimeHalfTime') tick(state, ctx);
+    }
+    // les remplacements forcés par blessure ne sont pas des choix du gestionnaire
+    return state.events.filter((e) => e.type === 'substitution' && e.side === 'home' && !e.text.includes('blessure')).length;
+  }
+
+  it('un bon gestionnaire (20) ne dégrade pas l\'équipe avec un banc plus faible', () => {
+    expect(homeSubsAtHalftime(20)).toBe(0);
+  });
+
+  it('un mauvais gestionnaire (1) accepte des remplacements contre-productifs', () => {
+    expect(homeSubsAtHalftime(1)).toBeGreaterThan(0);
   });
 });

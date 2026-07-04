@@ -229,6 +229,14 @@ export type Player = {
   clubId?: string;
 };
 
+/** Nom compact « J.Torres » (initiale du prénom + nom) pour tokens de terrain. */
+export function shortPlayerName(p: { firstName?: string; lastName?: string }): string {
+  const first = (p.firstName ?? '').trim();
+  const last = (p.lastName ?? '').trim();
+  const initial = first ? `${first[0].toUpperCase()}.` : '';
+  return last ? `${initial}${last}` : initial || '';
+}
+
 export type CustomTacticStyle = {
   id: string;
   name: string;

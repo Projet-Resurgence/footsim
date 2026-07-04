@@ -259,33 +259,37 @@ Both `halftime` and `extraTimeHalfTime` stall the loop until UI sends `resume`.
 | Event | Weight formula |
 |---|---|
 | shot | `0.08 × (0.6 + pAttack) × shotFreqMult` |
-| foul | `0.08 × opp.foulRateMult` |
-| corner | `0.04 × (1 + (shotFreqMult−1)×0.8)` if shotFreqMult>1, else `0.04` |
-| offside | 0.03 (0 if `noOffside` rule) |
+| foul | `0.24 × opp.foulRateMult` (~11 fautes/équipe, réaliste) |
+| corner | `0.11 × (1 + (shotFreqMult−1)×0.8)` if shotFreqMult>1, else `0.11` (~5/équipe) |
+| offside | 0.045 (0 if `noOffside` rule) (~2/équipe) |
 | keyPass | `0.18 × midfieldMult` |
 | freeKick | 0.03 |
 | dribble | `0.28 × pAttack × max(1, attackMult)` |
 | clearance | `0.03 × (1 − pAttack)` |
 | (nothing) | remainder |
 
-where `pAttack = myAttack / (myAttack + oppDefense)`, both multiplied by `0.93^reds`. Tactic mods now apply to `keyPass`, `dribble`, and `corner` weights — styles with high `midfieldMult` generate more key passes, styles with `shotFreqMult > 1` generate more corners, styles with `attackMult > 1` generate more direct runs.
+where `pAttack = 0.5 + (rawPAttack − 0.5) × 0.82` (compression légère : les gros écarts d'effectif gardent ~10% d'accidents — 85v65 ≈ 88% win, 80v70 ≈ 65%), `rawPAttack = myAttack / (myAttack + oppDefense)`, both multiplied by `0.93^reds`. Tactic mods now apply to `keyPass`, `dribble`, and `corner` weights — styles with high `midfieldMult` generate more key passes, styles with `shotFreqMult > 1` generate more corners, styles with `attackMult > 1` generate more direct runs.
 
 ### Shot resolution
 
-`resolveShot()` returns `bool` (goal scored):
-- `pGoal = sigmoid((finishing + composure − 0.5 × gkOverall) / 8) × mult` clamped `[0.04, 0.75]`
-- 55% chance on-target; if on-target: roll `pGoal` → goal, else 10% crossbar, else save.
+`resolveShot()` returns `bool` (goal scored). **Recalibré réaliste (juil. 2026)** — cibles mesurées Monte-Carlo (harness `sim/realism.audit.test.ts`, en `describe.skip` — retirer le skip pour re-mesurer après TOUT changement engine) : 2.7-2.8 buts/match, 0-0 ~7.5%, nuls ~25%, conversion ~11%, xG ~1.35/équipe.
+- GK ramené à l'échelle 1-20 : `gk20 = gkOverall / 5` (avant : échelle 1-100 mélangée, le gardien ne pesait quasi rien → scoring inversé par niveau).
+- `pGoal = sigmoid((finishing + composure − 2×gk20) / 8 − 1.0) × mult` clamped `[0.03, 0.60]`
+- On-target `0.38 + weather delta` (réel ~35%) ; if on-target: roll `pGoal` → goal, else 10% crossbar, else save.
+- **xG = pOnTarget × pGoal** (probabilité réelle du tir, cadrage inclus — avant le pGoal complet était compté même hors cadre → xG 2.6× trop haut). Idem `tryPenaltyShot` et `injectGoal`.
+- Penalty in-game (`tryPenaltyShot`) : cadré 0.94, `pGoal = sigmoid((fin+com−2×gk20)/6 + 1.1)` clamp `[0.55, 0.90]` → conversion ~76% (réel).
 - After any goal in ET: `tryShot()` calls `checkGoldenGoal()` → fulltime if golden goal rule active.
 
 Special shot chains:
-- **Foul** (15% chance) → penalty → shot with `mult=1.4`
+- **Foul** (1.3% chance × penaltyTendency ; corruption single-side 3.5%) → penalty (~0.3 péno/match)
 - **Corner** (45% chance) → header → shot with `mult=0.85`
 - **FreeKick** (30% chance) → shot with `mult=0.75`
 - **Dribble** (40% chance) → shot with `mult=1.05`
+- Blessure sur faute : 1.2% (fautes ×3 → même taux global qu'avant, ~0.25 blessé/match)
 
 ### Cards
 
-`yellow` roll: `0.005 + 0.005 × (aggression/20)` for immediate red; `0.13 + 0.06 × (aggression/20)` for yellow. Second yellow on same player → red. Red → player removed from `homeOnPitch`/`awayOnPitch`.
+`red` direct: `0.0025 + 0.0025 × (aggression/20)` per foul; `yellow`: `0.15 + 0.06 × (aggression/20)` per foul, **× 0.18 si le fauteur est déjà averti** (retenue — sans ça les 2ᵉ jaunes explosaient à 0.55/match avec les fautes réalistes). Cibles : ~1.9 jaunes/équipe, ~0.2 rouge/match. Second yellow on same player → red. Red → player removed from `homeOnPitch`/`awayOnPitch`.
 
 ### Auto-substitutions
 
@@ -293,7 +297,7 @@ Triggered at halftime transition (`status: halftime → secondHalf`). Per side: 
 
 ### Penalty shootout (`simulatePenalties()`)
 
-5 kicks each then sudden death (max 20 rounds). `pGoal = sigmoid((finishing + composure − 0.5 × gkOverall) / 8) × 1.5` clamped `[0.50, 0.86]`. Result stored in `state.penaltyScore`.
+5 kicks each then sudden death (max 20 rounds). `pGoal = sigmoid((finishing + composure − 2×(gkOverall/5)) / 6 + 1.1)` clamped `[0.55, 0.90]` (~75% conversion, même échelle GK que resolveShot). Result stored in `state.penaltyScore`.
 
 ### Match rules (`MatchRules`)
 

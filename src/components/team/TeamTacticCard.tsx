@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { POSITION_LABEL, TACTIC_STYLE_LABEL } from '@/lib/types';
+import { POSITION_LABEL, TACTIC_STYLE_LABEL, shortPlayerName } from '@/lib/types';
 import type { Formation, Player, SavedTactic, Team } from '@/lib/types';
 import { pickXI } from '@/lib/sim/lineup';
 import { loadTeam } from '@/lib/github/store';
@@ -160,8 +160,8 @@ export function TacticPitch({ formation, lineup, players, tokenPositions }: { fo
             <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-[9px] font-bold ${player ? 'border-white bg-white/20 text-white shadow-md' : 'border-white/30 bg-black/20 text-white/40'}`}>
               {POSITION_LABEL[slot.pos as keyof typeof POSITION_LABEL] ?? slot.pos}
             </div>
-            <span className="max-w-[52px] truncate rounded bg-black/50 px-0.5 text-center text-[8px] leading-tight text-white/90">
-              {player ? player.lastName : ''}
+            <span className="max-w-[56px] truncate rounded bg-black/50 px-0.5 text-center text-[8px] leading-tight text-white/90">
+              {player ? shortPlayerName(player) : ''}
             </span>
           </div>
         );

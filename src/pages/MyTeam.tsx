@@ -178,6 +178,16 @@ export default function MyTeam() {
     persistSavedTactics(next, activeTacticId);
   }
 
+  function duplicateTactic(id: string) {
+    const src = savedTactics.find((t) => t.id === id);
+    if (!src) return;
+    const copy: SavedTactic = { ...src, id: crypto.randomUUID(), name: `${src.name} (copie)` };
+    const idx = savedTactics.findIndex((t) => t.id === id);
+    const next = [...savedTactics.slice(0, idx + 1), copy, ...savedTactics.slice(idx + 1)];
+    persistSavedTactics(next, copy.id);
+    toast('success', `Tactique dupliquée : « ${copy.name} »`);
+  }
+
   function exportTactics() {
     if (!data) return;
     const { team } = data;
@@ -325,6 +335,7 @@ export default function MyTeam() {
             onActivate={activateTactic}
             onDelete={deleteTactic}
             onRename={renameTactic}
+            onDuplicate={duplicateTactic}
           />
 
           <CounterTacticsPanel

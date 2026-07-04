@@ -9,6 +9,7 @@ type Props = {
   onActivate: (id: string) => void;
   onDelete: (id: string) => void;
   onRename?: (id: string, name: string) => void;
+  onDuplicate?: (id: string) => void;
 };
 
 // Minimal slot layout for minimap — x/y in % of pitch
@@ -184,6 +185,7 @@ function TacticCard({
   onActivate,
   onDelete,
   onRename,
+  onDuplicate,
 }: {
   tactic: SavedTactic;
   players: Player[];
@@ -191,6 +193,7 @@ function TacticCard({
   onActivate: () => void;
   onDelete: () => void;
   onRename?: (name: string) => void;
+  onDuplicate?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(tactic.name);
@@ -244,10 +247,20 @@ function TacticCard({
             <span className="text-xs text-muted truncate">{styleDisplay}</span>
           </div>
         </div>
-        <button
-          onClick={() => confirm(`Supprimer la tactique « ${tactic.name} » ?`) && onDelete()}
-          className="text-muted hover:text-danger text-xs shrink-0 transition-colors mt-0.5"
-        >✕</button>
+        <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+          {onDuplicate && (
+            <button
+              onClick={onDuplicate}
+              className="text-muted hover:text-accent text-xs transition-colors"
+              title="Dupliquer cette tactique"
+            >⧉</button>
+          )}
+          <button
+            onClick={() => confirm(`Supprimer la tactique « ${tactic.name} » ?`) && onDelete()}
+            className="text-muted hover:text-danger text-xs transition-colors"
+            title="Supprimer"
+          >✕</button>
+        </div>
       </div>
 
       {/* Minimap + Lineup */}
@@ -291,7 +304,7 @@ function TacticCard({
   );
 }
 
-export function TacticsSummary({ savedTactics, activeTacticId, players, onActivate, onDelete, onRename }: Props) {
+export function TacticsSummary({ savedTactics, activeTacticId, players, onActivate, onDelete, onRename, onDuplicate }: Props) {
   if (savedTactics.length === 0) return null;
 
   return (
@@ -307,6 +320,7 @@ export function TacticsSummary({ savedTactics, activeTacticId, players, onActiva
             onActivate={() => onActivate(t.id)}
             onDelete={() => onDelete(t.id)}
             onRename={onRename ? (name) => onRename(t.id, name) : undefined}
+            onDuplicate={onDuplicate ? () => onDuplicate(t.id) : undefined}
           />
         ))}
       </div>

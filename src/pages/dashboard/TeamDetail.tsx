@@ -259,6 +259,16 @@ async function applyNewStrength(strength: number) {
   function renameTactic(id: string, name: string) {
     mutateSavedTactics(savedTactics.map((t) => t.id === id ? { ...t, name } : t), activeTacticId);
   }
+  function duplicateTactic(id: string) {
+    const src = savedTactics.find((t) => t.id === id);
+    if (!src) return;
+    const copy: SavedTactic = { ...src, id: crypto.randomUUID(), name: `${src.name} (copie)` };
+    // insérer juste après l'originale
+    const idx = savedTactics.findIndex((t) => t.id === id);
+    const next = [...savedTactics.slice(0, idx + 1), copy, ...savedTactics.slice(idx + 1)];
+    mutateSavedTactics(next, copy.id);
+    toast('success', `Tactique dupliquée : « ${copy.name} »`);
+  }
 
   function exportTactics() {
     if (!data) { toast('error', 'Aucune donnée.'); return; }
@@ -601,6 +611,7 @@ async function applyNewStrength(strength: number) {
             onActivate={activateTactic}
             onDelete={deleteTacticEntry}
             onRename={renameTactic}
+            onDuplicate={duplicateTactic}
           />
 
           <CounterTacticsPanel
