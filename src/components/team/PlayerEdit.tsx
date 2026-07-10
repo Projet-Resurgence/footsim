@@ -187,7 +187,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 
 function Stat({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   const tone =
-    value >= 16 ? 'bg-accent text-white'
+    value >= 16 ? 'bg-accent text-on-accent'
     : value >= 12 ? 'bg-accent/30 text-text'
     : value >= 8 ? 'bg-border text-text'
     : 'bg-danger/20 text-danger';

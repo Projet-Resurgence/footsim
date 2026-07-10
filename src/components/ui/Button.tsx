@@ -14,12 +14,12 @@ const base =
   'active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 select-none';
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-accent text-white hover:bg-accent/90 shadow-sm shadow-accent/25',
+  primary: 'bg-accent text-on-accent hover:bg-accent/90 shadow-sm shadow-accent/25',
   ghost: 'bg-transparent text-text hover:bg-border/60',
   danger: 'bg-danger text-white hover:bg-danger/90 shadow-sm shadow-danger/20',
   outline: 'bg-transparent border border-border text-text hover:border-accent/60 hover:text-accent',
   soft: 'bg-accent/10 text-accent hover:bg-accent/20',
-  gold: 'bg-gold text-white hover:bg-gold/90 shadow-sm shadow-gold/25',
+  gold: 'bg-gold text-on-accent hover:bg-gold/90 shadow-sm shadow-gold/25',
 };
 
 const sizes: Record<Size, string> = {

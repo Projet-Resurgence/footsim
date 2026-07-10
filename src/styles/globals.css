@@ -2,44 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Palette alignée sur la DA Projet Résurgence (resurgence-web/styles/theme.css) :
+   or #D5B654 (marque), neutres charbon #0f0f0f/#1a1a1a/#2d2d2d, accents Tailwind
+   red/amber. La pelouse reste verte (fonctionnel, pas décoratif). */
 :root {
-  --bg: #F7F7F3;
-  --surface: #FFFFFF;
-  --surface-2: #F1F1EB;
-  --text: #17181A;
-  --muted: #7D7F7A;
-  --border: #E5E3DC;
-  --accent: #157A43;
-  --accent-rgb: 21 122 67;
-  --gold: #B8860B;
-  --gold-rgb: 184 134 11;
-  --danger: #C73E3E;
-  --danger-rgb: 199 62 62;
-  --warning: #D9A93C;
-  --warning-rgb: 217 169 60;
+  --bg: #f7f8f9;
+  --surface: #ffffff;
+  --surface-2: #e9ecef;
+  --text: #1a202c;
+  --muted: #718096;
+  --border: #e3e6ea;
+  --accent: #B89A3D;
+  --accent-rgb: 184 154 61;
+  --on-accent: #17181c;
+  --gold: #B89A3D;
+  --gold-rgb: 184 154 61;
+  --danger: #dc2626;
+  --danger-rgb: 220 38 38;
+  --warning: #d97706;
+  --warning-rgb: 217 119 6;
   --pitch: #1F8B4C;
   --pitch-line: rgba(255,255,255,0.7);
-  --header-blur: rgba(247,247,243,0.82);
+  --header-blur: rgba(247,248,249,0.82);
 }
 
 html.dark {
-  --bg: #0C0F13;
-  --surface: #141820;
-  --surface-2: #1B202B;
-  --text: #F2F2EE;
-  --muted: #8A8E97;
-  --border: #242936;
-  --accent: #2FAE65;
-  --accent-rgb: 47 174 101;
-  --gold: #E0B85A;
-  --gold-rgb: 224 184 90;
-  --danger: #E26A6A;
-  --danger-rgb: 226 106 106;
-  --warning: #E0B85A;
-  --warning-rgb: 224 184 90;
+  --bg: #0f0f0f;
+  --surface: #1a1a1a;
+  --surface-2: #232323;
+  --text: #f8f9fa;
+  --muted: #a0a0a0;
+  --border: #2d2d2d;
+  --accent: #D5B654;
+  --accent-rgb: 213 182 84;
+  --on-accent: #17181c;
+  --gold: #E6C76A;
+  --gold-rgb: 230 199 106;
+  --danger: #ef4444;
+  --danger-rgb: 239 68 68;
+  --warning: #f59e0b;
+  --warning-rgb: 245 158 11;
   --pitch: #154d2c;
   --pitch-line: rgba(255,255,255,0.45);
-  --header-blur: rgba(12,15,19,0.78);
+  --header-blur: rgba(15,15,15,0.78);
 }
 
 html, body { transition: background-color 400ms ease, color 400ms ease; }
@@ -54,7 +59,7 @@ body {
 
 .font-display { font-family: 'Fraunces', serif; font-style: italic; }
 
-::selection { background: var(--accent); color: white; }
+::selection { background: var(--accent); color: var(--on-accent); }
 
 button:focus-visible, a:focus-visible, input:focus-visible {
   outline: 2px solid var(--accent);

@@ -1,6 +1,6 @@
 # FootSim — Design System
 
-Direction visuelle : **« stade en nocturne »** — vert pelouse profond comme accent principal, or trophée en accent secondaire, typographie éditoriale (Fraunces italique) pour les titres et les scores, chiffres tabulaires façon tableau d'affichage. Propre, élégant, cohérent avec le football, dynamique sans surcharge.
+Direction visuelle : **DA Projet Résurgence** — or de marque `#D5B654` comme accent principal, neutres charbon (`#0f0f0f`/`#1a1a1a`/`#2d2d2d`) hérités de `resurgence-web/styles/theme.css`, typographie éditoriale (Fraunces italique) pour les titres et les scores, chiffres tabulaires façon tableau d'affichage. Seule la pelouse reste verte (fonctionnel, pas décoratif). Propre, élégant, cohérent avec l'écosystème PR.
 
 Sources de vérité dans le code :
 
@@ -23,16 +23,17 @@ Tous les composants consomment les **variables CSS** — jamais de hex en dur. T
 
 | Jeton | Jour | Nuit | Usage |
 |---|---|---|---|
-| `--bg` | `#F7F7F3` | `#0C0F13` | Fond de page |
-| `--surface` | `#FFFFFF` | `#141820` | Cartes, panneaux, tableaux |
-| `--surface-2` | `#F1F1EB` | `#1B202B` | Surfaces élevées / zones secondaires |
-| `--text` | `#17181A` | `#F2F2EE` | Texte principal |
-| `--muted` | `#7D7F7A` | `#8A8E97` | Texte secondaire, labels |
-| `--border` | `#E5E3DC` | `#242936` | Bordures, séparateurs |
-| `--accent` | `#157A43` | `#2FAE65` | **Vert pelouse** — actions primaires, états actifs, liens |
-| `--gold` | `#B8860B` | `#E0B85A` | **Or trophée** — palmarès, podiums, points d'orgue |
-| `--danger` | `#C73E3E` | `#E26A6A` | Suppressions, cartons rouges, erreurs |
-| `--warning` | `#D9A93C` | `#E0B85A` | Non-sauvegardé, cartons jaunes |
+| `--bg` | `#f7f8f9` | `#0f0f0f` | Fond de page |
+| `--surface` | `#ffffff` | `#1a1a1a` | Cartes, panneaux, tableaux |
+| `--surface-2` | `#e9ecef` | `#232323` | Surfaces élevées / zones secondaires |
+| `--text` | `#1a202c` | `#f8f9fa` | Texte principal |
+| `--muted` | `#718096` | `#a0a0a0` | Texte secondaire, labels |
+| `--border` | `#e3e6ea` | `#2d2d2d` | Bordures, séparateurs |
+| `--accent` | `#B89A3D` | `#D5B654` | **Or de marque PR** — actions primaires, états actifs, liens |
+| `--on-accent` | `#17181c` | `#17181c` | Texte posé SUR un fond accent/or (jamais blanc : contraste insuffisant) |
+| `--gold` | `#B89A3D` | `#E6C76A` | **Or trophée** — palmarès, podiums, points d'orgue |
+| `--danger` | `#dc2626` | `#ef4444` | Suppressions, cartons rouges, erreurs |
+| `--warning` | `#d97706` | `#f59e0b` | Non-sauvegardé, cartons jaunes |
 | `--pitch` / `--pitch-line` | `#1F8B4C` / blanc 70 % | `#154d2c` / blanc 45 % | Terrain SVG uniquement |
 | `--header-blur` | blanc translucide | noir translucide | Fond du header sticky (backdrop-blur) |
 
@@ -40,9 +41,10 @@ Variantes RGB (`--accent-rgb`, `--gold-rgb`, `--danger-rgb`, `--warning-rgb`) po
 
 ### Règles d'usage
 
-- **Un seul accent fort par écran** : le vert. L'or est réservé aux récompenses (trophées, 1ʳᵉ place, palmarès) — jamais pour une action courante.
+- **Un seul accent fort par écran** : l'or de marque. `--gold` reste réservé aux récompenses (trophées, 1ʳᵉ place, palmarès) — jamais pour une action courante.
+- **Texte sur fond accent/or : toujours `text-on-accent`**, jamais `text-white` (or clair + blanc = illisible).
 - Fonds teintés : `bg-accent/5` à `bg-accent/10` + `border-accent/30` pour les encarts mis en avant.
-- Sémantique séparée de l'accent : danger/warning ne remplacent jamais le vert et inversement.
+- Sémantique séparée de l'accent : danger/warning ne remplacent jamais l'or et inversement.
 - Rangs de classement : or (`text-yellow-500`) / argent (`text-zinc-400`) / bronze (`text-orange-500`) pour 1/2/3.
 
 ### Thèmes
@@ -104,7 +106,7 @@ Base : `rounded-lg`, `gap-2`, `active:scale-[0.98]`, `select-none`.
 
 | Variante | Style | Usage |
 |---|---|---|
-| `primary` | fond accent, texte blanc, ombre accent | Action principale (1 max par zone) |
+| `primary` | fond accent, texte `on-accent`, ombre accent | Action principale (1 max par zone) |
 | `gold` | fond or | Actions liées aux trophées/palmarès |
 | `outline` | bordure, hover accent | Action secondaire visible |
 | `soft` | `bg-accent/10 text-accent` | Action contextuelle douce (nav flottante) |

@@ -58,7 +58,7 @@ export function MobileTabBar() {
                 <>
                   <span
                     className={cn(
-                      '-mt-5 flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg transition-transform active:scale-95',
+                      '-mt-5 flex h-12 w-12 items-center justify-center rounded-full text-on-accent shadow-lg transition-transform active:scale-95',
                       isActive ? 'bg-accent shadow-accent/40' : 'bg-accent/90 shadow-accent/25',
                     )}
                   >

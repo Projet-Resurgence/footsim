@@ -1247,7 +1247,7 @@ export default function MultiplexLive() {
           <button
             key={s}
             onClick={() => setGlobalSpeed(s)}
-            className={`px-3 py-1.5 transition-colors ${globalSpeed === s ? 'bg-accent text-white' : 'hover:bg-border/40'}`}
+            className={`px-3 py-1.5 transition-colors ${globalSpeed === s ? 'bg-accent text-on-accent' : 'hover:bg-border/40'}`}
           >
             {SPEED_LABEL[s]}
           </button>

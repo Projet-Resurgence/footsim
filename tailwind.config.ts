@@ -13,6 +13,7 @@ export default {
         muted: 'var(--muted)',
         border: 'var(--border)',
         accent: 'rgb(var(--accent-rgb) / <alpha-value>)',
+        'on-accent': 'var(--on-accent)',
         gold: 'rgb(var(--gold-rgb) / <alpha-value>)',
         danger: 'rgb(var(--danger-rgb) / <alpha-value>)',
         warning: 'rgb(var(--warning-rgb) / <alpha-value>)',

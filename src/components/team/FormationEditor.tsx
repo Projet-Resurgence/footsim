@@ -307,7 +307,7 @@ export function FormationEditor({ players, initialLineup, initialSlots, onSave, 
           </button>
           <button
             onClick={handleSave}
-            className="px-3 py-1.5 text-sm rounded bg-accent text-white hover:bg-accent/90 transition-colors font-medium"
+            className="px-3 py-1.5 text-sm rounded bg-accent text-on-accent hover:bg-accent/90 transition-colors font-medium"
           >
             Valider cette formation
           </button>

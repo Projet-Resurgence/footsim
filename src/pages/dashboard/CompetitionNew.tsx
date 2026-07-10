@@ -826,7 +826,7 @@ export default function CompetitionNew() {
                 type="button"
                 onClick={doSavePreset}
                 disabled={!presetLabel.trim()}
-                className="text-xs px-3 py-1.5 rounded-md bg-accent text-white disabled:opacity-40 hover:bg-accent/80 transition-colors"
+                className="text-xs px-3 py-1.5 rounded-md bg-accent text-on-accent disabled:opacity-40 hover:bg-accent/80 transition-colors"
               >
                 Sauvegarder
               </button>
