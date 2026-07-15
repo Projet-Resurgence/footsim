@@ -25,6 +25,15 @@ import { generateMatchPressItem, generateMoralePressItem, generatePresidencyRebo
 import { createMatchInjury, createSuspension, decrementInjuries, decrementSuspensions, unavailableIds } from '@/lib/competition/injuries';
 
 /** RNG déterministe seedé (même famille que les rng internes de press.ts). */
+// Rend la main au navigateur entre deux itérations d'une grosse boucle synchrone
+// (calcul presse/standings/blessures par match) pour éviter un freeze visible de
+// plusieurs secondes en multiplex/coupe avec beaucoup de matchs simultanés. Ne
+// change ni le résultat ni le nombre de requêtes réseau (une seule sauvegarde en
+// fin de fonction, comme avant) — juste des pauses de rendu au milieu du calcul.
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function rngFromSeed(seed: string): () => number {
   let h = 0;
   for (let i = 0; i < seed.length; i++) { h = Math.imul(31, h) + seed.charCodeAt(i) | 0; }
@@ -267,6 +276,7 @@ export default function MultiplexLive() {
     console.log('[MultiplexLive allFinished effect]', { allFinished, hasCurrent: !!current, slotsLen: slots.length, hasPendingUpdate: !!pendingUpdateRef.current, resultsComputed: resultsComputedRef.current, currentRound: current?.currentRound, slotsStatus: slots.map(s => s.state?.status) });
     if (!allFinished || !current || slots.length === 0 || pendingUpdateRef.current || resultsComputedRef.current) return;
 
+    (async () => {
     try {
     let updatedMatches = current.matches;
     let updatedStandings = current.standings;
@@ -388,6 +398,7 @@ export default function MultiplexLive() {
       } else if (compMatch.phase !== 'group' && compMatch.phase !== 'league') {
         updatedMatches = advanceBracket(updatedMatches, slot.compMatchId);
       }
+      await yieldToMain();
     }
 
     const nextRound = updatedMatches.every(
@@ -764,6 +775,7 @@ export default function MultiplexLive() {
           updatedPendingCmfEnquete = { ...updatedPendingCmfEnquete, [briberTeamId3]: { round: nextJudgmentRound, matchId: slot.compMatchId, walkoverApplied: walkoApplied } };
         }
       }
+      await yieldToMain();
     }
 
     // Injuries + suspensions accumulation
@@ -809,6 +821,7 @@ export default function MultiplexLive() {
           }
         }
       }
+      await yieldToMain();
     }
 
     // ── Drame (0.5% par match) + CMF ─────────────────────────────────────────
@@ -895,6 +908,7 @@ export default function MultiplexLive() {
           ];
         }
       }
+      await yieldToMain();
     }
 
     // CMF — phases et palmarès
@@ -1064,6 +1078,7 @@ export default function MultiplexLive() {
       toast('error', `Erreur calcul résultats : ${String(err)}`);
       setSaving(false);
     }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allFinished]);
 
