@@ -9,7 +9,7 @@ import { useCompetition } from '@/stores/competition';
 import { useTeams } from '@/stores/teams';
 
 import { useBackendArgs } from '@/hooks/useBackendArgs';
-import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty } from '@/lib/competition/scheduler';
+import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty, isMathematicallyEliminated, isCompetitionFinished } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary, CompMatch } from '@/lib/competition/types';
 import { accumulateMatchStats, computeAwards, computeMotm } from '@/lib/competition/statsAccumulator';
@@ -398,9 +398,7 @@ export default function MultiplexLive() {
       ? roundNum + 1
       : roundNum;
 
-    const allDone = updatedMatches.every(
-      (m) => m.status === 'completed' || ((!m.homeTeamId || !m.awayTeamId) && m.phase !== 'lpm_playoff' && m.phase !== 'group' && m.phase !== 'league'),
-    );
+    const allDone = isCompetitionFinished(current.format, updatedMatches);
     let winner: string | undefined;
     if (allDone) {
       const finalMatch = updatedMatches.find((m) => m.phase === 'F');
@@ -529,7 +527,6 @@ export default function MultiplexLive() {
       // LPM: top 24 direct + 25-40 barrages → only rank 41+ truly eliminated
       const isLPMLeague = compMatch.phase === 'league' && current.format === 'lpm';
       const qualifyCount = isLPMLeague ? 40 : (current.config.qualifyPerGroup ?? Math.ceil(totalTeams / 4));
-      const totalRoundsInPhase = current.matches.filter((m) => m.phase === compMatch.phase).reduce((mx, m) => Math.max(mx, m.round), 0);
 
       for (const [tid, goalsFor, goalsAgainst] of [
         [homeId, slot.state.score.home, slot.state.score.away],
@@ -545,12 +542,15 @@ export default function MultiplexLive() {
         const teamCoach = isHome ? slot.home.coach : slot.away.coach;
         const tidRank = rankOf(tid);
         const tidStanding = updatedStandings[tid];
-        const remaining = Math.max(0, totalRoundsInPhase - current.currentRound);
-        const maxRemainingPts = (tidStanding?.points ?? 0) + remaining * 3;
-        const minPtsForSafeZone = sortedStandings[qualifyCount - 1]?.points ?? 0;
-        const isEliminated = (compMatch.phase === 'group' || compMatch.phase === 'league')
-          && !!tidStanding && tidStanding.played >= 3
-          && maxRemainingPts < minPtsForSafeZone;
+        const isEliminated = isMathematicallyEliminated({
+          teamId: tid,
+          phase: compMatch.phase,
+          matches: updatedMatches,
+          standings: updatedStandings,
+          groups: current.groups,
+          qualifyCount,
+          bestThirds: current.config.bestThirds,
+        });
         const dangerThreshold = isLPMLeague ? 40 : Math.max(qualifyCount + 1, Math.ceil(totalTeams * 0.75));
         const isInDangerZone = (compMatch.phase === 'group' || compMatch.phase === 'league')
           && tidRank > dangerThreshold;

@@ -15,7 +15,7 @@ import { useTeams } from '@/stores/teams';
 
 import { useBackendArgs } from '@/hooks/useBackendArgs';
 import { useSession } from '@/stores/session';
-import { needsKnockoutDraw, getQualifiersByRank, buildBracketFromPairs, sortStandings, seedLPMPlayoffs } from '@/lib/competition/scheduler';
+import { needsKnockoutDraw, getQualifiersByRank, buildBracketFromPairs, sortStandings, seedLPMPlayoffs, isCompetitionFinished } from '@/lib/competition/scheduler';
 import { LPMDrawCeremony, type LPMPair } from '@/components/competition/LPMDrawCeremony';
 import { buildKnockoutPots, conductKnockoutDraw } from '@/lib/competition/draw';
 import type { Pot, KnockoutDrawMethod } from '@/lib/competition/draw';
@@ -27,6 +27,7 @@ import { moraleLabel, MORALE_DEFAULT } from '@/lib/competition/morale';
 import type { PressItem, PressMention, PressMentionPlayer, PressMentionCoach } from '@/lib/competition/press';
 import { PRESS_CATEGORY_COLOR, PRESS_CATEGORY_LABEL, generateCmfItems } from '@/lib/competition/press';
 import { COACH_TRAIT_LABEL, COACH_TRAIT_DESCRIPTION } from '@/lib/gen/coach';
+import { CLIMATE_ZONES, CLIMATE_ZONE_LABEL, type ClimateZone } from '@/lib/sim/weather';
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
 import type { StoredMatch } from '@/lib/prapi/matchBackend';
@@ -85,6 +86,25 @@ export default function CompetitionDetail() {
     init().finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, effectivePat]);
+
+  // Auto-réparation : compétition marquée « terminée » alors que la phase finale
+  // n'est pas jouée (bug historique — les placeholders KO à équipes nulles étaient
+  // comptés comme finis). On révoque statut/vainqueur/trophées + palmarès prématuré.
+  useEffect(() => {
+    if (!current || current.status !== 'completed') return;
+    if (isCompetitionFinished(current.format, current.matches)) return;
+    const healed: Competition = {
+      ...current,
+      status: 'ongoing',
+      winner: undefined,
+      awards: undefined,
+      pressItems: (current.pressItems ?? []).filter((p) => p.cmfSnapshot?.moment !== 'palmares'),
+    };
+    setCurrent(healed);
+    if (effectivePat) save(healed, '', effectivePat).catch(() => {/* non-blocking */});
+    toast('info', 'Compétition rouverte : la phase finale reste à jouer (palmarès prématuré retiré).');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, current?.status]);
 
   // Generate CMF debut articles before round 1 (once per competition, when it becomes ongoing)
   useEffect(() => {
@@ -2747,6 +2767,22 @@ function OngoingSettingsPanel({
               <option value="">— Non défini —</option>
               {(Object.keys(COMPETITION_IMPORTANCE_LABEL) as CompetitionImportance[]).map((i) => (
                 <option key={i} value={i}>{COMPETITION_IMPORTANCE_LABEL[i]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted">Zone climatique (météo des matchs)</span>
+            <select
+              className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
+              value={current.config.climateZone ?? ''}
+              onChange={(e) => setCurrent({
+                ...current,
+                config: { ...current.config, climateZone: (e.target.value || undefined) as ClimateZone | undefined },
+              })}
+            >
+              <option value="">Aucune (pas de météo)</option>
+              {CLIMATE_ZONES.map((z) => (
+                <option key={z} value={z}>{CLIMATE_ZONE_LABEL[z]}</option>
               ))}
             </select>
           </label>

@@ -132,9 +132,32 @@ export const useCompetition = create<State>((set, get) => ({
 
     if (local) {
       // If localStorage has slim version (pressItems stripped due to quota), restore from memory
-      const merged: Competition = (!local.pressItems && storeCurrent?.id === id)
+      let merged: Competition = (!local.pressItems && storeCurrent?.id === id)
         ? { ...local, pressItems: storeCurrent.pressItems, playerStats: storeCurrent.playerStats }
         : local;
+      // Still slim after memory restore (fresh page load) — pull heavy fields from backend,
+      // otherwise the next save() would persist the slim version and wipe press/stats server-side.
+      const hasPlayed = merged.matches.some((m) => m.status === 'completed');
+      const missingPress = !merged.pressItems?.length;
+      const missingStats = Object.keys(merged.playerStats ?? {}).length === 0;
+      if (hasPlayed && (missingPress || missingStats)) {
+        try {
+          const pr = makePrBackend(prApiToken);
+          const remote = pr
+            ? await pr.loadCompetition(id)
+            : (token ? await loadCompetition(id, token) : null);
+          if (remote) {
+            merged = {
+              ...merged,
+              pressItems: missingPress ? remote.pressItems : merged.pressItems,
+              playerStats: missingStats ? (remote.playerStats ?? merged.playerStats) : merged.playerStats,
+            };
+            lsWrite(merged);
+          }
+        } catch (e) {
+          console.warn('[competition.load] backend refetch for slim local failed:', e);
+        }
+      }
       // Never regress store to an older round (race: saveLocal may have already advanced it)
       if (storeRound <= merged.currentRound) {
         set({ current: merged, dirty: true });

@@ -688,3 +688,60 @@ export function seedKnockoutWithOrder(matches: CompMatch[], qualifiers: string[]
     return updated;
   });
 }
+
+/**
+ * Élimination mathématique exacte — sûre en simulation match par match.
+ *
+ * Un concurrent est « injoignable » quand ses points ACTUELS dépassent déjà le
+ * maximum atteignable par l'équipe (ses points ne peuvent que monter). L'équipe
+ * n'est éliminée que si les injoignables occupent TOUTES les places qualificatives.
+ * En phase de groupes, la comparaison se fait DANS le groupe de l'équipe (l'ancien
+ * calcul comparait au classement global → fausses éliminations dès la J3).
+ */
+export function isMathematicallyEliminated(opts: {
+  teamId: string;
+  phase: string;
+  matches: CompMatch[];
+  standings: Record<string, Standing>;
+  groups?: CompGroup[];
+  qualifyCount: number;
+  bestThirds?: number;
+}): boolean {
+  if (opts.phase !== 'group' && opts.phase !== 'league') return false;
+  const st = opts.standings[opts.teamId];
+  if (!st || st.played < 3) return false;
+  const remaining = opts.matches.filter((m) =>
+    m.phase === opts.phase && m.status !== 'completed'
+    && (m.homeTeamId === opts.teamId || m.awayTeamId === opts.teamId)).length;
+  const maxPts = st.points + remaining * 3;
+  const group = opts.phase === 'group'
+    ? opts.groups?.find((g) => g.teamIds.includes(opts.teamId))
+    : undefined;
+  const pool = group
+    ? group.teamIds.map((id) => opts.standings[id]).filter((s): s is Standing => !!s)
+    : Object.values(opts.standings);
+  const uncatchable = pool.filter((s) => s.teamId !== opts.teamId && s.points > maxPts).length;
+  const spots = opts.qualifyCount + (group && (opts.bestThirds ?? 0) > 0 ? 1 : 0);
+  return uncatchable >= spots;
+}
+
+/**
+ * Vraie fin de compétition — robuste face aux placeholders KO (créés dès le départ
+ * en groups_knockout avec équipes nulles) et aux exemptés/byes du bracket.
+ *
+ * league : tous les matchs joués. lpm : ligue + barrages tous joués.
+ * cup / groups_knockout : la FINALE doit être jouée (toutes les manches), plus la
+ * petite finale si elle est remplie. « Tous les matchs complétés » est faux avant le
+ * tirage KO ; « équipes nulles = exempt » est faux pour les placeholders pré-créés.
+ */
+export function isCompetitionFinished(format: string, matches: CompMatch[]): boolean {
+  if (matches.length === 0) return false;
+  if (format === 'league' || format === 'lpm') {
+    return matches.every((m) => m.status === 'completed');
+  }
+  const finals = matches.filter((m) => m.phase === 'F');
+  const thirds = matches.filter((m) => m.phase === '3rd');
+  return finals.length > 0
+    && finals.every((m) => m.status === 'completed')
+    && thirds.every((m) => m.status === 'completed' || !m.homeTeamId || !m.awayTeamId);
+}

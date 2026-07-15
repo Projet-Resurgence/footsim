@@ -27,7 +27,7 @@ import { deriveTeamResult, deriveTeamPhase } from '@/lib/competition/teamResult'
 import { PrApiTeamBackend } from '@/lib/prapi/teamBackend';
 import { PrApiMatchBackend } from '@/lib/prapi/matchBackend';
 import type { StoredMatch } from '@/lib/prapi/matchBackend';
-import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty } from '@/lib/competition/scheduler';
+import { advanceBracket, applyResultToStandings, applyCorruptionDisqualification, applyPointsPenalty, isMathematicallyEliminated, isCompetitionFinished } from '@/lib/competition/scheduler';
 import { rulesForPhase } from '@/lib/competition/types';
 import type { MatchSummary } from '@/lib/competition/types';
 import { resolveMatchTactics, resolveActiveCustomStyle, mergedSavedTactics, findCounterTactic, tacticToSidePatch } from '@/lib/localTactics';
@@ -486,7 +486,7 @@ export default function CompetitionMatchLive() {
         ? snap!.currentRound + 1
         : snap!.currentRound;
 
-      const allDone = updatedMatches.every((m) => m.status === 'completed');
+      const allDone = isCompetitionFinished(snap!.format, updatedMatches);
       let winner: string | undefined;
       if (allDone) {
         const finalMatch = updatedMatches.find((m) => m.phase === 'F');
@@ -655,17 +655,15 @@ export default function CompetitionMatchLive() {
         // LPM: top 24 direct + 25-40 barrages → 40 teams still alive, only 41+ truly eliminated
         const isLPMLeague = compMatch.phase === 'league' && snap!.format === 'lpm';
         const qualifyCount = isLPMLeague ? 40 : (snap!.config.qualifyPerGroup ?? Math.ceil(totalTeams / 4));
-        const justWon = goalsFor > goalsAgainst;
-        const maxRemainingPts = (() => {
-          const totalRounds = snap!.matches.filter((m) => m.phase === compMatch.phase).reduce((max, m) => Math.max(max, m.round), 0);
-          const remaining = Math.max(0, totalRounds - round);
-          return (tidStanding?.points ?? 0) + remaining * 3;
-        })();
-        const minPtsForSafeZone = sortedStandings[qualifyCount - 1]?.points ?? 0;
-        const isEliminated = (compMatch.phase === 'group' || compMatch.phase === 'league')
-          && !!tidStanding && tidStanding.played >= 3
-          && maxRemainingPts < minPtsForSafeZone
-          && !justWon;
+        const isEliminated = isMathematicallyEliminated({
+          teamId: tid,
+          phase: compMatch.phase,
+          matches: updatedMatches,
+          standings: updatedStandings,
+          groups: snap!.groups,
+          qualifyCount,
+          bestThirds: snap!.config.bestThirds,
+        });
         // isInDangerZone: LPM = Zone Rouge (25-40), standard = bottom 25%
         const dangerThreshold = isLPMLeague ? 40 : Math.max(qualifyCount + 1, Math.ceil(totalTeams * 0.75));
         const isInDangerZone = (compMatch.phase === 'group' || compMatch.phase === 'league')
