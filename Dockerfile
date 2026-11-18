@@ -1,5 +1,5 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS builder
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ ENV VITE_DISCORD_CLIENT_ID=$VITE_DISCORD_CLIENT_ID \
 RUN npm run build
 
 # ── Serve stage ───────────────────────────────────────────────────────────────
-FROM nginx:1.27-alpine
+FROM nginx:1.30.7-alpine@sha256:bef154735288bc38d99fac41ae63730684bcc661503673a04a0f9bc526ba8598
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 
