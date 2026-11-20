@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import React, { lazy, Suspense } from 'react';
 import Home from '@/pages/Home';
 import Callback from '@/pages/auth/Callback';
@@ -172,6 +172,9 @@ export const router = createBrowserRouter(
         </RequireAdmin>
       ),
     },
+    // An unknown URL goes home instead of React Router's default error page,
+    // which in v7 also prints a developer hint to players.
+    { path: '*', element: <Navigate to="/" replace /> },
   ],
   { basename: '/' },
 );
